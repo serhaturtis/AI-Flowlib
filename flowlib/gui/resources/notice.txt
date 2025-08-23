@@ -1,0 +1,30 @@
+AI Object Detection Toolkit License Agreement
+
+Please read this License Agreement carefully before using AI Object Detection Toolkit. By clicking 'I agree' or 'Accept,' you acknowledge that you have read and agree to the terms and conditions of this License Agreement. If you do not agree to these terms, please click 'Cancel' and do not use the software.
+
+1. License Grant
+
+Subject to the terms and conditions of this Agreement, Serhat Urtis grants you a non-exclusive, non-transferable license to use AI Object Detection Toolkit (the "Software") in accordance with the documentation provided with the Software.
+
+2. Restrictions
+
+You may not: (a) modify, adapt, translate, reverse engineer, decompile, or disassemble the Software; (b) sublicense, lease, rent, or distribute the Software to any third party; (c) use the Software for any unlawful purpose or in violation of any applicable laws or regulations; (d) remove, alter, or obscure any copyright, trademark, or other proprietary notices on the Software.
+
+3. Ownership
+
+The Software is licensed, not sold. [Your Name] retains all right, title, and interest in and to the Software, including all intellectual property rights therein.
+
+4. Warranty Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. SERHAT URTIS DOES NOT WARRANT THAT THE SOFTWARE WILL MEET YOUR REQUIREMENTS OR THAT ITS OPERATION WILL BE UNINTERRUPTED OR ERROR-FREE.
+
+5. Limitation of Liability
+
+IN NO EVENT SHALL SERHAT URTIS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+6. Governing Law
+
+This Agreement shall be governed by and construed in accordance with the laws of Turkey, without regard to its conflict of law principles.
+
+By clicking 'I agree' or 'Accept,' you indicate your acceptance of the terms and conditions of this License Agreement.
+

@@ -1,0 +1,175 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-flowlib"
+version = "1.0.0"
+description = "Advanced AI workflow library with agent orchestration and comprehensive provider ecosystem"
+readme = "README.MD"
+license = {text = "MIT"}
+authors = [
+    {name = "AI-Flowlib Contributors"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "click>=8.0.0",
+    "pyyaml>=6.0",
+    "httpx>=0.24.0",
+    "python-dotenv>=1.0.0",
+    "tenacity>=8.0.0",
+    "asyncio-mqtt>=0.11.0",
+    "redis>=4.5.0",
+    "chromadb>=0.4.0",
+    "openai>=1.0.0",
+    "anthropic>=0.3.0",
+    "google-generativeai>=0.3.0",
+    "llama-cpp-python>=0.2.0",
+    "pinecone-client>=2.2.0",
+    "qdrant-client>=1.6.0",
+    "neo4j>=5.0.0",
+    "pymongo>=4.0.0",
+    "psycopg2-binary>=2.9.0",
+    "sqlalchemy>=2.0.0",
+    "kafka-python>=2.0.0",
+    "pika>=1.3.0",
+    "boto3>=1.26.0",
+    "docker>=6.0.0",
+    "urwid>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-docker>=2.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+graph = [
+    "gremlinpython>=3.6.0",
+    "arangodb>=0.2.0",
+    "janusgraph-python>=0.1.0",
+]
+ml = [
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "sentence-transformers>=2.2.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+]
+all = [
+    "ai-flowlib[dev,graph,ml]"
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/AI-Flowlib"
+Documentation = "https://github.com/your-org/AI-Flowlib/blob/main/README.MD"
+Repository = "https://github.com/your-org/AI-Flowlib"
+Issues = "https://github.com/your-org/AI-Flowlib/issues"
+
+[project.scripts]
+flowlib-config = "flowlib.config.main:run_config_tui"
+flowlib-repl = "flowlib.agent.runners.repl.agent_repl:main"
+
+[tool.setuptools.packages.find]
+include = ["flowlib*"]
+exclude = ["tests*", "docs*"]
+
+[tool.setuptools.package-data]
+flowlib = [
+    "**/*.yaml",
+    "**/*.yml", 
+    "**/*.json",
+    "**/*.md",
+    "**/*.txt",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["flowlib/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["flowlib"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "chromadb.*",
+    "pinecone.*",
+    "qdrant_client.*",
+    "neo4j.*",
+    "pymongo.*",
+    "redis.*",
+    "kafka.*",
+    "pika.*",
+    "boto3.*",
+    "docker.*",
+    "gremlinpython.*",
+    "arangodb.*",
+    "llama_cpp.*",
+]
+ignore_missing_imports = true

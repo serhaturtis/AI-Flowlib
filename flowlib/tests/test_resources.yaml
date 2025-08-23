@@ -1,0 +1,22 @@
+resources:
+  - name: default-embedding
+    type: embedding_provider
+    provider_type: llamacpp_embedding
+    settings:
+      embedding_dim: 384
+      normalize: true
+      batch_size: 32
+  - name: default-vector-db
+    type: vector_db_provider
+    provider_type: chroma
+    settings:
+      host: localhost
+      port: 8000
+      collection_name: test_collection
+  - name: default-graph-db
+    type: graph_db_provider
+    provider_type: neo4j
+    settings:
+      host: localhost
+      port: 7687
+      database: test
