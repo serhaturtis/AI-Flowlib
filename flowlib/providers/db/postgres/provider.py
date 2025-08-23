@@ -97,7 +97,7 @@ class PostgreSQLProvider(Provider):
         )
         
         # Pass explicit settings to parent class
-        super().__init__(name=name, provider_type="database", settings=settings)
+        super().__init__(name=name, provider_type="db", settings=settings)
         
         # Store settings for local use
         self._settings = settings

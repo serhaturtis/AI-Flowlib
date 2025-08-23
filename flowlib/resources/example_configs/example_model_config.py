@@ -1,14 +1,27 @@
 """Example model configuration.
 
-This file shows how to configure a specific model instance using @model_config.
-Copy this file to ~/.flowlib/active_configs/my_model.py and modify as needed.
+This file is automatically copied to ~/.flowlib/configs/ during initialization.
+Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
+Modify the settings below for your specific setup.
 """
 
 from flowlib.resources.decorators.decorators import model_config
 from flowlib.providers.llm.models import LlamaModelConfig
 
 
-@model_config("phi4-model", provider_type="llamacpp")
+@model_config("phi4-model", provider_type="llamacpp", config={
+    "path": "/path/to/models/phi-4-q8_0.gguf",
+    "model_type": "phi4",
+    "n_ctx": 16384,
+    "use_gpu": True,
+    "n_gpu_layers": 32,
+    "temperature": 0.7,
+    "max_tokens": 4096,
+    "top_p": 0.95,
+    "top_k": 40,
+    "repeat_penalty": 1.1,
+    "chat_format": "chatml"
+})
 class Phi4ModelConfig(LlamaModelConfig):
     """Example configuration for a specific Phi-4 model.
     

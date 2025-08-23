@@ -1,15 +1,16 @@
-"""Example configuration for default-database role.
+"""Example database provider configuration.
 
-This file shows how to configure a database provider for persistence.
-Copy this file to ~/.flowlib/active_configs/default_database.py and modify as needed.
+This file is automatically copied to ~/.flowlib/configs/ during initialization.
+Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
+Modify the settings below for your specific setup.
 """
 
 from flowlib.resources.decorators.decorators import database_config
-from flowlib.resources.models.base import ResourceBase
+from flowlib.resources.models.config_resource import DatabaseConfigResource
 
 
-@database_config("default-database") 
-class DefaultDatabaseConfig(ResourceBase):
+@database_config("example-database-provider") 
+class ExampleDatabaseProviderConfig(DatabaseConfigResource):
     """Example configuration for the default database provider.
     
     Used for persisting agent state, conversation history, metadata, etc.
@@ -17,10 +18,11 @@ class DefaultDatabaseConfig(ResourceBase):
     """
     
     def __init__(self, name: str, type: str, **kwargs):
+        # === SQLITE CONFIGURATION (DEFAULT) ===
         super().__init__(
             name=name,
             type=type,
-            provider_type="sqlite",
+            provider_type="sqlite",  # SQLite provider name
             settings={
                 # SQLite file settings
                 "database_path": "~/.flowlib/flowlib.db",   # Path to SQLite database file
@@ -41,42 +43,55 @@ class DefaultDatabaseConfig(ResourceBase):
                 "verbose": False,                           # Enable verbose logging
             }
         )
-    
-    # === Alternative: POSTGRESQL ===
-    # provider_type: str = "postgres"
-    # host: str = "localhost"
-    # port: int = 5432
-    # database: str = "flowlib"
-    # username: str = "flowlib_user"
-    # password: str = "your-postgres-password"
-    # 
-    # # Connection settings
-    # pool_size: int = 5
-    # max_overflow: int = 10
-    # pool_timeout: int = 30
-    # pool_recycle: int = 3600
-    
-    # === Alternative: MYSQL ===
-    # provider_type: str = "mysql"
-    # host: str = "localhost"
-    # port: int = 3306
-    # database: str = "flowlib"
-    # username: str = "flowlib_user" 
-    # password: str = "your-mysql-password"
-    # charset: str = "utf8mb4"
-    
-    # === Alternative: MONGODB ===
-    # provider_type: str = "mongodb"
-    # host: str = "localhost"
-    # port: int = 27017
-    # database: str = "flowlib"
-    # username: str = "flowlib_user"  # Optional
-    # password: str = "your-mongo-password"  # Optional
-    # 
-    # # Connection settings
-    # max_pool_size: int = 100
-    # min_pool_size: int = 0
-    # max_idle_time_ms: int = 120000
-    
-    def __init__(self, name: str, type: str, **kwargs):
-        super().__init__(name=name, type=type)
+        
+        # === ALTERNATIVE CONFIGURATIONS ===
+        # Uncomment and modify one of the sections below, then comment out the SQLite config above
+        
+        # === POSTGRESQL CONFIGURATION ===
+        # super().__init__(
+        #     name=name,
+        #     type=type,
+        #     provider_type="postgresql",  # PostgreSQL provider name
+        #     settings={
+        #         "host": "localhost",
+        #         "port": 5432,
+        #         "database": "flowlib",
+        #         "username": "flowlib_user",
+        #         "password": "your-postgres-password",
+        #         
+        #         # Connection pool settings
+        #         "pool_size": 5,
+        #         "max_overflow": 10,
+        #         "pool_timeout": 30,
+        #         "pool_recycle": 3600,
+        #         
+        #         # Provider reliability settings
+        #         "max_retries": 3,
+        #         "retry_delay": 1.0,
+        #         "verbose": False,
+        #     }
+        # )
+        
+        # === MONGODB CONFIGURATION ===
+        # super().__init__(
+        #     name=name,
+        #     type=type,
+        #     provider_type="mongodb",  # MongoDB provider name
+        #     settings={
+        #         "host": "localhost",
+        #         "port": 27017,
+        #         "database": "flowlib",
+        #         "username": "flowlib_user",      # Optional
+        #         "password": "your-mongo-password",  # Optional
+        #         
+        #         # Connection pool settings
+        #         "max_pool_size": 100,
+        #         "min_pool_size": 0,
+        #         "max_idle_time_ms": 120000,
+        #         
+        #         # Provider reliability settings
+        #         "max_retries": 3,
+        #         "retry_delay": 1.0,
+        #         "verbose": False,
+        #     }
+        # )

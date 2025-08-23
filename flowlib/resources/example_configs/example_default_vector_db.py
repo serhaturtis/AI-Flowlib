@@ -1,15 +1,16 @@
-"""Example configuration for default-vector-db role.
+"""Example vector database provider configuration.
 
-This file shows how to configure a vector database provider.
-Copy this file to ~/.flowlib/active_configs/default_vector_db.py and modify as needed.
+This file is automatically copied to ~/.flowlib/configs/ during initialization.
+Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
+Modify the settings below for your specific setup.
 """
 
 from flowlib.resources.decorators.decorators import vector_db_config
-from flowlib.resources.models.base import ResourceBase
+from flowlib.resources.models.config_resource import VectorDBConfigResource
 
 
-@vector_db_config("default-vector-db")
-class DefaultVectorDBConfig(ResourceBase):
+@vector_db_config("example-vector-db-provider")
+class ExampleVectorDBProviderConfig(VectorDBConfigResource):
     """Example configuration for the default vector database provider.
     
     Used for storing and searching document embeddings, memory vectors, etc.

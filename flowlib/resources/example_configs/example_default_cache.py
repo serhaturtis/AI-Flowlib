@@ -1,15 +1,16 @@
-"""Example configuration for default-cache role.
+"""Example cache provider configuration.
 
-This file shows how to configure a cache provider.
-Copy this file to ~/.flowlib/active_configs/default_cache.py and modify as needed.
+This file is automatically copied to ~/.flowlib/configs/ during initialization.
+Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
+Modify the settings below for your specific setup.
 """
 
 from flowlib.resources.decorators.decorators import cache_config
-from flowlib.resources.models.base import ResourceBase
+from flowlib.resources.models.config_resource import CacheConfigResource
 
 
-@cache_config("default-cache")
-class DefaultCacheConfig(ResourceBase):
+@cache_config("example-cache-provider")
+class ExampleCacheProviderConfig(CacheConfigResource):
     """Example configuration for the default cache provider.
     
     Used for caching API responses, computed results, temporary data, etc.

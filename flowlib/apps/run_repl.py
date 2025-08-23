@@ -20,9 +20,7 @@ from flowlib.resources.models.config_resource import EmbeddingConfigResource
 from flowlib.resources.registry.registry import resource_registry
 # ResourceType no longer needed - using single-argument registry access
 from flowlib.providers import provider_registry
-from flowlib.providers.llm.llama_cpp.provider import LlamaCppProvider, LlamaCppSettings
-from flowlib.providers.embedding.llama_cpp.provider import LlamaCppEmbeddingProvider, LlamaCppEmbeddingProviderSettings
-from flowlib.providers.graph.neo4j.provider import Neo4jProvider, Neo4jProviderSettings
+# Providers are now loaded via auto-discovery from ~/.flowlib/configs/
 import logging
 
 # Configure flowlib logging to reduce noise in REPL
@@ -88,71 +86,19 @@ logger = logging.getLogger(__name__)
 
 
 async def setup_providers():
-    """Manually set up providers with proper settings."""
-    # Create and register LLM provider (clean provider-only settings)
-    llm_settings = LlamaCppSettings(
-        n_threads=4,
-        n_batch=512,
-        use_gpu=True,
-        n_gpu_layers=-1,  # Default, models can override
-        chat_format=None,
-        verbose=False,
-        timeout=300,
-        max_concurrent_models=3
-    )
+    """Trigger auto-discovery to load providers from ~/.flowlib/configs/
     
-    llm_provider = LlamaCppProvider(
-        name="llamacpp",
-        provider_type="llm",
-        settings=llm_settings
-    )
+    This replaces manual provider setup with the proper configuration system.
+    Providers are configured via:
+    1. Configuration files in ~/.flowlib/configs/
+    2. Role assignments in ~/.flowlib/roles/assignments.py
+    """
+    from flowlib.resources.auto_discovery import discover_configurations
     
-    provider_registry.register(
-        name="llamacpp", 
-        obj=llm_provider
-    )
+    # Trigger auto-discovery to load all configurations and role assignments
+    discover_configurations()
     
-    # Create and register embedding provider
-    embedding_settings = LlamaCppEmbeddingProviderSettings(
-        path="/home/swr/tools/models/embedding/bge-m3-q8_0.gguf",
-        n_ctx=8192,
-        n_threads=4,
-        n_batch=512,
-        use_mlock=False,
-        n_gpu_layers=-1,
-        verbose=False
-    )
-    
-    embedding_provider = LlamaCppEmbeddingProvider(
-        name="llamacpp_embedding",
-        provider_type="embedding",
-        settings=embedding_settings
-    )
-    
-    provider_registry.register(
-        name="llamacpp_embedding",
-        obj=embedding_provider
-    )
-    
-    # Create and register Neo4j graph provider (matching docker-compose.yml)
-    neo4j_settings = Neo4jProviderSettings(
-        uri="bolt://localhost:7687",
-        username="neo4j", 
-        password="pleaseChangeThisPassword",  # Matches docker-compose NEO4J_AUTH
-        database="neo4j"
-    )
-    
-    neo4j_provider = Neo4jProvider(
-        name="neo4j",
-        settings=neo4j_settings
-    )
-    
-    provider_registry.register(
-        name="neo4j",
-        obj=neo4j_provider
-    )
-    
-    logger.info("Manually registered LLM, embedding, and Neo4j graph providers with proper settings")
+    logger.info("Provider setup complete - configurations loaded from ~/.flowlib/")
 
 
 async def setup_model_resources():
@@ -206,12 +152,8 @@ async def main(persona=None):
     await setup_providers()
     await setup_model_resources()
     
-    # Ensure standard models are registered
-    try:
-        from flowlib.agent.utils.model_config import ensure_standard_models_registered
-        ensure_standard_models_registered()
-    except Exception as e:
-        logger.warning(f"Could not ensure standard models: {e}")
+    # Auto-discovery will load role assignments that map model names to providers
+    # No need to manually ensure models exist - the system will fail cleanly if they don't
     
     # Determine persona to use
     default_persona = """You are an expert AI assistant for the Flowlib framework.

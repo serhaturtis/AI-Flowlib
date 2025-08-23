@@ -1,19 +1,21 @@
-"""Example configuration for default-llm role.
+"""Example LlamaCpp provider configuration.
 
-This file shows how to configure a primary language model provider.
-Copy this file to ~/.flowlib/active_configs/default_llm.py and modify as needed.
+This file is automatically copied to ~/.flowlib/configs/ during initialization.
+Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
+Modify the settings below for your specific setup.
 """
 
 from flowlib.resources.decorators.decorators import llm_config
-from flowlib.resources.models.base import ResourceBase
+from flowlib.resources.models.config_resource import LLMConfigResource
 
 
-@llm_config("default-llm")
-class DefaultLLMConfig(ResourceBase):
-    """Example configuration for the default LLM provider.
+@llm_config("example-llamacpp-provider")
+class ExampleLlamaCppProviderConfig(LLMConfigResource):
+    """Example LlamaCpp provider configuration.
     
     This configures the LlamaCpp provider infrastructure that can host multiple models.
     Individual models are defined separately using @model_config.
+    This config can be assigned to roles like 'default-llm' via role assignment.
     """
     
     def __init__(self, name: str, type: str, **kwargs):

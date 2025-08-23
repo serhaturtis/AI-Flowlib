@@ -79,7 +79,7 @@ class ChromaDBProviderSettings(ProviderSettings):
     # ChromaDB-specific configuration
     anonymized_telemetry: bool = Field(default=True, description="Enable anonymized telemetry")
 
-@provider(name="chroma", provider_type="vector_db", settings_class=ChromaDBProviderSettings)
+@provider(provider_type="vector_db", name="chroma", settings_class=ChromaDBProviderSettings)
 class ChromaDBProvider(VectorDBProvider):
     """Provider for ChromaDB, an open-source embedding database.
     

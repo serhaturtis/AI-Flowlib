@@ -208,16 +208,8 @@ async def setup_agent(task_id: Optional[str] = None) -> AgentCore:
         engine_config=engine_config,
         memory_config=memory_config,
         state_config=state_config,
-        provider_config={
-            "llamacpp": {
-                "model_path": "/home/swr/tools/models/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf",
-                "n_ctx": 4096,
-                "n_threads": 4,
-                "n_batch": 512,
-                "use_gpu": True,
-                "n_gpu_layers": -1
-            }
-        }
+# Providers are configured via ~/.flowlib/configs/ and role assignments
+        # No hardcoded provider_config needed - agents use registry system
     )
     
     # Create the agent
@@ -306,6 +298,10 @@ async def run_conversation(agent: AgentCore):
 async def main():
     """Main entry point for the conversational agent."""
     try:
+        # Trigger auto-discovery to load configurations from ~/.flowlib/
+        from flowlib.resources.auto_discovery import discover_configurations
+        discover_configurations()
+        
         # Ask if user wants to resume a conversation
         task_id = await prompt_for_conversation()
         

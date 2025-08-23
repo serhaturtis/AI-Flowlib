@@ -78,14 +78,16 @@ class ArangoProvider(GraphDBProvider):
     mapping entities and relationships to ArangoDB's graph model.
     """
     
-    def __init__(self, settings: ArangoProviderSettings):
+    def __init__(self, name: str = "arango", provider_type: str = "graph_db", settings: Optional[ArangoProviderSettings] = None):
         """Initialize ArangoDB graph database provider.
         Args:
-            settings: Provider settings (must be ArangoProviderSettings)
+            name: Provider name (default: "arango")
+            provider_type: Provider type (default: "graph_db")
+            settings: Provider settings (optional ArangoProviderSettings)
         """
-        if not isinstance(settings, ArangoProviderSettings):
+        if settings is not None and not isinstance(settings, ArangoProviderSettings):
             raise TypeError("settings must be an instance of ArangoProviderSettings")
-        super().__init__(name="arango", provider_type="graph_db", settings=settings)
+        super().__init__(name=name, provider_type=provider_type, settings=settings)
         self._client: Optional[ArangoClient] = None
         self._db: Optional[StandardDatabase] = None
         self._entity_collection: Optional[StandardCollection] = None

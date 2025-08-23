@@ -92,7 +92,7 @@ class RedisCacheProvider(CacheProvider):
     distributed locking mechanisms.
     """
     
-    def __init__(self, name: str = "redis_cache", settings: Optional[RedisCacheProviderSettings] = None):
+    def __init__(self, name: str = "redis-cache", settings: Optional[RedisCacheProviderSettings] = None):
         """Initialize Redis cache provider.
         
         Args:

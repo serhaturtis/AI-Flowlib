@@ -41,6 +41,11 @@ class FlowlibAutoDiscovery:
         return self._configs_path
     
     @property
+    def roles_path(self) -> Path:
+        """Get the .flowlib/roles directory path."""
+        return self.flowlib_path / 'roles'
+    
+    @property
     def knowledge_plugins_path(self) -> Path:
         """Get the .flowlib/knowledge_plugins directory path."""
         return self.flowlib_path / 'knowledge_plugins'
@@ -51,7 +56,7 @@ class FlowlibAutoDiscovery:
         Creates:
         - ~/.flowlib/
         - ~/.flowlib/configs/
-        - ~/.flowlib/active_configs/
+        - ~/.flowlib/roles/
         - ~/.flowlib/knowledge_plugins/
         - ~/.flowlib/logs/
         - ~/.flowlib/temp/
@@ -61,7 +66,7 @@ class FlowlibAutoDiscovery:
             directories = [
                 self.flowlib_path,
                 self.flowlib_path / 'configs',
-                self.flowlib_path / 'active_configs',
+                self.flowlib_path / 'roles',
                 self.flowlib_path / 'knowledge_plugins',
                 self.flowlib_path / 'logs', 
                 self.flowlib_path / 'temp',
@@ -78,7 +83,7 @@ class FlowlibAutoDiscovery:
                 configs_init_file.write_text('"""Flowlib user configurations."""\n')
                 logger.debug(f"Created {configs_init_file}")
             
-            # Note: We don't create __init__.py in active_configs to avoid auto-importing configs
+            # Note: We don't create __init__.py in roles to avoid auto-importing assignments
             
             # Copy example configuration files if none exist
             self._copy_example_configs()
@@ -130,6 +135,9 @@ class FlowlibAutoDiscovery:
                 # Clean up path modification
                 if path_added and configs_path_str in sys.path:
                     sys.path.remove(configs_path_str)
+            
+            # Load role assignments after all configs are loaded
+            self._load_role_assignments()
             
             self._initialized = True
             logger.info(f"Auto-discovery complete: loaded {len(self._loaded_modules)} configuration modules")
@@ -266,22 +274,23 @@ class FlowlibAutoDiscovery:
         self.discover_and_load_configurations()
     
     def _copy_example_configs(self) -> None:
-        """Copy example configuration files to ~/.flowlib/active_configs if directory is empty.
+        """Copy example configuration files to ~/.flowlib/configs if directory is empty.
         
-        This provides users with ready-to-modify configuration templates.
-        Only copies if active_configs directory is empty to avoid overwriting user configs.
+        This provides users with ready-to-use configuration templates and creates
+        default role assignments mapping standard roles to example configurations.
+        Only copies if configs directory is empty to avoid overwriting user configs.
         """
         try:
-            active_configs_dir = self.flowlib_path / 'active_configs'
+            configs_dir = self.configs_path
             
-            # Check if active_configs has any .py files (excluding __init__.py)
+            # Check if configs has any .py files (excluding __init__.py)
             existing_configs = [
-                f for f in active_configs_dir.iterdir() 
+                f for f in configs_dir.iterdir() 
                 if f.is_file() and f.suffix == '.py' and f.name != '__init__.py'
-            ] if active_configs_dir.exists() else []
+            ] if configs_dir.exists() else []
             
             if existing_configs:
-                logger.debug(f"Active configs already exist ({len(existing_configs)} files), skipping example copy")
+                logger.debug(f"Configs already exist ({len(existing_configs)} files), skipping example copy")
                 return
             
             # Import example configs module to get file list
@@ -295,7 +304,7 @@ class FlowlibAutoDiscovery:
                 copied_count = 0
                 for example_file, target_file in example_configs.EXAMPLE_TO_TARGET.items():
                     source_path = example_dir / example_file
-                    target_path = active_configs_dir / target_file
+                    target_path = configs_dir / target_file
                     
                     if source_path.exists() and not target_path.exists():
                         shutil.copy2(source_path, target_path)
@@ -303,8 +312,8 @@ class FlowlibAutoDiscovery:
                         copied_count += 1
                 
                 if copied_count > 0:
-                    logger.info(f"Copied {copied_count} example configuration files to ~/.flowlib/active_configs/")
-                    logger.info("Edit these files to configure your providers, then restart flowlib applications")
+                    logger.info(f"Copied {copied_count} example configuration files and role assignments")
+                    logger.info("Edit configurations and role assignments in ~/.flowlib/ as needed")
                 else:
                     logger.debug("No example configs needed to be copied")
                     
@@ -315,6 +324,49 @@ class FlowlibAutoDiscovery:
         except Exception as e:
             logger.debug(f"Failed to copy example configs (non-critical): {e}")
             # Don't raise - this is not critical for flowlib operation
+    
+    
+    def _load_role_assignments(self) -> None:
+        """Load role assignments from ~/.flowlib/roles/assignments.py.
+        
+        This method is called after all configurations have been loaded
+        to ensure role assignments can reference existing configurations.
+        """
+        try:
+            assignments_file = self.roles_path / 'assignments.py'
+            
+            if not assignments_file.exists():
+                logger.debug("No role assignments file found, skipping role assignment loading")
+                return
+            
+            # Add roles directory to Python path temporarily
+            roles_path_str = str(self.roles_path)
+            if roles_path_str not in sys.path:
+                sys.path.insert(0, roles_path_str)
+                path_added = True
+            else:
+                path_added = False
+            
+            try:
+                # Import the assignments module
+                spec = importlib.util.spec_from_file_location("assignments", assignments_file)
+                if spec is None or spec.loader is None:
+                    logger.warning(f"Could not load role assignments from {assignments_file}")
+                    return
+                
+                assignments_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(assignments_module)
+                
+                logger.info("Successfully loaded role assignments from roles/assignments.py")
+                
+            finally:
+                # Clean up path modification
+                if path_added and roles_path_str in sys.path:
+                    sys.path.remove(roles_path_str)
+                    
+        except Exception as e:
+            logger.warning(f"Failed to load role assignments (non-critical): {e}")
+            # Don't raise - role assignments are not critical for basic operation
 
 
 # Global auto-discovery instance

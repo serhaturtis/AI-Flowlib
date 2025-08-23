@@ -1,43 +1,28 @@
 """Example configuration files for Flowlib.
 
-This package contains example configuration files for all standard Flowlib roles.
-These files should be copied to ~/.flowlib/active_configs/ and modified as needed.
+This directory contains example configuration files that are automatically
+copied to ~/.flowlib/configs/ during initialization.
 
-Standard configuration roles:
-- default-llm: Primary language model
-- default-embedding: Embedding model for vectors  
-- default-vector-db: Vector database for similarity search
-- default-graph-db: Graph database for knowledge graphs
-- default-database: Database for persistence
-- default-cache: Cache for temporary data
+These files are NOT imported as Python modules - they are copied as templates
+for users to modify. This prevents accidental registration during package import.
 
 Usage:
-1. Copy example files to ~/.flowlib/active_configs/
-2. Rename files (remove "example_" prefix)  
-3. Modify configuration values for your setup
-4. Restart flowlib applications to load new configs
+1. Example files are automatically copied to ~/.flowlib/configs/ on first run  
+2. Users create role assignments in ~/.flowlib/roles/assignments.py as needed
+3. Modify configuration values and role assignments as needed
+4. Restart flowlib applications to load changes
 """
 
-# List of all example configuration files
-EXAMPLE_CONFIGS = [
-    "example_default_llm.py",
-    "example_default_embedding.py", 
-    "example_default_vector_db.py",
-    "example_default_graph_db.py",
-    "example_default_database.py",
-    "example_default_cache.py",
-    "example_model_config.py",
-    "example_embedding_model_config.py"
-]
-
-# Mapping from example file to target file name
+# Mapping for copying example files to user directory
+# Target names use descriptive config names, not role names
 EXAMPLE_TO_TARGET = {
-    "example_default_llm.py": "default_llm.py",
-    "example_default_embedding.py": "default_embedding.py",
-    "example_default_vector_db.py": "default_vector_db.py", 
-    "example_default_graph_db.py": "default_graph_db.py",
-    "example_default_database.py": "default_database.py",
-    "example_default_cache.py": "default_cache.py",
-    "example_model_config.py": "model_config_example.py",
-    "example_embedding_model_config.py": "embedding_model_config_example.py"
+    "example_default_llm.py": "example_llamacpp_provider.py",
+    "example_default_embedding.py": "example_llamacpp_embedding_provider.py",
+    "example_default_vector_db.py": "example_vector_db_provider.py", 
+    "example_default_graph_db.py": "example_graph_db_provider.py",
+    "example_default_database.py": "example_database_provider.py",
+    "example_default_cache.py": "example_cache_provider.py",
+    "example_model_config.py": "example_model_config.py",
+    "example_embedding_model_config.py": "example_embedding_model_config.py",
+    "example_role_assignments.py": "../roles/assignments.py"
 }

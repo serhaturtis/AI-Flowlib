@@ -1,15 +1,16 @@
-"""Example configuration for default-graph-db role.
+"""Example graph database provider configuration.
 
-This file shows how to configure a graph database provider.  
-Copy this file to ~/.flowlib/active_configs/default_graph_db.py and modify as needed.
+This file is automatically copied to ~/.flowlib/configs/ during initialization.
+Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
+Modify the settings below for your specific setup.
 """
 
 from flowlib.resources.decorators.decorators import graph_db_config
-from flowlib.resources.models.base import ResourceBase
+from flowlib.resources.models.config_resource import GraphDBConfigResource
 
 
-@graph_db_config("default-graph-db")
-class DefaultGraphDBConfig(ResourceBase):
+@graph_db_config("example-graph-db-provider")
+class ExampleGraphDBProviderConfig(GraphDBConfigResource):
     """Example configuration for the default graph database provider.
     
     Used for storing knowledge graphs, entity relationships, etc.

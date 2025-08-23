@@ -1,7 +1,8 @@
 """Example embedding model configuration.
 
-This file shows how to configure a specific embedding model using @model_config.
-Copy this file to ~/.flowlib/active_configs/my_embedding_model.py and modify as needed.
+This file is automatically copied to ~/.flowlib/configs/ during initialization.
+Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
+Modify the settings below for your specific setup.
 """
 
 from flowlib.resources.decorators.decorators import model_config
@@ -19,7 +20,13 @@ class BGEEmbeddingModelConfig(StrictBaseModel):
     normalize: bool = Field(..., description="Whether to normalize embeddings")
 
 
-@model_config("bge-m3-embedding", provider_type="llamacpp_embedding")  
+@model_config("example-embedding-model", provider_type="llamacpp_embedding", config={
+    "path": "/path/to/models/bge-m3-f16.gguf",
+    "model_name": "bge-m3",
+    "dimensions": 1024,
+    "max_length": 8192,
+    "normalize": True
+})
 class BGEM3EmbeddingModelConfig(BGEEmbeddingModelConfig):
     """Example configuration for BGE-M3 embedding model.
     

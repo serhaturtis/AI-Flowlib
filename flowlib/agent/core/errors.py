@@ -43,10 +43,10 @@ class AgentError(BaseError):
             **context: Additional context information
         """
         # Create core error context
-        if "flow_name" not in context:
-            raise KeyError("Required 'flow_name' missing from error context")
+        # flow_name is optional - many errors occur outside flow context
+        flow_name = context.get("flow_name", "system")  # Use "system" as default for non-flow errors
         error_context = CoreErrorContext.create(
-            flow_name=context["flow_name"],
+            flow_name=flow_name,
             error_type=self.__class__.__name__,
             error_location=f"{component}.{operation}",
             component=component,

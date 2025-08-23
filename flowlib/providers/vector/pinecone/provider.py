@@ -69,11 +69,7 @@ SettingsType = TypeVar('SettingsType', bound=PineconeProviderSettings)
 
 from ..base import Provider
 
-from ..base import Provider
-
-from ..base import Provider
-
-@provider(name="pinecone", provider_type="vector_db", settings_class=PineconeProviderSettings)
+@provider(provider_type="vector_db", name="pinecone", settings_class=PineconeProviderSettings)
 class PineconeProvider(VectorDBProvider):
     """Provider for Pinecone, a managed vector database service.
 

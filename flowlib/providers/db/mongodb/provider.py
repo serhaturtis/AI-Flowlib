@@ -120,7 +120,7 @@ class MongoDBProviderSettings(ProviderSettings):
 
 from flowlib.providers.core.base import Provider
 
-@provider(provider_type="database", name="mongodb", settings_class=MongoDBProviderSettings)
+@provider(provider_type="db", name="mongodb", settings_class=MongoDBProviderSettings)
 class MongoDBProvider(Provider[MongoDBProviderSettings]):
     """MongoDB implementation of the DBProvider.
     
