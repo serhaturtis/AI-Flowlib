@@ -104,6 +104,9 @@ class FlowlibAutoDiscovery:
         if self._initialized:
             return  # Already loaded
         
+        # Set initialized flag immediately to prevent recursion
+        self._initialized = True
+        
         try:
             # Ensure directory structure exists
             self.ensure_directory_structure()
@@ -139,13 +142,12 @@ class FlowlibAutoDiscovery:
             # Load role assignments after all configs are loaded
             self._load_role_assignments()
             
-            self._initialized = True
             logger.info(f"Auto-discovery complete: loaded {len(self._loaded_modules)} configuration modules")
             
         except Exception as e:
             logger.error(f"Configuration auto-discovery failed: {e}")
             # Don't raise - flowlib should work without user configs
-            self._initialized = True  # Prevent retry loops
+            # _initialized already set to prevent retry loops
     
     def _find_config_files(self) -> List[Path]:
         """Find all Python configuration files in .flowlib/configs.

@@ -106,7 +106,7 @@ class AgentReflection(AgentComponent, ReflectionInterface):
                 except Exception as e:
                     raise ReflectionError(
                         message=f"Failed to create model provider '{provider_name}' for reflection: {str(e)}",
-                        agent=self.parent.name if self.parent else self.name,
+                        agent=self.name,
                         cause=e
                     )
             
@@ -114,7 +114,7 @@ class AgentReflection(AgentComponent, ReflectionInterface):
             if not self._llm_provider:
                 raise ReflectionError(
                     message="No model provider available for reflection",
-                    agent=self.parent.name if self.parent else self.name
+                    agent=self.name
                 )
             
             # Load template
@@ -126,7 +126,7 @@ class AgentReflection(AgentComponent, ReflectionInterface):
         except Exception as e:
             raise ReflectionError(
                 message=f"Failed to initialize reflection component: {str(e)}",
-                agent=self.parent.name if self.parent else self.name,
+                agent=self.name,
                 cause=e
             ) from e
     
@@ -231,7 +231,7 @@ class AgentReflection(AgentComponent, ReflectionInterface):
                 self._activity_stream.error(f"Reflection failed: {str(e)}")
             raise ReflectionError(
                 message=f"Reflection failed: {str(e)}",
-                agent=self.parent.name if self.parent else self.name,
+                agent=self.name,
                 cause=e
             ) from e
     
@@ -331,13 +331,13 @@ class AgentReflection(AgentComponent, ReflectionInterface):
             if not self._llm_provider:
                 raise ReflectionError(
                     message="No LLM provider available for reflection",
-                    agent=self.parent.name if self.parent else self.name
+                    agent=self.name
                 )
                 
             if not self._reflection_template:
                 raise ReflectionError(
                     message="No reflection template available",
-                    agent=self.parent.name if self.parent else self.name
+                    agent=self.name
                 )
                 
             # Format flow result for template
@@ -380,7 +380,7 @@ class AgentReflection(AgentComponent, ReflectionInterface):
         except Exception as e:
             raise ReflectionError(
                 message=f"Failed to execute reflection: {str(e)}",
-                agent=self.parent.name if self.parent else self.name,
+                agent=self.name,
                 cause=e
             ) from e
             

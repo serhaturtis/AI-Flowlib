@@ -2,7 +2,7 @@
 Agent flow execution component.
 
 This module handles flow registration, execution, and management
-operations that were previously in AgentCore.
+operations that were previously in BaseAgent.
 """
 
 import logging
@@ -29,18 +29,14 @@ class AgentFlowRunner(AgentComponent):
     - Flow discovery and metadata
     """
     
-    def __init__(self, 
-                 activity_stream=None,
-                 name: str = "flow_runner"):
+    def __init__(self, name: str = "flow_runner"):
         """Initialize the flow runner.
         
         Args:
-            activity_stream: Activity stream for logging
             name: Component name
         """
         super().__init__(name)
         self._flows: Dict[str, Flow] = {}
-        self._activity_stream = activity_stream
         self._flow_discovery: Optional[FlowDiscovery] = None
     
     async def _initialize_impl(self) -> None:
@@ -64,7 +60,8 @@ class AgentFlowRunner(AgentComponent):
             return
         
         try:
-            discovered_flows = await self._flow_discovery.discover_flows()
+            # Use the synchronous discover_agent_flows method
+            discovered_flows = self._flow_discovery.discover_agent_flows()
             logger.info(f"Discovered {len(discovered_flows)} flows")
             
             for flow in discovered_flows:
@@ -202,18 +199,28 @@ class AgentFlowRunner(AgentComponent):
                 raise ExecutionError(f"Flow '{flow_name}' not found")
         
         try:
+            # Flows expect Context objects, not direct inputs
+            from flowlib.core.context.context import Context
+            
+            # Wrap inputs in Context if they aren't already
+            if not isinstance(inputs, Context):
+                context = Context(data=inputs)
+            else:
+                context = inputs
+            
             # Execute the flow
             if hasattr(flow, 'execute'):
-                result = await flow.execute(inputs, **kwargs)
+                result = await flow.execute(context)
             elif hasattr(flow, 'run_pipeline'):
-                result = await flow.run_pipeline(inputs, **kwargs)
+                result = await flow.run_pipeline(context)
             else:
                 raise ExecutionError(f"Flow '{flow_name}' does not have execute or run_pipeline method")
             
             # Log execution
-            if self._activity_stream:
-                self._activity_stream.flow_execution(
-                    flow_name=flow_name,
+            activity_stream = self.get_component("activity_stream")
+            if activity_stream:
+                activity_stream.execution(
+                    f"Flow '{flow_name}' executed successfully",
                     inputs=str(inputs)[:100],
                     result=str(result)[:100] if result else "None"
                 )
@@ -221,7 +228,8 @@ class AgentFlowRunner(AgentComponent):
             return result
         except Exception as e:
             logger.error(f"Error executing flow {flow_name}: {e}")
-            raise ExecutionError(f"Flow execution failed for '{flow_name}': {e}") from e
+            # Let the real exception bubble up
+            raise
     
     async def list_available_flows(self) -> List[Dict[str, Any]]:
         """List all available flows.
@@ -268,7 +276,7 @@ class AgentFlowRunner(AgentComponent):
     
     async def validate_required_flows(self) -> None:
         """Validate that required flows are available."""
-        required_flows = ["ConversationFlow", "ShellCommandFlow", "MessageClassifierFlow"]
+        required_flows = ["conversation", "shell-command", "message-classifier-flow"]
         missing_flows = []
         
         for flow_name in required_flows:

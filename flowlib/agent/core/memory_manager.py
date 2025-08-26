@@ -2,7 +2,7 @@
 Agent memory management component.
 
 This module handles agent memory operations and coordination
-that were previously in AgentCore.
+that were previously in BaseAgent.
 """
 
 import logging
@@ -11,10 +11,10 @@ from typing import Any, Dict, List, Optional
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import NotInitializedError
 from flowlib.agent.models.config import AgentConfig
-from flowlib.agent.components.memory.agent_memory import AgentMemory
-from flowlib.agent.components.memory.working import WorkingMemory
-from flowlib.agent.components.memory.vector import VectorMemory
-from flowlib.agent.components.memory.knowledge import KnowledgeMemory
+from flowlib.agent.components.memory.agent_memory import AgentMemory, AgentMemoryConfig
+from flowlib.agent.components.memory.working import WorkingMemory, WorkingMemoryConfig
+from flowlib.agent.components.memory.vector import VectorMemory, VectorMemoryConfig
+from flowlib.agent.components.memory.knowledge import KnowledgeMemory, KnowledgeMemoryConfig
 from flowlib.agent.components.memory.models import MemoryStoreRequest, MemoryRetrieveRequest, MemorySearchRequest
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.knowledge.plugin_manager import KnowledgePluginManager
@@ -31,21 +31,14 @@ class AgentMemoryManager(AgentComponent):
     - Memory statistics and management
     """
     
-    def __init__(self, 
-                 activity_stream=None,
-                 knowledge_plugins: Optional[KnowledgePluginManager] = None,
-                 name: str = "memory_manager"):
+    def __init__(self, name: str = "memory_manager"):
         """Initialize the memory manager.
         
         Args:
-            activity_stream: Activity stream for logging
-            knowledge_plugins: Knowledge plugin manager
             name: Component name
         """
         super().__init__(name)
         self._memory: Optional[AgentMemory] = None
-        self._activity_stream = activity_stream
-        self._knowledge_plugins = knowledge_plugins
     
     async def _initialize_impl(self) -> None:
         """Initialize the memory manager."""
@@ -76,29 +69,32 @@ class AgentMemoryManager(AgentComponent):
         vector_provider = await provider_registry.get_by_config("default-vector-db")
         graph_provider = await provider_registry.get_by_config("default-graph-db")
         
-        # Instantiate specialized memories
-        working_mem = WorkingMemory(
+        # Create comprehensive AgentMemoryConfig
+        working_mem_config = WorkingMemoryConfig(
             default_ttl_seconds=mem_config.working_memory.default_ttl_seconds
         )
-        vector_mem = VectorMemory(
-            provider_name=vector_provider.name,
-            embedding_provider_name=embedding_provider.name
+        vector_mem_config = VectorMemoryConfig(
+            vector_provider_config="default-vector-db",
+            embedding_provider_config="default-embedding"
         )
-        knowledge_mem = KnowledgeMemory(
-            graph_provider=graph_provider
+        knowledge_mem_config = KnowledgeMemoryConfig(
+            graph_provider_config="default-graph-db"
+        )
+        
+        agent_memory_config = AgentMemoryConfig(
+            working_memory=working_mem_config,
+            vector_memory=vector_mem_config,
+            knowledge_memory=knowledge_mem_config,
+            fusion_llm_config=mem_config.fusion_provider_name
         )
         
         # Instantiate comprehensive memory
         self._memory = AgentMemory(
-            vector_memory=vector_mem,
-            knowledge_memory=knowledge_mem,
-            working_memory=working_mem,
-            fusion_provider_name=mem_config.fusion_provider_name,
-            fusion_model_name=mem_config.fusion_model_name,
-            activity_stream=self._activity_stream,
-            knowledge_plugins=self._knowledge_plugins
+            config=agent_memory_config,
+            activity_stream=self.get_component("activity_stream"),
+            knowledge_plugins=self.get_component("knowledge_plugins")
         )
-        self._memory.set_parent(self)
+        # AgentMemory no longer uses parent relationships
         
         # Initialize memory
         await self._memory.initialize()

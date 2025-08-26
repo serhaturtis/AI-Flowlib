@@ -13,7 +13,7 @@ from ....flows.base import Flow
 from ....flows.registry import flow_registry
 
 from ...registry import agent_registry
-from ...core.agent import AgentCore
+from ...core.agent import BaseAgent
 from ...models.config import AgentConfig
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,8 @@ def agent(
         Decorator function
     """
     def decorator(cls):
-        # Create a wrapper class that extends AgentCore for core functionality
-        class AgentWrapper(AgentCore):
+        # Create a wrapper class that extends BaseAgent for core functionality
+        class AgentWrapper(BaseAgent):
             """Agent class created with @agent decorator."""
             
             def __init__(
@@ -71,7 +71,7 @@ def agent(
                     "name", "persona", "provider_name", "model_name", "description", "system_prompt",
                     "max_iterations", "timeout", "temperature", "conversation", "memory", "reflection",
                     "tasks", "performance", "resilience", "integration", "flows", "persistence",
-                    "mcp_integration", "dual_path", "activity", "batch_operations", "task_id",
+                    "dual_path", "activity", "batch_operations", "task_id",
                     "task_description", "engine_config", "planner_config", "reflection_config",
                     "memory_config", "state_config", "enable_memory", "provider_config", "components",
                     "resource_config"
@@ -120,7 +120,7 @@ def agent(
                 # Create final config
                 effective_config = AgentConfig(**config_dict)
                 
-                # Initialize AgentCore
+                # Initialize BaseAgent
                 super().__init__(
                     config=effective_config,
                     task_description=task_description
@@ -186,7 +186,7 @@ def agent(
         agent_metadata = {
             "provider_name": provider_name,
             "model_name": model_name,
-            "agent_type": "core", # Indicate it uses AgentCore
+            "agent_type": "core", # Indicate it uses BaseAgent
             **kwargs
         }
         agent_registry.register(name=agent_name, agent_class=AgentWrapper, metadata=agent_metadata)

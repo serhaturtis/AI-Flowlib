@@ -33,7 +33,7 @@ class FlowDiscovery(AgentComponent, FlowDiscoveryInterface):
             name: Component name
         """
         super().__init__(name)
-        self._flows: Dict[str, Type[Flow]] = {}
+        self._flows: Dict[str, Flow] = {}
     
     async def _initialize_impl(self) -> None:
         """Initialize the flow discovery system.
@@ -142,7 +142,7 @@ class FlowDiscovery(AgentComponent, FlowDiscoveryInterface):
         This method finds flows that have been decorated with the @agent_flow decorator.
         
         Returns:
-            List of flow classes compatible with agents
+            List of flow instances compatible with agents
             
         Raises:
             DiscoveryError: If stage registry is not available or discovery fails
@@ -160,21 +160,21 @@ class FlowDiscovery(AgentComponent, FlowDiscoveryInterface):
         flow_instances = flow_registry.get_flow_instances()
         
         # Filter to only agent-compatible flows (non-infrastructure flows)
-        flow_classes = []
+        agent_flows = []
         for flow_name, flow_instance in flow_instances.items():
             # Check if flow is not an infrastructure flow (agent-selectable)
             if hasattr(flow_instance, "__flow_metadata__"):
                 is_infrastructure = flow_instance.__flow_metadata__["is_infrastructure"] if "is_infrastructure" in flow_instance.__flow_metadata__ else True
-                if not is_infrastructure and flow_instance.__class__ not in flow_classes:
-                    flow_classes.append(flow_instance.__class__)
+                if not is_infrastructure and flow_instance not in agent_flows:
+                    agent_flows.append(flow_instance)
                 self._logger.debug(f"Found agent flow: {flow_name}")
             elif hasattr(flow_instance, "is_infrastructure") and not flow_instance.is_infrastructure:
-                if flow_instance.__class__ not in flow_classes:
-                    flow_classes.append(flow_instance.__class__)
+                if flow_instance not in agent_flows:
+                    agent_flows.append(flow_instance)
                 self._logger.debug(f"Found agent flow (via is_infrastructure attr): {flow_name}")
         
-        self._logger.info(f"Discovered {len(flow_classes)} agent-compatible flows")
-        return flow_classes
+        self._logger.info(f"Discovered {len(agent_flows)} agent-compatible flows")
+        return agent_flows
     
     def discover_agent_flow_instances(self) -> List[Any]:
         """Discover flow instances that are compatible with agents.

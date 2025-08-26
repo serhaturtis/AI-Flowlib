@@ -33,8 +33,7 @@ class LlamaCppEmbeddingProviderSettings(ProviderSettings):
     No host/port needed - uses local model files.
     """
     
-    # LlamaCpp embedding model settings
-    path: str = Field(default="", description="Path to GGUF embedding model (e.g., '/models/all-MiniLM-L6-v2.gguf')")
+    # LlamaCpp embedding infrastructure settings
     n_ctx: int = Field(default=512, description="Context size for embedding model")
     n_threads: Optional[int] = Field(default=None, description="Number of threads for inference")
     n_batch: int = Field(default=512, description="Batch size for embedding processing")
@@ -87,44 +86,27 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 "pip install llama-cpp-python[server] or similar."
             )
         
-        # Validate required config (path) - Base init should raise if path missing now
-        if not self.settings.path:
-            context = ErrorContext.create(
-                flow_name="llama_cpp_embedding_provider",
-                error_type="ConfigurationError",
-                error_location="__init__",
-                component=name,
-                operation="initialization"
-            )
-            config_context = ConfigurationErrorContext(
-                config_key="path",
-                config_section="settings",
-                expected_type="string",
-                actual_value="None"
-            )
-            raise ConfigurationError(
-                message="'path' is required in LlamaCppEmbeddingProvider config.",
-                context=context,
-                config_context=config_context
-            )
-            
-        self._model_path = self.settings.path
+        self._model_path = None
         self._lock = asyncio.Lock()
         
-        logger.info(f"LlamaCppEmbeddingProvider '{name}' configured with model: {self._model_path}")
+        logger.info(f"LlamaCppEmbeddingProvider '{name}' configured")
 
     async def _initialize(self) -> None:
-        """Load the Llama model for embeddings."""
+        """Initialize the embedding provider."""
+        logger.info(f"LlamaCppEmbeddingProvider '{self.name}' initialized successfully")
+
+    async def _load_model(self, model_path: str) -> None:
+        """Load a specific embedding model."""
         async with self._lock:
-            if self._model:
-                return # Already initialized
+            if self._model and self._model_path == model_path:
+                return  # Already loaded
             
-            logger.info(f"Loading embedding model: {self._model_path}...")
+            logger.info(f"Loading embedding model: {model_path}...")
             try:
                 # Prepare arguments for Llama constructor using self.settings
                 llama_args = {
-                    "model_path": self.settings.path,
-                    "embedding": True, # Crucial for embedding models
+                    "model_path": model_path,
+                    "embedding": True,  # Crucial for embedding models
                     "n_ctx": self.settings.n_ctx,
                     "n_threads": self.settings.n_threads,
                     "n_batch": self.settings.n_batch,
@@ -136,16 +118,18 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 llama_args = {k: v for k, v in llama_args.items() if v is not None}
 
                 object.__setattr__(self, '_model', Llama(**llama_args))
-                logger.info(f"Embedding model loaded successfully: {self._model_path}")
+                self._model_path = model_path
+                logger.info(f"Embedding model loaded successfully: {model_path}")
             except Exception as e:
-                logger.error(f"Failed to load embedding model '{self._model_path}': {e}", exc_info=True)
-                object.__setattr__(self, '_model', None) # Ensure model is None on failure
+                logger.error(f"Failed to load embedding model '{model_path}': {e}", exc_info=True)
+                object.__setattr__(self, '_model', None)
+                self._model_path = None
                 raise ProviderError(
-                    message=f"Failed to load embedding model '{self._model_path}': {e}",
+                    message=f"Failed to load embedding model '{model_path}': {e}",
                     context=ErrorContext.create(
                         flow_name="llama_cpp_embedding_provider",
                         error_type="ModelLoadError",
-                        error_location="_initialize",
+                        error_location="_load_model",
                         component=self.name,
                         operation="model_loading"
                     ),
@@ -167,9 +151,9 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 object.__setattr__(self, '_model', None)
                 logger.info(f"Embedding model resources released for: {self._model_path}")
             
-    async def embed(self, text: Union[str, List[str]]) -> List[List[float]]:
+    async def embed(self, text: Union[str, List[str]], model_path: str = None) -> List[List[float]]:
         """Generate embeddings for the given text(s)."""
-        if not self.initialized or not self._model:
+        if not self.initialized:
             raise ProviderError(
                 message="Embedding provider is not initialized.",
                 context=ErrorContext.create(
@@ -186,6 +170,28 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                     retry_count=0
                 )
             )
+            
+        # Load model if not already loaded or if different model path provided
+        if not self._model or (model_path and model_path != self._model_path):
+            if model_path:
+                await self._load_model(model_path)
+            else:
+                raise ProviderError(
+                    message="No model loaded and no model path provided.",
+                    context=ErrorContext.create(
+                        flow_name="llama_cpp_embedding_provider",
+                        error_type="ConfigurationError",
+                        error_location="embed",
+                        component=self.name,
+                        operation="model_loading"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="embedding",
+                        operation="model_loading",
+                        retry_count=0
+                    )
+                )
             
         async with self._lock:
             try:

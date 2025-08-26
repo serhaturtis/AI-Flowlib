@@ -2,7 +2,7 @@
 Agent configuration management component.
 
 This module handles agent configuration preparation, validation,
-and management operations that were previously in AgentCore.
+and management operations that were previously in BaseAgent.
 """
 
 import logging

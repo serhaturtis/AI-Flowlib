@@ -17,7 +17,7 @@ from flowlib.agent.runners.remote.models import AgentTaskMessage, AgentResultMes
 from flowlib.agent.runners.remote.config_models import WorkerServiceConfig, RemoteConfig
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.models.state import AgentState
-from flowlib.agent.core.agent import AgentCore
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.providers.mq.base import MQProvider, MessageMetadata
 from flowlib.agent.components.persistence.base import BaseStatePersister
 
@@ -148,7 +148,7 @@ class TestAgentWorker:
     @pytest.fixture
     def mock_agent_core(self):
         """Create a mock agent core."""
-        agent = AsyncMock(spec=AgentCore)
+        agent = AsyncMock(spec=BaseAgent)
         agent.initialize = AsyncMock()
         agent.save_state = AsyncMock()
         agent._state_manager = Mock()
@@ -237,7 +237,7 @@ class TestAgentWorker:
         
         # Mock dependencies
         with patch('flowlib.agent.runners.remote.worker.load_base_agent_config') as mock_load_config, \
-             patch('flowlib.agent.runners.remote.worker.AgentCore') as mock_agent_class, \
+             patch('flowlib.agent.runners.remote.worker.BaseAgent') as mock_agent_class, \
              patch('flowlib.agent.runners.remote.worker.run_autonomous') as mock_run_autonomous:
             
             mock_load_config.return_value = AgentConfig(name="test_agent", persona="Test agent for testing", provider_name="test_provider")
@@ -286,7 +286,7 @@ class TestAgentWorker:
         mock_message.ack = AsyncMock()
         
         with patch('flowlib.agent.runners.remote.worker.load_base_agent_config') as mock_load_config, \
-             patch('flowlib.agent.runners.remote.worker.AgentCore') as mock_agent_class, \
+             patch('flowlib.agent.runners.remote.worker.BaseAgent') as mock_agent_class, \
              patch('flowlib.agent.runners.remote.worker.run_autonomous') as mock_run_autonomous:
             
             mock_load_config.return_value = AgentConfig(name="test_agent", persona="Test agent for testing", provider_name="test_provider")
@@ -363,7 +363,7 @@ class TestAgentWorker:
         mock_message.ack = AsyncMock()
         
         with patch('flowlib.agent.runners.remote.worker.load_base_agent_config') as mock_load_config, \
-             patch('flowlib.agent.runners.remote.worker.AgentCore') as mock_agent_class, \
+             patch('flowlib.agent.runners.remote.worker.BaseAgent') as mock_agent_class, \
              patch('flowlib.agent.runners.remote.worker.run_autonomous') as mock_run_autonomous:
             
             mock_load_config.return_value = AgentConfig(name="test_agent", persona="Test agent for testing", provider_name="test_provider")

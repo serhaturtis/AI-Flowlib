@@ -8,13 +8,15 @@ providing a lightweight interface aligned with flowlib patterns.
 import logging
 from abc import ABC
 from typing import Optional
+from .component_registry import ComponentRegistry
+
 
 class AgentComponent(ABC):
     """Base component for the agent system.
     
     Provides:
     1. Basic lifecycle management (initialize/shutdown)
-    2. Parent-child relationships
+    2. Registry access for inter-component communication
     """
     
     def __init__(self, name: str = None):
@@ -24,9 +26,38 @@ class AgentComponent(ABC):
             name: Component name
         """
         self._name = name or self.__class__.__name__.lower()
-        self._parent = None
         self._initialized = False
+        self._registry: Optional[ComponentRegistry] = None
         self._logger = logging.getLogger(f"{__name__}.{self._name}")
+    
+    def set_registry(self, registry: ComponentRegistry) -> None:
+        """Set the component registry for inter-component access.
+        
+        Args:
+            registry: The agent's component registry
+        """
+        self._registry = registry
+        # Update logger to include agent context
+        if registry:
+            self._logger = logging.getLogger(
+                f"{__name__}.{registry._agent_name}.{self._name}"
+            )
+    
+    def get_component(self, name: str) -> Optional[object]:
+        """Get another component from the registry.
+        
+        Args:
+            name: Component name
+            
+        Returns:
+            Component instance or None
+        """
+        if not self._registry:
+            self._logger.warning(
+                f"Component {self._name} has no registry access"
+            )
+            return None
+        return self._registry.get(name)
     
     @property
     def name(self) -> str:
@@ -37,20 +68,6 @@ class AgentComponent(ABC):
     def initialized(self) -> bool:
         """Check if component is initialized."""
         return self._initialized
-    
-    @property
-    def parent(self) -> Optional['BaseComponent']:
-        """Get parent component."""
-        return self._parent
-    
-    def set_parent(self, parent: 'BaseComponent') -> None:
-        """Set parent component.
-        
-        Args:
-            parent: Parent component
-        """
-        self._parent = parent
-        self._logger = logging.getLogger(f"{__name__}.{parent.name}.{self._name}")
     
     async def initialize(self) -> None:
         """Initialize the component."""

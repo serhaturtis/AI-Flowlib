@@ -37,6 +37,16 @@ class ConversationFlow:
         user_message = input_data.message
         context = input_data.memory_context_summary or "No previous context available."
         
+        # Format conversation history
+        conversation_history_text = "No previous conversation history."
+        if input_data.conversation_history:
+            history_lines = []
+            for msg in input_data.conversation_history:
+                role = msg.get('role', 'unknown') if isinstance(msg, dict) else getattr(msg, 'role', 'unknown')
+                content = msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')
+                history_lines.append(f"{role.title()}: {content}")
+            conversation_history_text = "\n".join(history_lines)
+        
         # Get LLM provider using config-driven approach
         llm = await provider_registry.get_by_config("default-llm")
         
@@ -47,13 +57,15 @@ class ConversationFlow:
         prompt_vars = {
             "persona": input_data.persona,
             "user_message": user_message,
-            "context": context
+            "context": context,
+            "conversation_history": conversation_history_text
         }
         
         # Generate response using config-driven approach
         result = await llm.generate_structured(
             prompt=prompt_instance,
             output_type=ConversationOutput,
+            model_name="default-model",
             prompt_variables=prompt_vars
         )
         

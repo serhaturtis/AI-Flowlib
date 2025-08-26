@@ -19,7 +19,7 @@ if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
 try:
-    from flowlib.agent.core.orchestrator import AgentOrchestrator
+    from flowlib.agent.core.base_agent import BaseAgent
     from flowlib.agent.models.config import AgentConfig
     from flowlib.agent.runners.interactive import run_interactive_session
 except ImportError as e:
@@ -52,8 +52,8 @@ class AgentCLI:
             print(f"Error loading agent config: {e}")
             return None
     
-    def create_agent_from_config(self, config: Dict[str, Any]) -> AgentOrchestrator:
-        """Create an AgentOrchestrator instance from configuration."""
+    def create_agent_from_config(self, config: Dict[str, Any]) -> BaseAgent:
+        """Create a BaseAgent instance from configuration."""
         # Build AgentConfig from the saved configuration
         # Validate required configuration fields
         if "persona" not in config or "name" not in config["persona"]:
@@ -69,7 +69,7 @@ class AgentCLI:
             max_iterations=config["mode"]["settings"]["max_turns"]
         )
         
-        return AgentOrchestrator(agent_config)
+        return BaseAgent(agent_config)
     
     def print_welcome(self, config: Dict[str, Any]):
         """Print welcome message for the agent."""

@@ -1,5 +1,5 @@
 """
-Tests for the AgentCore class.
+Tests for the BaseAgent class.
 
 This module tests the central agent orchestration system including
 initialization, configuration, component coordination, flow management,
@@ -13,7 +13,7 @@ from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from typing import Dict, Any, Optional, List
 
-from flowlib.agent.core.agent import AgentCore
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ConfigurationError, ExecutionError, StatePersistenceError, NotInitializedError
 from flowlib.agent.models.config import AgentConfig
@@ -320,8 +320,8 @@ class MockLearningFlow:
         return [{"id": "concept1", "name": "Learning", "type": "abstract"}]
 
 
-class TestAgentCore:
-    """Test the AgentCore class."""
+class TestBaseAgent:
+    """Test the BaseAgent class."""
     
     def setup_method(self):
         """Set up each test with fresh mocks."""
@@ -342,7 +342,7 @@ class TestAgentCore:
             "enable_memory": True
         }
         
-        agent = AgentCore(config=config, task_description="Test task")
+        agent = BaseAgent(config=config, task_description="Test task")
         
         assert agent.name == "test_agent"
         assert agent.persona == "Test assistant"
@@ -361,7 +361,7 @@ class TestAgentCore:
             enable_memory=False
         )
         
-        agent = AgentCore(config=config)
+        agent = BaseAgent(config=config)
         
         assert agent.name == "config_agent"
         assert agent.persona == "Config assistant"
@@ -375,7 +375,7 @@ class TestAgentCore:
             "provider_name": "llamacpp"
         }
         
-        agent = AgentCore(config=config_dict)
+        agent = BaseAgent(config=config_dict)
         
         assert agent.name == "dict_agent"
         assert agent.persona == "Dict assistant"
@@ -383,7 +383,7 @@ class TestAgentCore:
     
     def test_init_with_no_config(self):
         """Test agent initialization with no config (uses defaults)."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         assert agent.name == "default_agent"
         assert agent.persona == "Default helpful assistant"
@@ -392,18 +392,18 @@ class TestAgentCore:
     def test_init_with_invalid_config(self):
         """Test agent initialization with invalid config type."""
         with pytest.raises(ConfigurationError, match="Invalid config type"):
-            AgentCore(config="invalid_config")
+            BaseAgent(config="invalid_config")
     
     def test_init_with_state_persister(self):
         """Test agent initialization with state persister."""
         persister = MockStatePersister()
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         
         assert agent._state_manager._state_persister is persister
     
     def test_llm_provider_property(self):
         """Test LLM provider property getter/setter."""
-        agent = AgentCore()
+        agent = BaseAgent()
         mock_provider = Mock()
         
         assert agent.llm_provider is None
@@ -414,7 +414,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_initialize_impl_success(self):
         """Test successful agent initialization."""
-        agent = AgentCore(
+        agent = BaseAgent(
             config={"name": "test_agent", "persona": "Test assistant", "provider_name": "llamacpp"},
             task_description="Test task"
         )
@@ -447,7 +447,7 @@ class TestAgentCore:
         existing_state = AgentState(task_description="Existing task", task_id="test_task_123")
         await persister.save_state(existing_state)
         
-        agent = AgentCore(config=config, state_persister=persister)
+        agent = BaseAgent(config=config, state_persister=persister)
         
         with patch('flowlib.agent.core.orchestrator.ActivityStream', return_value=self.mock_activity_stream), \
              patch('flowlib.agent.core.orchestrator.KnowledgePluginManager', return_value=self.mock_knowledge_plugins), \
@@ -471,7 +471,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_initialize_impl_failure(self):
         """Test initialization failure handling."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         with patch('flowlib.agent.core.orchestrator.ActivityStream', side_effect=Exception("Stream failed")):
             with pytest.raises(ConfigurationError, match="Agent initialization failed"):
@@ -488,7 +488,7 @@ class TestAgentCore:
             "state_config": {"auto_save": True}
         }
         
-        agent = AgentCore(config)
+        agent = BaseAgent(config)
         agent._engine = self.mock_engine
         agent._reflection = self.mock_reflection
         agent._planner = self.mock_planner
@@ -545,7 +545,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_shutdown_impl_with_failures(self):
         """Test shutdown with component failures."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._engine = Mock()
         agent._engine.initialized = True
         agent._engine.shutdown = AsyncMock(side_effect=Exception("Shutdown failed"))
@@ -573,7 +573,7 @@ class TestAgentCore:
         persister = MockStatePersister()
         await persister.initialize()
         
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         agent._state_manager.current_state = AgentState(task_description="Test task")
         
         await agent.save_state()
@@ -586,7 +586,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_save_state_no_persister(self):
         """Test state saving without persister."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._state_manager.current_state = AgentState(task_description="Test")
         
         with pytest.raises(StatePersistenceError, match="No state persister configured"):
@@ -598,7 +598,7 @@ class TestAgentCore:
         persister = MockStatePersister()
         persister.save_state = AsyncMock(side_effect=Exception("Save failed"))
         
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         agent._state_manager.current_state = AgentState(task_description="Test")
         
         with pytest.raises(StatePersistenceError, match="Failed to save state"):
@@ -611,7 +611,7 @@ class TestAgentCore:
         existing_state = AgentState(task_description="Existing task")
         await persister.save_state(existing_state)
         
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         
         await agent.load_state(existing_state.task_id)
         
@@ -621,7 +621,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_load_state_no_persister(self):
         """Test state loading without persister."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         with pytest.raises(StatePersistenceError, match="No state persister configured"):
             await agent.load_state("test_task")
@@ -630,7 +630,7 @@ class TestAgentCore:
     async def test_load_state_not_found(self):
         """Test loading non-existent state."""
         persister = MockStatePersister()
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         
         with pytest.raises(StatePersistenceError, match="No state found for task missing_task"):
             await agent.load_state("missing_task")
@@ -642,7 +642,7 @@ class TestAgentCore:
         state = AgentState(task_description="Test")
         await persister.save_state(state)
         
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         agent._state_manager.current_state = state
         
         await agent.delete_state()
@@ -660,7 +660,7 @@ class TestAgentCore:
         await persister.save_state(state1)
         await persister.save_state(state2)
         
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         
         await agent.delete_state(state1.task_id)
         
@@ -677,7 +677,7 @@ class TestAgentCore:
         await persister.save_state(state1, {"type": "test"})
         await persister.save_state(state2, {"type": "production"})
         
-        agent = AgentCore(state_persister=persister)
+        agent = BaseAgent(state_persister=persister)
         
         # List all states
         all_states = await agent.list_states()
@@ -690,7 +690,7 @@ class TestAgentCore:
     
     def test_register_flow_success(self):
         """Test successful flow registration."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow = MockFlow("test_flow")
         
         with patch('flowlib.agent.core.flow_runner.flow_registry') as mock_registry:
@@ -702,7 +702,7 @@ class TestAgentCore:
     
     def test_register_flow_invalid(self):
         """Test registering invalid flow."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         # Register a string - should be skipped since it doesn't have a name attribute
         with patch('flowlib.agent.core.flow_runner.flow_registry'):
@@ -712,7 +712,7 @@ class TestAgentCore:
     
     def test_register_flow_no_registry(self):
         """Test flow registration without stage registry."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow = MockFlow("test_flow")
         
         with patch('flowlib.agent.core.flow_runner.flow_registry', None):
@@ -724,7 +724,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_register_flow_async(self):
         """Test async flow registration."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow = MockFlow("async_flow")
         
         with patch('flowlib.agent.core.flow_runner.flow_registry'):
@@ -734,7 +734,7 @@ class TestAgentCore:
     
     def test_unregister_flow_success(self):
         """Test successful flow unregistration."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow = MockFlow("test_flow")
         
         with patch('flowlib.agent.core.flow_runner.flow_registry') as mock_registry:
@@ -750,7 +750,7 @@ class TestAgentCore:
     
     def test_unregister_flow_not_found(self):
         """Test unregistering non-existent flow."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         # Should silently succeed - no error for missing flow
         agent.unregister_flow("missing")
@@ -758,7 +758,7 @@ class TestAgentCore:
     
     def test_get_flow_descriptions_success(self):
         """Test getting flow descriptions."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow = MockFlow("test_flow", "Test description")
         
         with patch('flowlib.agent.core.flow_runner.flow_registry'), \
@@ -781,7 +781,7 @@ class TestAgentCore:
     
     def test_get_flow_descriptions_no_registry(self):
         """Test getting flow descriptions without registry."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow = MockFlow("test_flow", "Test description")
         
         with patch('flowlib.agent.core.flow_runner.flow_registry', None):
@@ -796,7 +796,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_store_memory_success(self):
         """Test successful memory storage."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._memory_manager = Mock()
         agent._memory_manager._memory = self.mock_memory
         agent._memory_manager._memory.initialized = True
@@ -815,7 +815,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_store_memory_not_initialized(self):
         """Test memory storage when not initialized."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         with pytest.raises(NotInitializedError):
             await agent.store_memory("key", "value")
@@ -823,7 +823,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_retrieve_memory_success(self):
         """Test successful memory retrieval."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._memory_manager = Mock()
         agent._memory_manager._memory = self.mock_memory
         agent._memory_manager._memory.initialized = True
@@ -843,7 +843,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_search_memory_success(self):
         """Test successful memory search."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._memory_manager = Mock()
         agent._memory_manager._memory = self.mock_memory
         agent._memory_manager._memory.initialized = True
@@ -867,7 +867,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_execute_flow_success(self):
         """Test successful flow execution."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._initialized = True
         agent._state_manager.current_state = AgentState(task_description="Test")
         
@@ -900,7 +900,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_execute_flow_not_initialized(self):
         """Test flow execution when not initialized."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         with pytest.raises(NotInitializedError):
             await agent.execute_flow("test_flow", MockFlowInput())
@@ -908,7 +908,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_execute_flow_not_found(self):
         """Test executing non-existent flow."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._initialized = True
         
         # Set up the flow runner with proper initialization
@@ -922,7 +922,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_execute_flow_invalid_input(self):
         """Test flow execution with invalid input type."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._initialized = True
         agent._state_manager.current_state = AgentState(task_description="Test")
         
@@ -941,7 +941,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_execute_cycle_success(self):
         """Test successful cycle execution."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._engine = self.mock_engine
         agent._initialized = True
         agent._state_manager.current_state = AgentState(task_description="Test")
@@ -968,7 +968,7 @@ class TestAgentCore:
             "state_config": {"auto_save": True, "save_frequency": "cycle"}
         }
         
-        agent = AgentCore(config)
+        agent = BaseAgent(config)
         agent._engine = self.mock_engine
         agent._initialized = True
         agent._state_manager.current_state = AgentState(task_description="Test")
@@ -994,7 +994,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_learn_success(self):
         """Test successful learning execution."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._learning_manager = self.mock_learning_flow
         agent._initialized = True
         
@@ -1005,7 +1005,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_learn_not_initialized(self):
         """Test learning when not initialized."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         with pytest.raises(NotInitializedError):
             await agent.learn("content")
@@ -1013,7 +1013,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_learn_no_capability(self):
         """Test learning without learning capability."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._initialized = True
         
         with pytest.raises(NotInitializedError, match="Component 'learning_manager' must be initialized"):
@@ -1022,7 +1022,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_extract_entities_success(self):
         """Test successful entity extraction."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._learning_manager = self.mock_learning_flow
         agent._initialized = True
         
@@ -1033,7 +1033,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_learn_relationships_success(self):
         """Test successful relationship learning."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._learning_manager = self.mock_learning_flow
         agent._initialized = True
         
@@ -1044,7 +1044,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_integrate_knowledge_success(self):
         """Test successful knowledge integration."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._learning_manager = self.mock_learning_flow
         agent._initialized = True
         
@@ -1055,7 +1055,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_form_concepts_success(self):
         """Test successful concept formation."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._learning_manager = self.mock_learning_flow
         agent._initialized = True
         
@@ -1065,7 +1065,7 @@ class TestAgentCore:
     
     def test_set_activity_stream_handler(self):
         """Test setting activity stream handler."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         handler = Mock()
         agent.set_activity_stream_handler(handler)
@@ -1075,7 +1075,7 @@ class TestAgentCore:
     
     def test_get_activity_stream(self):
         """Test getting activity stream."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._activity_stream = self.mock_activity_stream
         
         stream = agent.get_activity_stream()
@@ -1092,7 +1092,7 @@ class TestAgentCore:
             "enable_memory": True
         }
         
-        agent = AgentCore(config)
+        agent = BaseAgent(config)
         agent._engine = self.mock_engine
         agent._memory_manager = Mock()
         agent._memory_manager.store_memory = AsyncMock()
@@ -1119,7 +1119,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_process_message_not_initialized(self):
         """Test message processing when not initialized."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         with pytest.raises(NotInitializedError):
             await agent.process_message("Hello")
@@ -1127,7 +1127,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_list_available_flows(self):
         """Test listing available flows."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow1 = MockFlow("flow1", "First flow")
         flow2 = MockFlow("flow2", "Second flow")
         
@@ -1144,7 +1144,7 @@ class TestAgentCore:
     
     def test_get_tools(self):
         """Test getting available tools."""
-        agent = AgentCore()
+        agent = BaseAgent()
         flow = MockFlow("test_flow")
         
         with patch('flowlib.agent.core.flow_runner.flow_registry'):
@@ -1158,7 +1158,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_get_memory_stats_success(self):
         """Test getting memory statistics."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._memory_manager = Mock()
         agent._memory_manager._memory = self.mock_memory
         agent._memory_manager._memory.initialized = True
@@ -1178,7 +1178,7 @@ class TestAgentCore:
     @pytest.mark.asyncio
     async def test_get_memory_stats_no_memory(self):
         """Test getting memory stats without memory."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._initialized = True
         
         # Create a memory manager with no memory component
@@ -1193,7 +1193,7 @@ class TestAgentCore:
     
     def test_get_stats_success(self):
         """Test getting comprehensive agent statistics."""
-        agent = AgentCore()
+        agent = BaseAgent()
         agent._initialized = True
         agent._state_manager.current_state = AgentState(task_description="Test task")
         agent._memory_manager = Mock()
@@ -1215,7 +1215,7 @@ class TestAgentCore:
     
     def test_get_uptime(self):
         """Test getting agent uptime."""
-        agent = AgentCore()
+        agent = BaseAgent()
         
         uptime = agent.get_uptime()
         assert uptime > 0  # Should have some uptime since creation
@@ -1233,7 +1233,7 @@ async def test_integration_complete_agent_lifecycle():
     )
     
     persister = MockStatePersister()
-    agent = AgentCore(config=config, task_description="Integration test", state_persister=persister)
+    agent = BaseAgent(config=config, task_description="Integration test", state_persister=persister)
     
     # Mock all dependencies for initialization
     mock_memory = MockMemory()

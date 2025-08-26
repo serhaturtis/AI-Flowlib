@@ -510,7 +510,7 @@ class ChromaDBProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-            
+
     async def insert_vectors(self, index_name: str, vectors: List[List[float]], metadata: Optional[List[Dict[str, Any]]] = None, ids: Optional[List[str]] = None) -> bool:
         """Insert multiple vectors with metadata.
         

@@ -32,7 +32,7 @@ from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.mq.base import MQProvider, MessageMetadata
 from flowlib.agent.components.persistence.base import BaseStatePersister
 from .models import AgentTaskMessage, AgentResultMessage
-from flowlib.agent.core.agent import AgentCore
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.models.state import AgentState
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.runners.autonomous import run_autonomous # Reusing autonomous runner logic
@@ -160,7 +160,7 @@ class AgentWorker:
         """Handles an incoming task message from the queue."""
         logger.info(f"Received raw message. Attempting to decode Task.")
         task_msg: Optional[AgentTaskMessage] = None
-        agent: Optional[AgentCore] = None
+        agent: Optional[BaseAgent] = None
         status = "FAILURE"
         result_data = None
         error_message = None
@@ -225,11 +225,11 @@ class AgentWorker:
             if error_message:
                 raise Exception(error_message)
                 
-            # 3. Initialize AgentCore
+            # 3. Initialize BaseAgent
             if not agent_state or not agent_config:
                  raise RuntimeError(f"Failed to establish valid agent state/config for task '{task_msg.task_id}'")
                  
-            agent = AgentCore(config=agent_config, initial_state=agent_state, state_persister=self._state_persister)
+            agent = BaseAgent(config=agent_config, initial_state=agent_state, state_persister=self._state_persister)
             await agent.initialize()
             logger.info(f"Agent initialized for task '{task_msg.task_id}'.")
 

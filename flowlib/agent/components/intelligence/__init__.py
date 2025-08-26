@@ -19,6 +19,9 @@ from .knowledge import (
     ContentAnalysis, LearningResult
 )
 
+# Import prompts to ensure they are registered
+from . import prompts
+
 # Simple API exports
 __all__ = [
     # Core components

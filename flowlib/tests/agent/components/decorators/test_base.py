@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any, List, Optional, Union
 
 from flowlib.agent.components.decorators.base import agent, agent_flow, dual_path_agent
-from flowlib.agent.core.agent import AgentCore
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.models.config import AgentConfig
 from flowlib.flows.base.base import Flow
 from flowlib.core.context.context import Context
@@ -91,8 +91,8 @@ class TestAgentDecorator:
         # Test creating an instance
         agent_instance = TestAgent.create()
         
-        # Verify it's an AgentCore instance
-        assert isinstance(agent_instance, AgentCore)
+        # Verify it's an BaseAgent instance
+        assert isinstance(agent_instance, BaseAgent)
         assert agent_instance.config.name == "test_agent"
         assert agent_instance.config.provider_name == "llamacpp"
     
@@ -240,9 +240,9 @@ class TestAgentDecorator:
             pass
         
         agent_instance = TaskAgent.create(task_description="Test task description")
-        # Task description should be passed to AgentCore
-        # This would be tested via the AgentCore's handling of task_description
-        assert isinstance(agent_instance, AgentCore)
+        # Task description should be passed to BaseAgent
+        # This would be tested via the BaseAgent's handling of task_description
+        assert isinstance(agent_instance, BaseAgent)
 
 
 class TestAgentFlowDecorator:

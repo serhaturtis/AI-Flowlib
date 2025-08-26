@@ -16,11 +16,14 @@ class ConversationPrompt(ResourceBase):
     
     template: ClassVar[str] = """{{persona}}
 
+Conversation History:
+{{conversation_history}}
+
 User message: {{user_message}}
 
 Context: {{context}}
 
-Give response to user's input with this persona.
+Give response to user's input with this persona. Use the conversation history to provide context-aware responses and remember what has been discussed previously.
 
 You must respond with a JSON object in the following format:
 {

@@ -24,16 +24,14 @@ class ExampleLlamaCppEmbeddingProviderConfig(EmbeddingConfigResource):
             type=type,
             provider_type="llamacpp_embedding",
             settings={
-                # Provider-level settings (LlamaCppEmbeddingProviderSettings) - Infrastructure only
-                "n_threads": None,               # Number of threads (None = auto-detect)
-                "n_batch": 512,                  # Default batch size for embedding processing
-                "use_gpu": True,                 # Whether to enable GPU acceleration
-                "n_gpu_layers": -1,              # Default GPU layers to offload (-1 = all)
-                "verbose": False,                # Enable verbose logging from LlamaCpp
-                "use_mlock": False,              # Use mlock to keep model in memory
-                
-                # Embedding provider settings
-                "normalize": True,               # Whether to normalize embedding vectors by default
-                "batch_size": 32,                # Batch size for embedding processing
+                "n_ctx": 512,
+                "n_threads": None,
+                "n_batch": 512,
+                "use_gpu": True,
+                "n_gpu_layers": -1,
+                "verbose": False,
+                "use_mlock": False,
+                "normalize": True,
+                "batch_size": 32,
             }
         )

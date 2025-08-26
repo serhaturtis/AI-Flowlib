@@ -27,7 +27,7 @@ class StrictBaseModel(BaseModel):
         frozen=True,              # Immutable by default - explicit mutability required
         # Additional strict settings
         validate_default=True,    # Validate even default values
-        use_enum_values=True,     # Use enum values not names
+        use_enum_values=False,    # Preserve enum objects for their methods
         arbitrary_types_allowed=False,  # Only standard types by default
     )
 
@@ -45,7 +45,7 @@ class MutableStrictBaseModel(BaseModel):
         validate_assignment=True,
         frozen=False,             # Allow mutations when explicitly needed
         validate_default=True,
-        use_enum_values=True,
+        use_enum_values=False,    # Preserve enum objects for their methods
         arbitrary_types_allowed=False,
     )
 

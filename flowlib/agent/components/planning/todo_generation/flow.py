@@ -49,6 +49,7 @@ class TodoGenerationFlow:
         result = await llm.generate_structured(
             prompt=prompt_instance,
             output_type=TodoGenerationOutput,
+            model_name="default-model",
             prompt_variables=prompt_vars
         )
         

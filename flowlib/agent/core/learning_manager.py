@@ -2,7 +2,7 @@
 Agent learning management component.
 
 This module handles agent learning and intelligence operations
-that were previously in AgentCore.
+that were previously in BaseAgent.
 """
 
 import logging
@@ -13,6 +13,7 @@ from flowlib.agent.core.errors import NotInitializedError
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.components.intelligence.knowledge import LearningResult, Entity, Relationship
 from flowlib.agent.components.intelligence.learning import IntelligentLearningFlow
+from flowlib.agent.components.intelligence.models import LearningWorthinessEvaluation
 
 logger = logging.getLogger(__name__)
 
@@ -27,20 +28,13 @@ class AgentLearningManager(AgentComponent):
     - Learning from conversations
     """
     
-    def __init__(self, 
-                 activity_stream=None,
-                 memory_manager=None,
-                 name: str = "learning_manager"):
+    def __init__(self, name: str = "learning_manager"):
         """Initialize the learning manager.
         
         Args:
-            activity_stream: Activity stream for logging
-            memory_manager: Memory manager for storing learned knowledge
             name: Component name
         """
         super().__init__(name)
-        self._activity_stream = activity_stream
-        self._memory_manager = memory_manager
         self._learning_flow: Optional[IntelligentLearningFlow] = None
     
     async def _initialize_impl(self) -> None:
@@ -52,6 +46,68 @@ class AgentLearningManager(AgentComponent):
         if self._learning_flow:
             await self._learning_flow.shutdown()
         logger.info("Learning manager shutdown")
+    
+    async def evaluate_learning_worthiness(self, 
+                                         content: str, 
+                                         context: Optional[str] = None) -> LearningWorthinessEvaluation:
+        """Evaluate if content is worth learning from.
+        
+        Args:
+            content: Content to evaluate
+            context: Optional context for evaluation
+            
+        Returns:
+            Learning worthiness evaluation result
+        """
+        from flowlib.resources.registry.registry import resource_registry
+        
+        try:
+            # Get the learning worthiness prompt resource
+            prompt_resource = resource_registry.get("learning-worthiness-evaluation")
+            if not prompt_resource:
+                logger.warning("Learning worthiness prompt not found, defaulting to worth learning")
+                return LearningWorthinessEvaluation(
+                    worth_learning=True,
+                    reasoning="Prompt resource not available, defaulting to learning",
+                    confidence=0.5
+                )
+            
+            # Get LLM provider using config-driven approach (same as learning flow)
+            from flowlib.providers.core.registry import provider_registry
+            
+            llm = await provider_registry.get_by_config("default-llm")
+            if not llm:
+                logger.warning("No LLM provider available for learning worthiness evaluation")
+                return LearningWorthinessEvaluation(
+                    worth_learning=True,
+                    reasoning="No LLM provider available, defaulting to learning",
+                    confidence=0.5
+                )
+            
+            # Prepare prompt variables
+            prompt_vars = {
+                "content": content
+            }
+            if context:
+                prompt_vars["context"] = context
+            
+            # Generate evaluation using structured generation (same as learning flow)
+            result = await llm.generate_structured(
+                prompt=prompt_resource,
+                output_type=LearningWorthinessEvaluation,
+                model_name="default-model",
+                prompt_variables=prompt_vars
+            )
+            
+            return result
+                
+        except Exception as e:
+            logger.error(f"Error evaluating learning worthiness: {e}")
+            return LearningWorthinessEvaluation(
+                worth_learning=True,
+                reasoning=f"Evaluation error: {str(e)}, defaulting to learning",
+                confidence=0.1
+            )
     
     async def initialize_learning_capability(self, config: AgentConfig) -> None:
         """Initialize learning capability from configuration.
@@ -65,11 +121,10 @@ class AgentLearningManager(AgentComponent):
         
         try:
             # Initialize the intelligent learning flow
-            self._learning_flow = IntelligentLearningFlow(
-                activity_stream=self._activity_stream
-            )
-            self._learning_flow.set_parent(self)
-            await self._learning_flow.initialize()
+            self._learning_flow = IntelligentLearningFlow()
+            # Learning flow no longer uses parent relationships
+            if hasattr(self._learning_flow, 'initialize'):
+                await self._learning_flow.initialize()
             
             logger.info("Learning capability initialized successfully")
         except Exception as e:
@@ -99,18 +154,30 @@ class AgentLearningManager(AgentComponent):
             )
         
         try:
-            # Use the intelligent learning flow
-            learning_input = {
-                "content": content,
-                "context": context or "general",
-                "focus_areas": focus_areas or []
-            }
+            # First evaluate if the content is worth learning from
+            worthiness = await self.evaluate_learning_worthiness(content, context)
+            
+            if not worthiness.worth_learning:
+                logger.info(f"Skipping learning - not worth it: {worthiness.reasoning}")
+                return None
+            
+            logger.debug(f"Content worth learning (confidence: {worthiness.confidence}): {worthiness.reasoning}")
+            
+            # Use the intelligent learning flow  
+            from flowlib.agent.components.intelligence.learning import LearningInput
+            
+            learning_input = LearningInput(
+                content=content,
+                context=context or "general", 
+                focus_areas=focus_areas or []
+            )
             
             result = await self._learning_flow.run_pipeline(learning_input)
             
             # Store learned knowledge in memory if available
-            if self._memory_manager and result:
-                await self._store_learning_result(content, result, context)
+            memory_manager = self.get_component("memory_manager")
+            if memory_manager and result:
+                await self._store_learning_result(content, result, context, memory_manager)
             
             return result
         except Exception as e:
@@ -263,15 +330,17 @@ class AgentLearningManager(AgentComponent):
     async def _store_learning_result(self, 
                                    content: str, 
                                    result: Any, 
-                                   context: Optional[str]) -> None:
+                                   context: Optional[str],
+                                   memory_manager: Any) -> None:
         """Store learning result in memory.
         
         Args:
             content: Original content that was learned from
             result: Learning result to store
             context: Context of the learning
+            memory_manager: Memory manager component
         """
-        if not self._memory_manager:
+        if not memory_manager:
             return
         
         try:
@@ -286,7 +355,7 @@ class AgentLearningManager(AgentComponent):
                 ))) if logger.handlers else None
             }
             
-            await self._memory_manager.store_memory(
+            await memory_manager.store_memory(
                 key=learning_key,
                 value=learning_data,
                 context="learning",

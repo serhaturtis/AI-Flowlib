@@ -27,7 +27,7 @@ from flowlib.agent.models.config import (
     EngineConfig, 
     MemoryConfig
 )
-from flowlib.agent.core.agent import Agent as AgentCore
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.persistence.factory import create_state_persister
 
 # Import flow components
@@ -151,7 +151,7 @@ async def prompt_for_conversation() -> Optional[str]:
             print("Please enter a number.")
 
 # ===================== Main Agent Setup =====================
-async def setup_agent(task_id: Optional[str] = None) -> AgentCore:
+async def setup_agent(task_id: Optional[str] = None) -> BaseAgent:
     """Set up and configure the agent.
     
     Args:
@@ -214,7 +214,7 @@ async def setup_agent(task_id: Optional[str] = None) -> AgentCore:
     
     # Create the agent
     task_description = "Provide helpful responses to user questions and engage in conversation"
-    agent = AgentCore(
+    agent = BaseAgent(
         config=config,
         task_description=task_description
     )
@@ -234,7 +234,7 @@ async def setup_agent(task_id: Optional[str] = None) -> AgentCore:
     return agent
 
 # ===================== Main Conversation Loop =====================
-async def run_conversation(agent: AgentCore):
+async def run_conversation(agent: BaseAgent):
     """Run the conversation loop with the agent.
     
     Args:

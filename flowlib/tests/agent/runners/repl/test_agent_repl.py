@@ -17,7 +17,7 @@ from flowlib.agent.runners.repl.commands import CommandRegistry, CommandType, Co
 from flowlib.agent.runners.repl.handlers import DefaultCommandHandler, AgentCommandHandler
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.models.state import AgentState
-from flowlib.agent.core.agent import AgentCore
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.runners.repl.agent_repl import start_agent_repl
 
 

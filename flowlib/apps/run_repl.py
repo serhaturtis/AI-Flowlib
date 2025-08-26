@@ -4,6 +4,10 @@
 import asyncio
 import sys
 import os
+import subprocess
+import time
+import signal
+import atexit
 
 # Add the project to the Python path (accounting for apps/ directory)
 apps_dir = os.path.dirname(os.path.abspath(__file__))
@@ -12,7 +16,7 @@ project_root = os.path.dirname(flowlib_root)  # Go up to AI-Flowlib/
 sys.path.insert(0, project_root)
 
 from flowlib.agent.runners.repl import start_agent_repl
-from flowlib.agent.core import Agent
+from flowlib.agent.core import BaseAgent
 from flowlib.agent.models.config import AgentConfig
 from flowlib.resources.models.base import ResourceBase
 from flowlib.resources.decorators.decorators import model_config, embedding_config
@@ -22,6 +26,206 @@ from flowlib.resources.registry.registry import resource_registry
 from flowlib.providers import provider_registry
 # Providers are now loaded via auto-discovery from ~/.flowlib/configs/
 import logging
+import urllib.request
+
+# Import flows to ensure they get registered with the flow system
+from flowlib.agent.components.conversation import ConversationFlow
+from flowlib.agent.components.shell_command import ShellCommandFlow  
+from flowlib.agent.components.classification import MessageClassifierFlow
+
+logger = logging.getLogger(__name__)
+
+
+def check_port(port: int) -> bool:
+    """Check if a port is available."""
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex(('localhost', port))
+    sock.close()
+    return result != 0  # True if port is free
+
+
+def manage_docker_services(action: str = "start", reset: bool = False) -> bool:
+    """Manage Docker services required for REPL.
+    
+    Args:
+        action: Either 'start', 'stop', or 'reset'
+        reset: If True with 'start', removes volumes first (fresh start)
+        
+    Returns:
+        True if action succeeded, False otherwise
+    """
+    docker_compose_file = os.path.join(project_root, "docker-compose.repl.yml")
+    
+    if not os.path.exists(docker_compose_file):
+        logger.warning(f"Docker compose file not found: {docker_compose_file}")
+        return False
+        
+    try:
+        if action == "start":
+            # If reset requested, clean up first
+            if reset:
+                print("Resetting services (removing old data)...")
+                subprocess.run(
+                    ["docker", "compose", "-f", docker_compose_file, "down", "-v"],
+                    capture_output=True,
+                    text=True
+                )
+            
+            # Check if ports are already in use (services might be running already)
+            neo4j_running = not check_port(7687)
+            chroma_running = not check_port(8000)
+            
+            if neo4j_running and chroma_running:
+                print("Services appear to be already running.")
+                return True
+            elif neo4j_running or chroma_running:
+                print("Warning: Some services are already running on required ports:")
+                if neo4j_running:
+                    print("  - Neo4j is using port 7687")
+                if chroma_running:
+                    print("  - ChromaDB is using port 8000")
+                print("Please stop these services manually or use different ports.")
+                return False
+            
+            print("Starting required services (Neo4j, ChromaDB)...")
+            # Try docker compose (new style) first, then docker-compose (old style)
+            start_success = False
+            try:
+                result = subprocess.run(
+                    ["docker", "compose", "-f", docker_compose_file, "up", "-d"],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0:
+                    start_success = True
+                else:
+                    logger.debug(f"docker compose failed: {result.stderr}")
+            except FileNotFoundError:
+                logger.debug("docker compose command not found, trying docker-compose")
+            
+            if not start_success:
+                try:
+                    result = subprocess.run(
+                        ["docker-compose", "-f", docker_compose_file, "up", "-d"],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        start_success = True
+                    else:
+                        logger.error(f"docker-compose failed: {result.stderr}")
+                        return False
+                except FileNotFoundError:
+                    logger.error("Neither 'docker compose' nor 'docker-compose' commands found")
+                    return False
+            
+            if not start_success:
+                return False
+            
+            # Wait for services to be ready
+            print("Waiting for services to be ready...")
+            max_retries = 60  # Increased to 2 minutes
+            
+            # Check Neo4j (needs more time to initialize)
+            print("  Waiting for Neo4j...")
+            for i in range(max_retries):
+                try:
+                    # Check both HTTP and Bolt ports
+                    urllib.request.urlopen("http://localhost:7474", timeout=1)
+                    # Also verify Bolt protocol is ready
+                    import socket
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    result = sock.connect_ex(('localhost', 7687))
+                    sock.close()
+                    if result == 0:
+                        print("  ✓ Neo4j is ready")
+                        # Give Neo4j a bit more time to fully initialize
+                        time.sleep(3)
+                        break
+                except:
+                    pass
+                
+                if i == max_retries - 1:
+                    print("  ⚠ Neo4j failed to start")
+                    return False
+                time.sleep(2)
+            
+            # Check ChromaDB (may take longer to initialize)
+            print("  Waiting for ChromaDB...")
+            for i in range(60):  # Give ChromaDB more time
+                try:
+                    # Use v2 API for health check
+                    response = urllib.request.urlopen("http://localhost:8000/api/v2/version", timeout=2)
+                    if response.getcode() == 200:
+                        print("  ✓ ChromaDB is ready")
+                        break
+                except:
+                    pass
+                
+                if i == 59:
+                    # Check if container is at least running
+                    result = subprocess.run(
+                        ["docker", "ps", "-q", "-f", "name=flowlib-chroma"],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.stdout.strip():
+                        print("  ⚠ ChromaDB container is running but API not responding")
+                        print("    Continuing anyway - it may still be initializing")
+                        break
+                    else:
+                        print("  ⚠ ChromaDB container failed to start")
+                        return False
+                time.sleep(2)
+                    
+            print("All services are ready!\n")
+            return True
+            
+        elif action == "stop":
+            print("\nStopping services...")
+            # Try docker compose (new style) first, then docker-compose (old style)
+            stop_success = False
+            try:
+                result = subprocess.run(
+                    ["docker", "compose", "-f", docker_compose_file, "down"],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0:
+                    stop_success = True
+            except FileNotFoundError:
+                pass
+            
+            if not stop_success:
+                try:
+                    result = subprocess.run(
+                        ["docker-compose", "-f", docker_compose_file, "down"],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        stop_success = True
+                except FileNotFoundError:
+                    pass
+            
+            if stop_success:
+                print("Services stopped.")
+            else:
+                logger.warning("Failed to stop services")
+                
+            return stop_success
+            
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Docker command failed: {e}")
+        if e.stderr:
+            logger.error(f"Error output: {e.stderr}")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to {action} services: {e}")
+        return False
+
 
 # Configure flowlib logging to reduce noise in REPL
 def configure_flowlib_logging(quiet_mode: bool = True):
@@ -217,7 +421,7 @@ You communicate clearly and provide structured, helpful responses."""
                 "password": "pleaseChangeThisPassword"
             }
         ),
-        fusion_provider_name="llamacpp",
+        fusion_provider_name="default-llm",
         fusion_model_name="agent-model-small",
         store_execution_history=True
     )
@@ -225,7 +429,7 @@ You communicate clearly and provide structured, helpful responses."""
     # Create agent configuration
     config = AgentConfig(
         name="FlowlibAgent",
-        provider_name="llamacpp",
+        provider_name="default-llm",
         persona=agent_persona,
         task_description="Interactive REPL development assistant",
         planner_config=planner_config,
@@ -234,16 +438,10 @@ You communicate clearly and provide structured, helpful responses."""
         state_config=state_config
     )
     
-    agent = Agent(config=config, task_description="Interactive REPL development assistant")
-    
-    # Initialize agent
-    await agent.initialize()
-    
-    # Example TODOs disabled - users can create their own with '/todo add' or '#todo'
-    
-    # Start REPL
+    # Start REPL with queue-based agent
     await start_agent_repl(
-        agent=agent,
+        agent_id="repl_agent",
+        config=config,
         history_file=".flowlib_repl_history.txt"
     )
 
@@ -323,9 +521,34 @@ Note: Configure your models and providers in ~/.flowlib directory.
         # Default quiet mode
         configure_flowlib_logging(quiet_mode=True)
     
-    if args.simple:
-        # Simple mode - just start the REPL with defaults
-        asyncio.run(start_agent_repl(history_file=args.history))
-    else:
-        # Full mode with custom configuration
-        asyncio.run(main(persona=args.persona))
+    # Start Docker services (with automatic reset on first run if needed)
+    if not manage_docker_services("start"):
+        print("Initial start failed, attempting fresh start with clean volumes...")
+        if not manage_docker_services("start", reset=True):
+            print("Warning: Failed to start services even after reset.")
+            print("You may need to check Docker installation or ports.")
+    
+    # Register cleanup handler
+    def cleanup():
+        manage_docker_services("stop")
+    
+    atexit.register(cleanup)
+    
+    # Handle Ctrl+C gracefully
+    def signal_handler(sig, frame):
+        print("\nReceived interrupt signal, shutting down...")
+        cleanup()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    try:
+        if args.simple:
+            # Simple mode - just start the REPL with defaults
+            asyncio.run(start_agent_repl(history_file=args.history))
+        else:
+            # Full mode with custom configuration
+            asyncio.run(main(persona=args.persona))
+    finally:
+        # Ensure cleanup happens even on exceptions
+        cleanup()

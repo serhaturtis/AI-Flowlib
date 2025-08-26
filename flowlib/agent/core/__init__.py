@@ -1,7 +1,6 @@
 """Agent core components."""
 
-from flowlib.agent.core.agent import AgentCore
-from flowlib.agent.core.orchestrator import AgentOrchestrator
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.core.config_manager import AgentConfigManager
 from flowlib.agent.core.state_manager import AgentStateManager
 from flowlib.agent.core.memory_manager import AgentMemoryManager
@@ -18,13 +17,8 @@ from flowlib.agent.core.errors import (
 )
 from flowlib.agent.core.interfaces import ComponentInterface
 
-# Single source of truth - no backwards compatibility
-Agent = AgentCore
-
 __all__ = [
-    "Agent",
-    "AgentCore",
-    "AgentOrchestrator",
+    "BaseAgent",
     "AgentConfigManager",
     "AgentStateManager", 
     "AgentMemoryManager",

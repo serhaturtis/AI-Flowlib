@@ -56,6 +56,10 @@ class VectorMemoryConfig(StrictBaseModel):
         ge=1,
         description="Maximum results to return from vector search"
     )
+    distance_metric: str = Field(
+        default="cosine",
+        description="Vector similarity metric (cosine, euclidean, dot_product)"
+    )
 
 
 class VectorMemory(MemoryInterface):
@@ -139,23 +143,31 @@ class VectorMemory(MemoryInterface):
         logger.info("VectorMemory shutdown completed")
     
     async def _ensure_collection(self) -> None:
-        """Ensure the vector collection exists."""
+        """Ensure the vector collection exists using standard interface methods."""
         try:
-            # Check if collection exists
-            collections = await self._vector_provider.list_collections()
-            if self._config.collection_name not in collections:
-                # Create collection
-                await self._vector_provider.create_collection(
-                    name=self._config.collection_name,
-                    dimension=self._config.embedding_dimensions
+            # Use the standard index_exists method from base interface
+            collection_exists = await self._vector_provider.index_exists(self._config.collection_name)
+            
+            if not collection_exists:
+                # Use the standard create_index method from base interface
+                created = await self._vector_provider.create_index(
+                    index_name=self._config.collection_name,
+                    vector_dimension=self._config.embedding_dimensions,
+                    metric=self._config.distance_metric
                 )
-                logger.info(f"Created vector collection: {self._config.collection_name}")
+                if created:
+                    logger.info(f"Created vector index: {self._config.collection_name}")
+                else:
+                    logger.warning(f"Failed to create vector index: {self._config.collection_name}")
             else:
-                logger.debug(f"Vector collection exists: {self._config.collection_name}")
+                logger.debug(f"Vector index exists: {self._config.collection_name}")
                 
+        except AttributeError as e:
+            # Provider doesn't have these methods - continue without them
+            logger.debug(f"Provider doesn't support index management: {e}")
         except Exception as e:
-            logger.warning(f"Could not ensure collection exists: {e}")
-            # Continue anyway - collection might be created on first insert
+            logger.warning(f"Could not ensure index exists: {e}")
+            # Continue anyway - index might be created on first insert
     
     async def create_context(self, context_name: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Create a memory context."""

@@ -9,15 +9,56 @@ import asyncio
 import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from pydantic import Field
 
-from flowlib.core.decorators.decorators import flow, inject
+from flowlib.core.decorators.decorators import flow
+from flowlib.flows.decorators.decorators import pipeline
 from flowlib.core.interfaces.interfaces import LLMProvider
+from flowlib.core.models import StrictBaseModel
+from flowlib.providers.core.registry import provider_registry
+from flowlib.resources.registry.registry import resource_registry
 from .knowledge import (
     Entity, Concept, Relationship, Pattern, KnowledgeSet,
     ContentAnalysis, LearningResult
 )
 
+
+class LearningContentAnalysisOutput(StrictBaseModel):
+    """Structured output for learning-specific content analysis."""
+    content_type: str = Field(description="Type of content: technical, narrative, structured, conversational")
+    key_topics: List[str] = Field(description="Main topics identified in the content")
+    complexity_level: str = Field(description="Complexity level: simple, medium, complex")
+    language: str = Field(default="en", description="Language of the content")
+    length_category: str = Field(description="Length category: short, medium, long")
+    structure_type: str = Field(description="Structure type: structured, semi-structured, unstructured")
+    suggested_focus: List[str] = Field(description="Suggested areas to focus extraction on")
+    confidence: float = Field(description="Confidence score for the analysis")
+
+
+class LearningKnowledgeExtractionOutput(StrictBaseModel):
+    """Structured output for learning-specific knowledge extraction."""
+    entities: List[Dict[str, Any]] = Field(description="Extracted entities with name, type, description, confidence")
+    concepts: List[Dict[str, Any]] = Field(description="Extracted concepts with name, definition, category, confidence")  
+    relationships: List[Dict[str, Any]] = Field(description="Extracted relationships with source, target, type, description, confidence")
+    patterns: List[Dict[str, Any]] = Field(description="Extracted patterns with name, description, frequency, confidence")
+
 logger = logging.getLogger(__name__)
+
+
+class LearningInput(StrictBaseModel):
+    """Input model for intelligent learning flow."""
+    content: str = Field(..., min_length=1, description="Text content to learn from")
+    focus_areas: Optional[List[str]] = Field(default=None, description="Optional areas to focus extraction on")
+    context: Optional[str] = Field(default=None, description="Optional context to guide extraction")
+
+
+class LearningOutput(StrictBaseModel):
+    """Output model for intelligent learning flow."""
+    success: bool = Field(..., description="Whether learning was successful")
+    knowledge: Dict[str, Any] = Field(default_factory=dict, description="Extracted knowledge as dict")
+    processing_time_seconds: float = Field(default=0.0, description="Processing time in seconds")
+    message: str = Field(default="", description="Result message")
+    errors: List[str] = Field(default_factory=list, description="Any errors encountered")
 
 
 @flow('intelligent-learning', description='Unified learning from any content')
@@ -36,33 +77,35 @@ class IntelligentLearningFlow:
     - Simple memory storage with graceful degradation
     """
     
-    @inject(llm='default-llm')
-    async def learn_from_content(
+    @pipeline(input_model=LearningInput, output_model=LearningOutput)
+    async def run_pipeline(
         self, 
-        content: str,
-        focus_areas: Optional[List[str]] = None,
-        context: Optional[str] = None,
-        llm: LLMProvider = None
-    ) -> LearningResult:
+        input_data: LearningInput
+    ) -> LearningOutput:
         """Learn from content with intelligent operation selection.
         
         Args:
-            content: Text content to learn from
-            focus_areas: Optional areas to focus extraction on
-            context: Optional context to guide extraction
-            llm: LLM provider (injected automatically)
+            input_data: Learning input with content and options
             
         Returns:
-            Learning result with extracted knowledge
+            Learning output with extracted knowledge
         """
         start_time = datetime.now()
         
         try:
+            # Get LLM provider using config-driven approach
+            llm = await provider_registry.get_by_config("default-llm")
+            
+            # Extract inputs
+            content = input_data.content
+            focus_areas = input_data.focus_areas
+            context = input_data.context
+            
             # Validate input
             if not content or not content.strip():
-                return LearningResult(
+                return LearningOutput(
                     success=False,
-                    knowledge=KnowledgeSet(),
+                    knowledge={},
                     message="No content provided for learning",
                     errors=["Empty or missing content"]
                 )
@@ -83,9 +126,9 @@ class IntelligentLearningFlow:
             # Calculate processing time
             processing_time = (datetime.now() - start_time).total_seconds()
             
-            return LearningResult(
+            return LearningOutput(
                 success=True,
-                knowledge=knowledge,
+                knowledge=knowledge.to_dict() if hasattr(knowledge, 'to_dict') else knowledge.__dict__,
                 processing_time_seconds=processing_time,
                 message=f"Successfully learned {knowledge.total_items} items from content"
             )
@@ -94,9 +137,9 @@ class IntelligentLearningFlow:
             processing_time = (datetime.now() - start_time).total_seconds()
             logger.error(f"Learning failed: {e}")
             
-            return LearningResult(
+            return LearningOutput(
                 success=False,
-                knowledge=KnowledgeSet(),
+                knowledge={},
                 processing_time_seconds=processing_time,
                 message="Learning operation failed",
                 errors=[str(e)]
@@ -113,36 +156,48 @@ class IntelligentLearningFlow:
         Simple analysis that determines content characteristics without
         complex strategy determination logic.
         """
-        # Build analysis prompt
-        prompt = self._build_analysis_prompt(content, context)
+        # Get analysis prompt from registry
+        prompt = resource_registry.get("content-analysis")
+        
+        # Prepare prompt variables
+        prompt_vars = {
+            "content": content,
+            "context": context
+        }
         
         try:
+            # Debug: Log what we're about to do
+            logger.error(f"DEBUG: About to call generate_structured with model_name=default-model, prompt_vars={prompt_vars}")
+            
             # Get structured analysis from LLM
-            analysis_data = await llm.generate_structured(prompt, dict)
+            analysis_data = await llm.generate_structured(
+                prompt=prompt, 
+                output_type=LearningContentAnalysisOutput, 
+                model_name="default-model", 
+                prompt_variables=prompt_vars
+            )
+            
+            # Debug: Log what we got back
+            logger.error(f"DEBUG: Structured analysis succeeded: {analysis_data}")
             
             # Convert to ContentAnalysis object with strict validation
             return ContentAnalysis(
-                content_type=analysis_data['content_type'] if 'content_type' in analysis_data else 'general',
-                key_topics=analysis_data['key_topics'] if 'key_topics' in analysis_data else [],
-                complexity_level=analysis_data['complexity_level'] if 'complexity_level' in analysis_data else 'medium',
-                language=analysis_data['language'] if 'language' in analysis_data else 'en',
+                content_type=analysis_data.content_type,
+                key_topics=analysis_data.key_topics,
+                complexity_level=analysis_data.complexity_level,
+                language=analysis_data.language,
                 length_category=self._determine_length_category(content),
-                structure_type=analysis_data['structure_type'] if 'structure_type' in analysis_data else 'unstructured',
-                suggested_focus=analysis_data['suggested_focus'] if 'suggested_focus' in analysis_data else [],
-                confidence=analysis_data['confidence'] if 'confidence' in analysis_data else 0.8
+                structure_type=analysis_data.structure_type,
+                suggested_focus=analysis_data.suggested_focus,
+                confidence=analysis_data.confidence
             )
             
         except Exception as e:
-            logger.warning(f"Content analysis failed, using defaults: {e}")
-            
-            # Fallback to simple analysis
-            return ContentAnalysis(
-                content_type='general',
-                key_topics=[],
-                complexity_level='medium',
-                suggested_focus=['entities', 'concepts'],
-                confidence=0.5
-            )
+            logger.error(f"DEBUG: Content analysis failed with error: {e}")
+            import traceback
+            logger.error(f"DEBUG: Full traceback: {traceback.format_exc()}")
+            logger.error(f"Content analysis failed: {e}")
+            raise
     
     async def _extract_knowledge(
         self,
@@ -156,18 +211,33 @@ class IntelligentLearningFlow:
         This replaces the complex orchestration of separate flows with
         a single, focused extraction operation.
         """
-        # Build extraction prompt based on analysis
-        prompt = self._build_extraction_prompt(content, analysis, focus_areas)
+        # Get extraction prompt from registry
+        prompt = resource_registry.get("knowledge-extraction-prompt")
+        
+        # Determine what to extract based on focus areas
+        prompt_vars = {
+            "content": content,
+            "content_type": analysis.content_type,
+            "extract_entities": not focus_areas or 'entities' in focus_areas,
+            "extract_concepts": not focus_areas or 'concepts' in focus_areas,
+            "extract_relationships": not focus_areas or 'relationships' in focus_areas,
+            "extract_patterns": not focus_areas or 'patterns' in focus_areas
+        }
         
         try:
             # Single extraction call for all knowledge types
-            extraction_data = await llm.generate_structured(prompt, dict)
+            extraction_data = await llm.generate_structured(
+                prompt=prompt, 
+                output_type=LearningKnowledgeExtractionOutput, 
+                model_name="default-model", 
+                prompt_variables=prompt_vars
+            )
             
             # Process extracted data into knowledge objects
-            entities = self._process_entities(extraction_data['entities'] if 'entities' in extraction_data else [])
-            concepts = self._process_concepts(extraction_data['concepts'] if 'concepts' in extraction_data else [])
-            relationships = self._process_relationships(extraction_data['relationships'] if 'relationships' in extraction_data else [])
-            patterns = self._process_patterns(extraction_data['patterns'] if 'patterns' in extraction_data else [])
+            entities = self._process_entities(extraction_data.entities)
+            concepts = self._process_concepts(extraction_data.concepts)
+            relationships = self._process_relationships(extraction_data.relationships)
+            patterns = self._process_patterns(extraction_data.patterns)
             
             # Create unified knowledge set
             knowledge = KnowledgeSet(
@@ -186,89 +256,9 @@ class IntelligentLearningFlow:
             
         except Exception as e:
             logger.error(f"Knowledge extraction failed: {e}")
-            
-            # Return empty knowledge set on failure
-            return KnowledgeSet(
-                summary="Knowledge extraction failed",
-                confidence=0.0,
-                source_content=content[:100] + "..." if len(content) > 100 else content,
-                processing_notes=[f"Extraction error: {str(e)}"]
-            )
+            raise
     
-    def _build_analysis_prompt(self, content: str, context: Optional[str]) -> str:
-        """Build prompt for content analysis."""
-        base_prompt = f"""Analyze this content and provide a structured analysis:
-
-Content: {content}
-
-Determine:
-1. content_type: What type of content is this? (technical, narrative, structured, conversational, etc.)
-2. key_topics: What are the main topics or themes? (list of strings)
-3. complexity_level: How complex is the content? (simple, medium, complex)
-4. language: What language is this in? (language code)
-5. structure_type: How is the content structured? (structured, semi-structured, unstructured)
-6. suggested_focus: What should knowledge extraction focus on? (entities, concepts, relationships, patterns)
-7. confidence: How confident are you in this analysis? (0.0 to 1.0)
-
-Respond with valid JSON."""
-        
-        if context:
-            base_prompt += f"\n\nAdditional context: {context}"
-        
-        return base_prompt
     
-    def _build_extraction_prompt(
-        self, 
-        content: str, 
-        analysis: ContentAnalysis, 
-        focus_areas: Optional[List[str]]
-    ) -> str:
-        """Build prompt for knowledge extraction."""
-        # Determine what to extract based on analysis and focus areas
-        extract_entities = not focus_areas or 'entities' in focus_areas
-        extract_concepts = not focus_areas or 'concepts' in focus_areas
-        extract_relationships = not focus_areas or 'relationships' in focus_areas
-        extract_patterns = not focus_areas or 'patterns' in focus_areas
-        
-        prompt = f"""Extract knowledge from this {analysis.content_type} content:
-
-Content: {content}
-
-Extract the following (respond with valid JSON):
-
-"""
-        
-        if extract_entities:
-            prompt += """1. entities: List of distinct entities (people, places, things, organizations)
-   Each entity should have: name, type, description, confidence
-
-"""
-        
-        if extract_concepts:
-            prompt += """2. concepts: List of key concepts and ideas  
-   Each concept should have: name, description, category, examples, confidence
-
-"""
-        
-        if extract_relationships:
-            prompt += """3. relationships: List of relationships between entities/concepts
-   Each relationship should have: source, target, type, description, confidence
-
-"""
-        
-        if extract_patterns:
-            prompt += """4. patterns: List of patterns or structures identified
-   Each pattern should have: name, description, pattern_type, examples, confidence
-
-"""
-        
-        prompt += """5. summary: Brief summary of the content's main points
-6. confidence: Overall confidence in the extraction (0.0 to 1.0)
-7. notes: Any processing notes or observations
-
-Focus on accuracy and relevance. Only include items you're confident about."""
-        
-        return prompt
     
     def _determine_length_category(self, content: str) -> str:
         """Determine content length category."""
@@ -377,7 +367,7 @@ async def learn_from_text(
     content: str,
     focus_areas: Optional[List[str]] = None,
     context: Optional[str] = None
-) -> LearningResult:
+) -> LearningOutput:
     """Simple API for learning from text content.
     
     This function provides a dead-simple interface for learning operations,
@@ -389,12 +379,17 @@ async def learn_from_text(
         context: Optional context to guide learning
         
     Returns:
-        Learning result with extracted knowledge
+        Learning output with extracted knowledge
         
     Example:
         result = await learn_from_text("AI is transforming software development...")
         if result.success:
-            print(f"Learned {result.knowledge.total_items} items")
+            print(f"Learned items successfully")
     """
     flow = IntelligentLearningFlow()
-    return await flow.learn_from_content(content, focus_areas, context)
+    input_data = LearningInput(
+        content=content,
+        focus_areas=focus_areas,
+        context=context
+    )
+    return await flow.run_pipeline(input_data)

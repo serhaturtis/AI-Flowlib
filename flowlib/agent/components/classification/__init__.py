@@ -5,6 +5,7 @@ This module provides components for classifying user messages into conversation 
 """
 
 from flowlib.agent.components.classification.flow import MessageClassifierFlow, MessageClassification, MessageClassifierInput
+from flowlib.agent.components.classification import prompts  # Import to register prompts
 
 __all__ = [
     "MessageClassifierFlow",

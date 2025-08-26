@@ -9,7 +9,6 @@ import logging
 from typing import List, Dict, Any, Optional
 
 from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.flows.base.base import Flow
 from flowlib.core.container.container import get_container
 from flowlib.providers.tools.models import (
     ToolCallRequest, ToolExecutionResult, ToolCall, ToolResult, ToolExecutionContext
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 @flow(name="agent-tool-calling", description="Autonomous agent tool calling with structured generation")
-class AgentToolCallingFlow(Flow):
+class AgentToolCallingFlow:
     """Universal flow for agent tool calling.
     
     This flow handles all agent tool execution by:
@@ -152,6 +151,7 @@ class AgentToolCallingFlow(Flow):
             tool_calls = await llm_provider.generate_structured(
                 prompt=tool_prompt,
                 output_type=List[ToolCall],
+                model_name="default-model",
                 prompt_variables=prompt_variables
             )
             

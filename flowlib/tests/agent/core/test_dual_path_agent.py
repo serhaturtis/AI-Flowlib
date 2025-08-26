@@ -221,8 +221,8 @@ class TestDualPathAgentInitialization:
         agent._agent_core._reflection = MockReflection()
         
         # Mock the parent class initialization
-        from flowlib.agent.core.agent import AgentCore
-        with patch.object(AgentCore, 'initialize', AsyncMock()):
+        from flowlib.agent.core.base_agent import BaseAgent
+        with patch.object(BaseAgent, 'initialize', AsyncMock()):
             await agent.initialize()
         
         # Verify components were created
@@ -243,8 +243,8 @@ class TestDualPathAgentInitialization:
         agent._agent_core._flow_runner._flows = {}
         
         # Mock the parent class initialization
-        from flowlib.agent.core.agent import AgentCore
-        with patch.object(AgentCore, 'initialize', AsyncMock()):
+        from flowlib.agent.core.base_agent import BaseAgent
+        with patch.object(BaseAgent, 'initialize', AsyncMock()):
             with pytest.raises(ValueError, match="ConversationFlow must be registered"):
                 await agent.initialize()
 

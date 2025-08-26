@@ -68,7 +68,7 @@ class AgentEngine(AgentComponent, EngineInterface):
         # Configuration
         self._config = config or EngineConfig()
         
-        # Components (these should be provided by AgentCore)
+        # Components (these should be provided by BaseAgent)
         self._memory = memory
         self._planner = planner
         self._reflection = reflection
@@ -129,7 +129,7 @@ class AgentEngine(AgentComponent, EngineInterface):
             planner_config = self._planner.config if self._planner else self._agent_config.planner_config
             
             self.unified_planner = AgentPlanner(planner_config, name="unified_planner", activity_stream=self._activity_stream)
-            self.unified_planner.set_parent(self.parent)  # Set parent reference
+            # Unified planner no longer uses parent relationships
             await self.unified_planner.initialize()
             
             # Swap out the original planner

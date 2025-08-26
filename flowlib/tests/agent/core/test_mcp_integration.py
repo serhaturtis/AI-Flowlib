@@ -25,7 +25,7 @@ from flowlib.providers.mcp.base import (
 )
 from flowlib.providers.mcp.client.provider import MCPClientProvider, MCPClientSettings
 from flowlib.providers.mcp.server.provider import MCPServerProvider, MCPServerSettings
-from flowlib.agent.core.agent import AgentCore
+from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.flows.models.results import FlowResult
 from flowlib.flows.models.constants import FlowStatus
 
@@ -131,7 +131,7 @@ class MockMCPServerProvider:
         }
 
 
-class MockAgentCore:
+class MockBaseAgent:
     """Mock agent core for testing."""
     
     def __init__(self, config=None):
@@ -304,7 +304,7 @@ class TestMCPEnabledAgent:
     
     def test_agent_initialization(self):
         """Test MCP-enabled agent initialization."""
-        with patch('flowlib.agent.core.mcp_integration.AgentCore.__init__', return_value=None):
+        with patch('flowlib.agent.core.mcp_integration.BaseAgent.__init__', return_value=None):
             agent = MCPEnabledAgent({})
             
             assert agent._mcp_clients == {}
@@ -571,7 +571,7 @@ class TestMCPEnabledAgent:
         """Test that _shutdown_impl includes MCP cleanup."""
         with patch.object(MCPEnabledAgent, '__init__', return_value=None):
             with patch.object(MCPEnabledAgent, 'shutdown_mcp_connections', new_callable=AsyncMock) as mock_mcp_shutdown:
-                with patch('flowlib.agent.core.agent.AgentCore._shutdown_impl', new_callable=AsyncMock) as mock_super_shutdown:
+                with patch('flowlib.agent.core.agent.BaseAgent._shutdown_impl', new_callable=AsyncMock) as mock_super_shutdown:
                     agent = MCPEnabledAgent()
                     
                     await agent._shutdown_impl()
@@ -587,7 +587,7 @@ class TestHelperFunctions:
     @patch('flowlib.agent.core.mcp_integration.MCPEnabledAgent')
     async def test_create_mcp_enabled_agent_basic(self, mock_agent_class):
         """Test creating MCP-enabled agent with basic config."""
-        mock_agent = MockAgentCore()
+        mock_agent = MockBaseAgent()
         mock_agent_class.return_value = mock_agent
         
         agent_config = {"test": "config"}
@@ -601,7 +601,7 @@ class TestHelperFunctions:
     @patch('flowlib.agent.core.mcp_integration.MCPEnabledAgent')
     async def test_create_mcp_enabled_agent_with_clients_and_servers(self, mock_agent_class):
         """Test creating agent with MCP clients and servers."""
-        mock_agent = MockAgentCore()
+        mock_agent = MockBaseAgent()
         mock_agent.add_mcp_client = AsyncMock()
         mock_agent.add_mcp_server = AsyncMock()
         mock_agent_class.return_value = mock_agent
@@ -784,7 +784,7 @@ class TestIntegrationScenarios:
         assert "result" in result
         
         # Test integration with mock agent
-        agent = MockAgentCore()
+        agent = MockBaseAgent()
         agent.register_flow(tool_flow, "mcp_test_tool")
         
         assert "mcp_test_tool" in agent.flows

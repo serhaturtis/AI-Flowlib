@@ -48,11 +48,7 @@ class AgentPlanner(AgentComponent, PlanningInterface):
     
     async def _initialize_impl(self) -> None:
         """Initialize the planning component."""
-        # Get LLM provider and templates from parent or configuration
-        if self.parent and hasattr(self.parent, '_planner'):
-            # Set up provider and templates based on parent configuration
-            pass
-        # Additional initialization will be handled by the parent component
+        # Component initialization - no parent dependencies needed
     
     async def _shutdown_impl(self) -> None:
         """Shutdown the planning component."""
@@ -161,24 +157,26 @@ class AgentPlanner(AgentComponent, PlanningInterface):
             
         # Get relevant memories using the provided memory_context
         memory_context_summary = "No relevant memories available."
-        if memory_context and self.parent and hasattr(self.parent, "_memory") and self.parent._memory:
-            try:
-                from ..memory.interfaces import MemoryInterface
-                memory: MemoryInterface = self.parent._memory
-                
-                relevant_memories = await memory.retrieve_relevant(
-                    query=task_description, # Query based on task description
-                    context=memory_context, # Use the passed context
-                    limit=5
-                )
-                
-                if relevant_memories:
-                    memory_context_summary = "Relevant Memories Found:\n" + "\n".join(
-                        [f"- {memory}" for memory in relevant_memories]
+        if memory_context and self._registry:
+            memory_manager = self.get_component("memory_manager")
+            if memory_manager:
+                try:
+                    from ..memory.interfaces import MemoryInterface
+                    memory: MemoryInterface = memory_manager
+                    
+                    relevant_memories = await memory.retrieve_relevant(
+                        query=task_description, # Query based on task description
+                        context=memory_context, # Use the passed context
+                        limit=5
                     )
-            except Exception as e:
-                self._logger.warning(f"Error retrieving relevant memories during input generation: {str(e)}")
-                memory_context_summary = "Error retrieving memories."
+                    
+                    if relevant_memories:
+                        memory_context_summary = "Relevant Memories Found:\n" + "\n".join(
+                            [f"- {memory}" for memory in relevant_memories]
+                        )
+                except Exception as e:
+                    self._logger.warning(f"Error retrieving relevant memories during input generation: {str(e)}")
+                    memory_context_summary = "Error retrieving memories."
         
         # Prepare variables for prompt
         prompt_variables = {
@@ -202,9 +200,10 @@ class AgentPlanner(AgentComponent, PlanningInterface):
         
         # Special handling for conversation flows: inject agent persona
         if flow_name == "conversation" and hasattr(inputs, 'persona'):
-            if self.parent and hasattr(self.parent, 'persona'):
-                # Override the LLM-generated persona with the agent's actual persona
-                inputs.persona = self.parent.persona
+            # Override the LLM-generated persona with the agent's actual persona
+            config_manager = self.get_component("config_manager")
+            if config_manager and hasattr(config_manager, 'config'):
+                inputs.persona = config_manager.config.persona
                 self._logger.debug(f"Injected agent persona into conversation flow input: {inputs.persona[:50]}...")
         
         self._logger.info(f"Generated inputs for flow '{flow_name}': {str(inputs.model_dump())[:100]}...")
@@ -508,7 +507,8 @@ class AgentPlanner(AgentComponent, PlanningInterface):
         
         # Get relevant memories and format as summary
         memory_context_summary = "No relevant memories found."
-        if self.parent and hasattr(self.parent, "_memory") and self.parent._memory:
+        memory_manager = self.get_component("memory_manager")
+        if memory_manager:
             try:
                 # Stream memory retrieval
                 if self._activity_stream:
@@ -516,7 +516,7 @@ class AgentPlanner(AgentComponent, PlanningInterface):
                 
                 # Use the task context for scoping
                 task_context = f"task_{context.task_id}"
-                relevant_memories = await self.parent._memory.retrieve_relevant(
+                relevant_memories = await memory_manager.retrieve_relevant(
                     query=context.task_description,
                     context=task_context, # Use full task context name
                     limit=5

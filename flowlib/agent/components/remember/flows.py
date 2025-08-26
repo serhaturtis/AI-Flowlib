@@ -1,5 +1,4 @@
 from typing import Optional
-from ....flows.base import Flow
 from ....flows.decorators import flow, pipeline
 from ...core.errors import ExecutionError
 from flowlib.providers.core.registry import provider_registry
@@ -9,21 +8,12 @@ from flowlib.resources.models.constants import ResourceType
 from .models import RecallRequest, RecallResponse, RecallStrategy, MemoryMatch, ContextAnalysis
 
 @flow(
-    name="BaseRecallFlow",
+    name="BaseRecallFlow", 
     description="Base flow for memory recall operations that provides core recall functionality",
     is_infrastructure=True
 )
-class BaseRecallFlow(Flow):
+class BaseRecallFlow:
     """Base flow for memory recall operations"""
-    
-    def __init__(self):
-        """Initialize the base recall flow."""
-        super().__init__(
-            name_or_instance="BaseRecallFlow",
-            input_schema=None,
-            output_schema=None,
-            metadata={"is_infrastructure": True}
-        )
     
     async def validate_request(self, request: RecallRequest) -> RecallRequest:
         """Validate the recall request"""
@@ -85,6 +75,7 @@ class ContextualRecallFlow(BaseRecallFlow):
         result = await llm.generate_structured(
             prompt=prompt,
             output_type=ContextAnalysis,
+            model_name="default-model",
             prompt_variables=prompt_vars
         )
         

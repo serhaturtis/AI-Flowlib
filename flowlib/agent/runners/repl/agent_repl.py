@@ -22,9 +22,13 @@ from rich.live import Live
 from rich.spinner import Spinner
 from rich.table import Table
 
-from flowlib.agent.core import Agent
-from flowlib.agent.models.state import AgentState
+from flowlib.agent.core.base_agent import BaseAgent
+from flowlib.agent.models.state import AgentState, AgentStats
 from flowlib.agent.models.config import AgentConfig
+from flowlib.agent.core.thread_manager import AgentThreadPoolManager
+from flowlib.agent.core.models.messages import (
+    AgentMessage, AgentResponse, AgentMessageType, AgentMessagePriority
+)
 from flowlib.agent.runners.repl.commands import CommandRegistry, CommandType
 from flowlib.agent.runners.repl.handlers import DefaultCommandHandler, AgentCommandHandler, ToolCommandHandler, TodoCommandHandler
 
@@ -53,13 +57,6 @@ class REPLContext(BaseModel):
     stream: bool = Field(default=True, description="Streaming mode enabled")
 
 
-class AgentStatsData(BaseModel):
-    """Agent statistics data model."""
-    model_config = ConfigDict(extra="forbid")
-    
-    flows_executed: int = Field(default=0, description="Number of flows executed")
-
-
 class ModeEmojis(BaseModel):
     """Mode emoji mapping model."""
     model_config = ConfigDict(extra="forbid")
@@ -74,17 +71,23 @@ class AgentREPL:
     
     def __init__(
         self,
-        agent: Optional[Agent] = None,
+        agent_id: str,
         config: Optional[AgentConfig] = None,
         history_file: Optional[str] = None
     ):
-        self.agent = agent
-        self.config = config
+        self.agent_id = agent_id
+        self.config = config or AgentConfig()
         self.console = Console()
         self.command_registry = CommandRegistry()
         self.repl_context = REPLContext()
+        self.conversation_history: List[Dict[str, str]] = []
+        
+        # Queue-based agent communication
+        self.thread_pool_manager = AgentThreadPoolManager()
+        self.agent: Optional[BaseAgent] = None
+        
         self.context: Dict[str, Any] = {
-            "agent": agent,
+            "agent_id": agent_id,
             "config": config,
             "should_exit": self.repl_context.should_exit,
             "command_history": self.repl_context.command_history,
@@ -92,7 +95,8 @@ class AgentREPL:
             "mode": self.repl_context.mode,
             "debug": self.repl_context.debug,
             "verbose": self.repl_context.verbose,
-            "stream": self.repl_context.stream
+            "stream": self.repl_context.stream,
+            "conversation_history": self.conversation_history
         }
         
         # Setup history
@@ -102,9 +106,7 @@ class AgentREPL:
         # Register command handlers
         self._register_handlers()
         
-        # Initialize agent if needed
-        if not self.agent and self.config:
-            self._initialize_agent()
+        # Agent initialization handled by initialize() method
     
     def _setup_history(self):
         """Setup command history."""
@@ -138,15 +140,32 @@ class AgentREPL:
         self.command_registry.register_handler(ToolCommandHandler())
         self.command_registry.register_handler(TodoCommandHandler())
     
-    def _initialize_agent(self):
-        """Initialize the agent."""
-        from flowlib.agent.core import Agent
+    async def initialize(self):
+        """Initialize the REPL with queue-based agent."""
+        # Create agent in its own thread
+        self.agent = self.thread_pool_manager.create_agent(
+            self.agent_id,
+            self.config
+        )
         
-        self.agent = Agent(config=self.config)
-        self.context["agent"] = self.agent
+        # Start response router
+        router = self.thread_pool_manager.get_response_router(self.agent_id)
+        if router:
+            await router.start()
+        
+        self.console.print(f"[green]✓[/green] Agent {self.agent_id} initialized and running")
+    
+    async def shutdown(self):
+        """Shutdown the REPL and agent."""
+        # Shutdown agent
+        self.thread_pool_manager.shutdown_agent(self.agent_id)
+        self.console.print(f"[yellow]Agent {self.agent_id} stopped[/yellow]")
     
     async def start(self):
         """Start the REPL session."""
+        # Initialize agent
+        await self.initialize()
+        
         # Show welcome message
         self._show_welcome()
         
@@ -158,6 +177,8 @@ class AgentREPL:
         except EOFError:
             self.console.print("\n[yellow]End of input[/yellow]")
         finally:
+            # Ensure cleanup
+            await self.shutdown()
             self._save_history()
             self._show_goodbye()
     
@@ -263,61 +284,78 @@ class AgentREPL:
         self.repl_context.session_stats.message_count += 1
         self.context["session_stats"]["message_count"] = self.repl_context.session_stats.message_count
         
-        # Set up real-time activity streaming
-        if self.repl_context.stream:
-            # Create a real-time activity display handler
-            activity_buffer = []
-            
-            def activity_handler(activity_text: str):
-                activity_buffer.append(activity_text)
-                self.console.print(activity_text)
-            
-            # Set up agent's activity stream to output in real-time
-            if hasattr(self.agent, 'set_activity_stream_handler'):
-                self.agent.set_activity_stream_handler(activity_handler)
-            
-            response = await self._get_agent_response(message)
-        else:
-            response = await self._get_agent_response(message)
+        # Get response from agent via queue
+        response = await self._get_agent_response(message)
         
         # Display response
         self.console.print(f"\n[bold green]🤖 Assistant[/bold green]")
         self._display_output(response)
     
     async def _get_agent_response(self, message: str) -> str:
-        """Get response from agent."""
+        """Get response from agent using queue-based communication."""
         try:
-            # Send message to agent
-            response = await self.agent.process_message(
-                message=message,
-                context=self.context
+            # Create agent message
+            agent_message = AgentMessage(
+                message_type=AgentMessageType.CONVERSATION,
+                content=message,
+                context={
+                    "conversation_history": self.conversation_history,
+                    "session_stats": self.context["session_stats"],
+                    "mode": self.context["mode"]
+                },
+                response_queue_id=f"repl_{self.agent_id}",
+                priority=AgentMessagePriority.NORMAL,
+                timeout=None  # Disabled timeout
             )
             
-            # Update stats if available  
-            if isinstance(response, dict) and "stats" in response:
-                stats_data = AgentStatsData.model_validate(response["stats"])
-                self.repl_context.session_stats.flows_executed += stats_data.flows_executed
-                self.context["session_stats"]["flows_executed"] = self.repl_context.session_stats.flows_executed
+            # Show immediate acknowledgment
+            self.console.print("[dim]Message received, processing...[/dim]")
             
-            # Build the complete response with activity details
+            # Send to agent queue
+            message_id = await self.thread_pool_manager.send_message(
+                self.agent_id, agent_message
+            )
+            
+            # Wait for response
+            response = await self.thread_pool_manager.wait_for_response(
+                self.agent_id, message_id, agent_message.timeout
+            )
+            
+            # Handle response
+            if not response.success:
+                return f"[red]Agent error: {response.error}[/red]"
+            
+            # Extract content from response
+            content = ""
+            response_data = response.response_data
+            if isinstance(response_data, dict) and "content" in response_data:
+                content = response_data["content"]
+            else:
+                content = str(response_data)
+            
+            # Update stats
+            self.repl_context.session_stats.flows_executed += 1
+            self.context["session_stats"]["flows_executed"] = self.repl_context.session_stats.flows_executed
+            
+            # Build output with activity stream
             output_parts = []
             
             # Show activity if available
-            if isinstance(response, dict) and "activity" in response and response["activity"]:
-                output_parts.append(response["activity"])
+            if response.activity_stream:
+                activity_lines = []
+                for activity_item in response.activity_stream:
+                    activity_lines.append(str(activity_item))
+                output_parts.append("\n".join(activity_lines))
             
-            # Extract main content
-            content = ""
-            if hasattr(response, "content"):
-                content = response.content
-            elif isinstance(response, dict) and "content" in response:
-                content = response["content"]
-            elif isinstance(response, str):
-                content = response
-            else:
-                content = str(response)
+            # Update conversation history
+            if content and content != "Task completed":
+                self.conversation_history.append({"role": "user", "content": message})
+                self.conversation_history.append({"role": "assistant", "content": content})
+                # Keep conversation history to a reasonable size (last 10 exchanges = 20 entries)
+                if len(self.conversation_history) > 20:
+                    self.conversation_history = self.conversation_history[-20:]
             
-            # Add content if it's not empty and not just "Task completed"
+            # Add main content
             if content and content != "Task completed":
                 if output_parts:  # If we have activity, add some spacing
                     output_parts.append("")  # Empty line
@@ -325,61 +363,16 @@ class AgentREPL:
             
             return "\n".join(output_parts) if output_parts else content
                 
+        except TimeoutError:
+            return f"[red]Response timeout[/red]"
         except Exception as e:
-            error_msg = f"Error getting agent response: {str(e)}"
-            if self.repl_context.debug:
-                import traceback
-                error_msg += f"\n\nTraceback:\n{traceback.format_exc()}"
+            import traceback
+            error_msg = f"Error getting agent response: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
             return error_msg
 
 
-class InteractiveAgent:
-    """High-level interface for creating interactive agent sessions."""
-    
-    @classmethod
-    def create_repl(
-        cls,
-        agent_type: str = "default",
-        config: Optional[Dict[str, Any]] = None,
-        **kwargs
-    ) -> AgentREPL:
-        """Create a REPL with specified agent type."""
-        from ...registry import agent_registry
-        
-        # Get agent class
-        agent_class = agent_registry.get(agent_type)
-        if not agent_class:
-            raise ValueError(f"Unknown agent type: {agent_type}")
-        
-        # Create config
-        default_config = {
-            "name": "repl_agent", 
-            "persona": "Interactive REPL agent",
-            "provider_name": "mock"  # Default provider for REPL
-        }
-        default_config.update(config or {})
-        agent_config = AgentConfig(**default_config)
-        
-        # Create agent
-        agent = agent_class(config=agent_config)
-        
-        # Create REPL
-        return AgentREPL(agent=agent, config=agent_config, **kwargs)
-    
-    @classmethod
-    async def start_session(
-        cls,
-        agent_type: str = "default",
-        config: Optional[Dict[str, Any]] = None,
-        **kwargs
-    ):
-        """Start an interactive session with specified agent."""
-        repl = cls.create_repl(agent_type, config, **kwargs)
-        await repl.start()
-
-
-# Convenience function
-async def start_agent_repl(agent=None, config=None, **kwargs):
+# Main entry point
+async def start_agent_repl(agent_id: str, config: AgentConfig, **kwargs):
     """Start an agent REPL session."""
-    repl = AgentREPL(agent=agent, config=config, **kwargs)
+    repl = AgentREPL(agent_id=agent_id, config=config, **kwargs)
     await repl.start()

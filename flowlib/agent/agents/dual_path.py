@@ -13,7 +13,7 @@ import uuid
 import asyncio
 from datetime import datetime
 
-from ..core.agent import AgentCore
+from ..core.base_agent import BaseAgent
 from ..models.config import AgentConfig
 from flowlib.agent.models.state import AgentState
 from ..components.classification.flow import MessageClassifierFlow, MessageClassifierInput
@@ -58,7 +58,7 @@ class DualPathAgent:
             task_description: Task description for the agent
         """
         # Use composition instead of inheritance
-        self._agent_core = AgentCore(config, task_description)
+        self._base_agent = BaseAgent(config, task_description)
         
         # Components will be initialized during initialize()
         self._classifier = None
@@ -68,7 +68,7 @@ class DualPathAgent:
     async def initialize(self) -> None:
         """Initialize agent components."""
         # First initialize the core agent
-        await self._agent_core.initialize()
+        await self._base_agent.initialize()
         
         # Ensure memory is initialized (needed before use)
         if not self._memory or not self._memory.initialized:
@@ -76,18 +76,18 @@ class DualPathAgent:
         
         # Create classifier flow
         self._classifier = MessageClassifierFlow()
-        self._agent_core.register_flow(self._classifier)
+        self._base_agent.register_flow(self._classifier)
         
         # Create conversation handler with ConversationFlow
-        conversation_flow = self._agent_core.flows.get("ConversationFlow")
+        conversation_flow = self._base_agent.flows.get("ConversationFlow")
         if not conversation_flow:
             raise ValueError("ConversationFlow must be registered with the agent before initializing DualPathAgent")
         self._conversation_handler = DirectConversationHandler(conversation_flow)
         
         # Create task handler
         self._task_handler = TaskExecutionHandler(
-            planner=self._agent_core._planner,
-            reflection=self._agent_core._reflection
+            planner=self._base_agent._planner,
+            reflection=self._base_agent._reflection
         )
         
         logger.info("Dual-path agent initialized with conversation and task handlers")
@@ -96,35 +96,35 @@ class DualPathAgent:
     @property
     def initialized(self) -> bool:
         """Check if the agent is initialized."""
-        return self._agent_core.initialized
+        return self._base_agent.initialized
     
-    # All state access should go through agent._agent_core._state_manager.current_state
+    # All state access should go through agent._base_agent._state_manager.current_state
     
     @property
     def config(self) -> AgentConfig:
         """Get the agent configuration."""
-        return self._agent_core.config
+        return self._base_agent.config
     
     @property
     def flows(self) -> Dict[str, Flow]:
         """Get the flows registry."""
-        return self._agent_core.flows
+        return self._base_agent.flows
     
     @property
     def _memory(self) -> Optional[Any]:
         """Get the memory component."""
-        return self._agent_core._memory_manager._memory
+        return self._base_agent._memory_manager._memory
     
     @property
     def state(self) -> Optional[AgentState]:
         """Get the current agent state."""
-        return self._agent_core._state_manager.current_state
+        return self._base_agent._state_manager.current_state
     
-    # All component access should go through agent._agent_core._component_name
+    # All component access should go through agent._base_agent._component_name
     
     async def save_state(self):
         """Delegate save_state to agent core."""
-        return await self._agent_core.save_state()
+        return await self._base_agent.save_state()
     
     async def process_message(self, message: str) -> FlowResult:
         """Public entry point for processing a single message in an interactive session.
@@ -146,12 +146,12 @@ class DualPathAgent:
         """Core logic for processing a single input message (e.g., from a queue)."""
         # This logic is moved directly from the original process_message
 
-        self._agent_core._state_manager.current_state.add_user_message(message)
+        self._base_agent._state_manager.current_state.add_user_message(message)
         
         # Set default task description if needed (can be overridden by classifier)
-        if not self._agent_core._state_manager.current_state.task_description:
+        if not self._base_agent._state_manager.current_state.task_description:
             default_task = "Respond to user messages and complete tasks."
-            self._agent_core._state_manager.current_state.task_description = self.config.task_description if self.config else default_task
+            self._base_agent._state_manager.current_state.task_description = self.config.task_description if self.config else default_task
 
         memory_context_summary = "No relevant memories found."
         try:
@@ -161,14 +161,14 @@ class DualPathAgent:
                 try:
                     # Create context for this session/task if it doesn't exist
                     # This is needed for memory operations to work correctly
-                    if self._agent_core._state_manager.current_state.task_id:
+                    if self._base_agent._state_manager.current_state.task_id:
                         # Create the context with task description as metadata
-                        context_metadata = {"task_description": self._agent_core._state_manager.current_state.task_description}
+                        context_metadata = {"task_description": self._base_agent._state_manager.current_state.task_description}
                         await self._memory.create_context(
-                            context_name=self._agent_core._state_manager.current_state.task_id,
+                            context_name=self._base_agent._state_manager.current_state.task_id,
                             metadata=context_metadata
                         )
-                        logger.debug(f"Created memory context for task: {self._agent_core._state_manager.current_state.task_id}")
+                        logger.debug(f"Created memory context for task: {self._base_agent._state_manager.current_state.task_id}")
                 except Exception as ctx_err:
                     # Log if there's an issue, but continue (might already exist)
                     logger.debug(f"Note on memory context creation: {str(ctx_err)}")
@@ -176,7 +176,7 @@ class DualPathAgent:
                 # Simple query based on the new message for initial context
                 relevant_memories = await self._memory.retrieve_relevant(
                     query=message, 
-                    context=self._agent_core._state_manager.current_state.task_id, # Scope to current task/session
+                    context=self._base_agent._state_manager.current_state.task_id, # Scope to current task/session
                     limit=3 
                 )
                 if relevant_memories:
@@ -220,7 +220,7 @@ class DualPathAgent:
                     if hasattr(final_result.data, 'model_dump'):
                         result_dict['data'] = final_result.data.model_dump()
                     
-                    self._agent_core._state_manager.current_state.add_execution_result(
+                    self._base_agent._state_manager.current_state.add_execution_result(
                         flow_name="conversation",
                         inputs={"message": message},  # Store the user's message as input
                         result=result_dict,  # Store properly serialized FlowResult
@@ -230,13 +230,13 @@ class DualPathAgent:
                 # 4b. Task Path
                 logger.info("Using task execution path")
                 if classification.task_description:
-                    original_task = self._agent_core._state_manager.current_state.task_description
-                    self._agent_core._state_manager.current_state.task_description = classification.task_description
-                    logger.info(f"Using task description from classification: {self._agent_core._state_manager.current_state.task_description}")
+                    original_task = self._base_agent._state_manager.current_state.task_description
+                    self._base_agent._state_manager.current_state.task_description = classification.task_description
+                    logger.info(f"Using task description from classification: {self._base_agent._state_manager.current_state.task_description}")
                 else:
                     # Fallback if LLM didn't generate task description
                     # Fail-fast: task_description is required for task execution
-                    current_description = self._agent_core._state_manager.current_state.task_description
+                    current_description = self._base_agent._state_manager.current_state.task_description
                     if not current_description:
                         raise ValueError("Task execution requires a valid task_description but none was provided by classifier or exists in state")
 
@@ -278,38 +278,38 @@ class DualPathAgent:
                 # --- Reflection Step --- 
                 plan_reflect_context = None # Initialize context
                 reflection_result = None
-                if self._agent_core._reflection:
+                if self._base_agent._reflection:
                     try:
                         logger.info("Reflecting on plan execution outcome...")
                         # Prepare the context for overall plan reflection
-                        state_summary = f"Task: {self._agent_core._state_manager.current_state.task_description}\nProgress: {self._agent_core._state_manager.current_state.progress}%\nCycle: {self._agent_core._state_manager.current_state.cycles}\nComplete: {self._agent_core._state_manager.current_state.is_complete}"
+                        state_summary = f"Task: {self._base_agent._state_manager.current_state.task_description}\nProgress: {self._base_agent._state_manager.current_state.progress}%\nCycle: {self._base_agent._state_manager.current_state.cycles}\nComplete: {self._base_agent._state_manager.current_state.is_complete}"
                         # Get history from state (might need adjustment if AgentState stores it differently)
-                        history_text = format_execution_history(self._agent_core._state_manager.current_state.execution_history)
+                        history_text = format_execution_history(self._base_agent._state_manager.current_state.execution_history)
                         
                         plan_reflect_context = PlanReflectionContext(
-                            task_description=self._agent_core._state_manager.current_state.task_description,
+                            task_description=self._base_agent._state_manager.current_state.task_description,
                             plan_status=plan_outcome.status,
                             plan_error=plan_outcome.error,
                             step_reflections=plan_outcome.step_reflections, # Get from outcome
                             state_summary=state_summary,
                             execution_history_text=history_text,
-                            current_progress=self._agent_core._state_manager.current_state.progress
+                            current_progress=self._base_agent._state_manager.current_state.progress
                         )
                         
-                        reflection_result = await self._agent_core._reflection.reflect(
+                        reflection_result = await self._base_agent._reflection.reflect(
                             plan_context=plan_reflect_context # Pass the new context object
                         )
                         logger.info(f"Reflection complete. Task complete: {reflection_result.is_complete}, Progress: {reflection_result.progress}%")
                         # Update state based on reflection
-                        self._agent_core._state_manager.current_state.progress = reflection_result.progress
+                        self._base_agent._state_manager.current_state.progress = reflection_result.progress
                         if reflection_result.is_complete:
                             completion_reason = reflection_result.completion_reason
                             if not completion_reason:
                                 raise ValueError("Reflection indicated completion but provided no completion reason")
-                            self._agent_core._state_manager.current_state.set_complete(completion_reason)
+                            self._base_agent._state_manager.current_state.set_complete(completion_reason)
                     except Exception as reflect_err:
                         logger.error(f"Reflection failed: {reflect_err}", exc_info=True)
-                        self._agent_core._state_manager.current_state.add_error(f"Reflection failed: {reflect_err}")
+                        self._base_agent._state_manager.current_state.add_error(f"Reflection failed: {reflect_err}")
                 else:
                     logger.warning("Reflection component not available, skipping reflection.")
                 # ---------------------
@@ -324,7 +324,7 @@ class DualPathAgent:
 
             # Add the final assistant response to state *after* all processing
             if final_result and final_result.status == "SUCCESS" and hasattr(final_result.data, 'response'):
-                 self._agent_core._state_manager.current_state.add_system_message(final_result.data.response)
+                 self._base_agent._state_manager.current_state.add_system_message(final_result.data.response)
             elif final_result:
                  # Log if the final result wasn't successful or didn't have a response field
                  logger.warning(f"Final result status was {final_result.status}, no system message added.")
@@ -336,7 +336,7 @@ class DualPathAgent:
         except Exception as e:
             logger.error(f"Error processing message in DualPathAgent: {str(e)}", exc_info=True)
             # Error saving should happen in the runner or calling context
-            # self._agent_core._state_manager.current_state.add_system_message(f"I encountered an error: {str(e)}") 
+            # self._base_agent._state_manager.current_state.add_system_message(f"I encountered an error: {str(e)}") 
             # await self._save_state() 
 
             return FlowResult(
@@ -350,17 +350,17 @@ class DualPathAgent:
         """Helper to get conversation history from state."""
         history = []
         # Ensure we pair messages correctly
-        num_user = len(self._agent_core._state_manager.current_state.user_messages)
-        num_system = len(self._agent_core._state_manager.current_state.system_messages)
+        num_user = len(self._base_agent._state_manager.current_state.user_messages)
+        num_system = len(self._base_agent._state_manager.current_state.system_messages)
         for i in range(num_user):
-            history.append({"role": "user", "content": self._agent_core._state_manager.current_state.user_messages[i]})
+            history.append({"role": "user", "content": self._base_agent._state_manager.current_state.user_messages[i]})
             if i < num_system:
-                history.append({"role": "assistant", "content": self._agent_core._state_manager.current_state.system_messages[i]})
+                history.append({"role": "assistant", "content": self._base_agent._state_manager.current_state.system_messages[i]})
         return history
             
     async def _save_state(self) -> None:
         """Save the agent state if a persister is available."""
-        if self._agent_core._state_manager._state_persister and self._agent_core._state_manager.current_state.task_id:
+        if self._base_agent._state_manager._state_persister and self._base_agent._state_manager.current_state.task_id:
             try:
                 await self.save_state()
             except Exception as e:
@@ -374,7 +374,7 @@ class DualPathAgent:
              
         if "message" in kwargs:
             await self.process_message(kwargs["message"])
-            return not self._agent_core._state_manager.current_state.is_complete # Continue if task not marked complete
+            return not self._base_agent._state_manager.current_state.is_complete # Continue if task not marked complete
         else:
             logger.warning("execute_cycle called without 'message', cannot use dual-path logic.")
             # Maybe trigger a default action like asking for input? Or raise error?
@@ -394,7 +394,7 @@ class DualPathAgent:
                 logger.info("No active plan. Generating new plan...")
                 try:
                     # Planner now returns a Plan object
-                    new_plan = await self._agent_core._planner.plan(state)
+                    new_plan = await self._base_agent._planner.plan(state)
                     if not new_plan or not new_plan.steps:
                         logger.info("Planner returned no steps. Task requires no action or is complete.")
                         outcome_status = "NO_ACTION_NEEDED"
@@ -431,12 +431,12 @@ class DualPathAgent:
             parsed_input: Optional[BaseModel] = None # Holds the specific input model instance
             try:
                 # We need the planner instance for generate_inputs
-                if not self._agent_core._planner:
+                if not self._base_agent._planner:
                      raise RuntimeError("Planner component is not available for input generation.")
                 
                 logger.debug(f"Generating inputs for step {step.step_id}, flow '{step.flow_name}' with intent: '{step.step_intent}'")
                 # Adapt generate_inputs call (this method needs modification - Step 2.5)
-                parsed_input = await self._agent_core._planner.generate_inputs(
+                parsed_input = await self._base_agent._planner.generate_inputs(
                     state=state,
                     flow_name=step.flow_name,
                     step_intent=step.step_intent, # Pass intent
@@ -477,7 +477,7 @@ class DualPathAgent:
                 if step_result and step_result.status == "SUCCESS":
                     logger.info(f"Step {state.current_step_index + 1} succeeded.")
                     # Add execution result (might need adjustment based on run_flow return)
-                    self._agent_core._state_manager.current_state.add_execution_result(
+                    self._base_agent._state_manager.current_state.add_execution_result(
                         flow_name=step.flow_name,
                         inputs=parsed_input.model_dump(), # Log the generated inputs
                         result=step_result.model_dump(), # Store full FlowResult as dict
@@ -485,7 +485,7 @@ class DualPathAgent:
                     )
                     
                     # --- Perform Step Reflection --- 
-                    if self._agent_core._reflection:
+                    if self._base_agent._reflection:
                         step_reflect_input = StepReflectionInput(
                             task_description=state.task_description,
                             step_id=step.step_id,
@@ -497,7 +497,7 @@ class DualPathAgent:
                             current_progress=state.progress
                         )
                         try:
-                            step_reflection = await self._agent_core._reflection.step_reflect(step_reflect_input)
+                            step_reflection = await self._base_agent._reflection.step_reflect(step_reflect_input)
                             step_reflections.append(step_reflection)
                             logger.info(f"Step {step_idx + 1} reflection added.")
                         except Exception as reflect_err:
@@ -528,7 +528,7 @@ class DualPathAgent:
                     state.current_step_index = 0
                     
                     # --- Perform Step Reflection (on step failure) --- 
-                    if self._agent_core._reflection:
+                    if self._base_agent._reflection:
                         # Ensure step_result is a FlowResult, even if None
                         if not step_result:
                             step_result = FlowResult(status=FlowStatus.ERROR, error="Step failed before result object was created.", flow_name=step.flow_name)
@@ -543,7 +543,7 @@ class DualPathAgent:
                             current_progress=state.progress
                         )
                         try:
-                            step_reflection = await self._agent_core._reflection.step_reflect(step_reflect_input)
+                            step_reflection = await self._base_agent._reflection.step_reflect(step_reflect_input)
                             step_reflections.append(step_reflection)
                             logger.info(f"Step {step_idx + 1} (failed) reflection added.")
                         except Exception as reflect_err:
@@ -566,7 +566,7 @@ class DualPathAgent:
                 outcome_result = FlowResult(status=FlowStatus.ERROR, error=str(step_err), flow_name=step.flow_name) 
                 state.add_error(error_message)
                 # Add failed execution attempt to history
-                self._agent_core._state_manager.current_state.add_execution_result(
+                self._base_agent._state_manager.current_state.add_execution_result(
                     flow_name=step.flow_name,
                     inputs=parsed_input.model_dump() if parsed_input else {"error": "Input generation failed"}, # Log generated inputs or error
                     result=outcome_result.model_dump(),
@@ -576,7 +576,7 @@ class DualPathAgent:
                 state.current_step_index = 0
                 
                 # --- Perform Step Reflection (on step exception) --- 
-                if self._agent_core._reflection:
+                if self._base_agent._reflection:
                     step_reflect_input = StepReflectionInput(
                         task_description=state.task_description,
                         step_id=step.step_id,
@@ -588,7 +588,7 @@ class DualPathAgent:
                         current_progress=state.progress
                     )
                     try:
-                        step_reflection = await self._agent_core._reflection.step_reflect(step_reflect_input)
+                        step_reflection = await self._base_agent._reflection.step_reflect(step_reflect_input)
                         step_reflections.append(step_reflection)
                         logger.info(f"Step {step_idx + 1} (exception) reflection added.")
                     except Exception as reflect_err:

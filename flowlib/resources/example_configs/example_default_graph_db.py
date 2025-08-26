@@ -23,7 +23,7 @@ class ExampleGraphDBProviderConfig(GraphDBConfigResource):
     # Connection settings
     uri: str = "bolt://localhost:7687"
     username: str = "neo4j"
-    password: str = "your-neo4j-password"
+    password: str = "flowlib123"
     
     # Database settings
     database: str = "neo4j"  # Default database name
@@ -34,7 +34,7 @@ class ExampleGraphDBProviderConfig(GraphDBConfigResource):
     connection_acquisition_timeout: int = 60
     
     # Performance settings
-    encrypted: bool = False  # Use encryption (set True for production)
+    encryption: bool = False  # Use encryption (set True for production)
     trust: str = "TRUST_ALL_CERTIFICATES"
     
     # === Alternative: ARANGODB ===
@@ -57,4 +57,19 @@ class ExampleGraphDBProviderConfig(GraphDBConfigResource):
     # region: str = "us-east-1"
     
     def __init__(self, name: str, type: str, **kwargs):
-        super().__init__(name=name, type=type)
+        super().__init__(
+            name=name, 
+            type=type,
+            provider_type="neo4j",
+            settings={
+                "uri": "bolt://localhost:7687",
+                "username": "neo4j",
+                "password": "flowlib123",
+                "database": "neo4j",
+                "max_connection_lifetime": 3600,
+                "max_connection_pool_size": 50,
+                "connection_acquisition_timeout": 60,
+                "encryption": False,
+                "trust": "TRUST_ALL_CERTIFICATES"
+            }
+        )

@@ -6,9 +6,9 @@ import logging
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
-# Avoid circular import, only type hint AgentCore
+# Avoid circular import, only type hint BaseAgent
 if TYPE_CHECKING:
-    from ..core.agent import AgentCore
+    from ..core.agent import BaseAgent
     from flowlib.agent.models.state import AgentState # For type hint in run_autonomous
 
 # Import exceptions
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _SENTINEL = object()
 
 async def _agent_worker(
-    agent: 'AgentCore',
+    agent: 'BaseAgent',
     input_queue: asyncio.Queue,
     output_queue: asyncio.Queue
 ):
@@ -108,7 +108,7 @@ async def _agent_worker(
     
     logger.info("Agent worker finished.")
 
-async def run_interactive_session(agent: 'AgentCore'):
+async def run_interactive_session(agent: 'BaseAgent'):
     """Runs a standard interactive command-line session for an agent.
 
     Uses input/output queues to decouple I/O from agent processing.
@@ -116,7 +116,7 @@ async def run_interactive_session(agent: 'AgentCore'):
     and manages agent saving/shutdown on exit.
 
     Args:
-        agent: An initialized AgentCore instance.
+        agent: An initialized BaseAgent instance.
     """
     if not agent or not agent.initialized:
         logger.error("Agent must be initialized before running interactive session.")

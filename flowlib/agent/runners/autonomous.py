@@ -6,9 +6,9 @@ import logging
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
-# Avoid circular import, only type hint AgentCore
+# Avoid circular import, only type hint BaseAgent
 if TYPE_CHECKING:
-    from ..core.agent import AgentCore
+    from ..core.agent import BaseAgent
     from flowlib.agent.models.state import AgentState
 
 # Import exceptions
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 async def run_autonomous(
-    agent: 'AgentCore',
+    agent: 'BaseAgent',
     max_cycles: Optional[int] = None,
     **kwargs
 ) -> 'AgentState':
@@ -28,7 +28,7 @@ async def run_autonomous(
     and uses the agent's engine to execute cycles.
 
     Args:
-        agent: An initialized AgentCore instance.
+        agent: An initialized BaseAgent instance.
         max_cycles: Maximum number of cycles to execute. If None, uses the
                     value from the agent's engine configuration.
         **kwargs: Additional arguments passed to the engine's execute_cycle.

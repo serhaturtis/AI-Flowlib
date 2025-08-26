@@ -2,7 +2,7 @@
 Agent state management component.
 
 This module handles agent state persistence, loading, and management
-operations that were previously in AgentCore.
+operations that were previously in BaseAgent.
 """
 
 import logging

@@ -54,10 +54,11 @@ class MessageClassifierFlow:
             # Get LLM provider using model-driven approach
             llm = await provider_registry.get_by_config("default-llm")
             
-            # Generate classification using LLM - no need to pass model_name anymore!
+            # Generate classification using LLM
             result = await llm.generate_structured(
                 prompt=classification_prompt,
                 output_type=MessageClassification,
+                model_name="default-model",
                 prompt_variables=prompt_vars,
             )
             
@@ -78,13 +79,8 @@ class MessageClassifierFlow:
             )
             
         except Exception as e:
-            # On error, default to conversation path for safety
-            return MessageClassification(
-                execute_task=False,
-                confidence=1.0,
-                category="error_fallback",
-                task_description=None
-            )
+            # Let the error bubble up instead of masking it
+            raise
     
     def _format_conversation_history(self, history: List[ConversationMessage]) -> str:
         """Format conversation history as text.

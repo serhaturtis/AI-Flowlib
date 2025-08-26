@@ -28,6 +28,15 @@ class LearningStrategy(str, Enum):
     TRANSFER = "transfer"
 
 
+class LearningWorthinessEvaluation(StrictBaseModel):
+    """Result of evaluating if content is worth learning from."""
+    # Inherits strict configuration from StrictBaseModel
+    
+    worth_learning: bool = Field(..., description="Whether the content is worth learning from")
+    reasoning: str = Field(..., description="Brief explanation of the decision")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in the evaluation")
+
+
 class IntelligenceConfig(StrictBaseModel):
     """Configuration for intelligence components."""
     model_config = ConfigDict(extra="forbid")

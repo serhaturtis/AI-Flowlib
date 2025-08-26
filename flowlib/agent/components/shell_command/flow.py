@@ -90,10 +90,11 @@ class ShellCommandFlow:
         logger.info(f"Generating shell command for intent: {input_data.intent}")
         logger.debug(f"Available commands: {available_commands}")
         
-        # Use generate_structured - no need to pass model_name anymore!
+        # Use generate_structured with default model
         result = await llm.generate_structured(
             prompt=prompt,
             output_type=GeneratedCommand,
+            model_name="default-model",
             prompt_variables=prompt_vars
         )
         

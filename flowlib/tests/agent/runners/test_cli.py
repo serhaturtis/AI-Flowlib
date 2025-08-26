@@ -79,7 +79,7 @@ class TestAgentCLI:
         result = cli_instance.load_agent_config("invalid")
         assert result is None
     
-    @patch('flowlib.agent.runners.cli.AgentOrchestrator')
+    @patch('flowlib.agent.runners.cli.BaseAgent')
     def test_create_agent_from_config(self, mock_orchestrator, cli_instance):
         """Test creating agent from config."""
         test_config = {
@@ -362,7 +362,7 @@ class TestAgentRunning:
             yield cli, test_config
     
     @pytest.mark.asyncio
-    @patch('flowlib.agent.runners.cli.AgentOrchestrator')
+    @patch('flowlib.agent.runners.cli.BaseAgent')
     @patch('flowlib.agent.runners.repl.start_agent_repl')
     @patch('flowlib.agent.runners.cli.run_interactive_session')
     async def test_run_agent_interactive(self, mock_interactive, mock_repl, mock_orchestrator, cli_with_config):
@@ -389,7 +389,7 @@ class TestAgentRunning:
         mock_agent.shutdown.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('flowlib.agent.runners.cli.AgentOrchestrator')
+    @patch('flowlib.agent.runners.cli.BaseAgent')
     async def test_run_agent_single_message(self, mock_orchestrator, cli_with_config):
         """Test running agent with single message."""
         cli, config = cli_with_config
@@ -412,7 +412,7 @@ class TestAgentRunning:
         mock_agent.process_message.assert_called_once_with("Hello")
     
     @pytest.mark.asyncio
-    @patch('flowlib.agent.runners.cli.AgentOrchestrator')
+    @patch('flowlib.agent.runners.cli.BaseAgent')
     async def test_run_agent_file_input(self, mock_orchestrator, cli_with_config):
         """Test running agent with file input."""
         cli, config = cli_with_config
@@ -455,7 +455,7 @@ class TestAgentRunning:
         assert result == 1
     
     @pytest.mark.asyncio
-    @patch('flowlib.agent.runners.cli.AgentOrchestrator')
+    @patch('flowlib.agent.runners.cli.BaseAgent')
     @patch('flowlib.agent.runners.repl.start_agent_repl', side_effect=KeyboardInterrupt())
     async def test_run_agent_keyboard_interrupt(self, mock_repl, mock_orchestrator, cli_with_config):
         """Test running agent with KeyboardInterrupt."""
@@ -475,7 +475,7 @@ class TestAgentRunning:
         assert result == 0  # Should handle KeyboardInterrupt gracefully
     
     @pytest.mark.asyncio
-    @patch('flowlib.agent.runners.cli.AgentOrchestrator')
+    @patch('flowlib.agent.runners.cli.BaseAgent')
     async def test_run_agent_exception(self, mock_orchestrator, cli_with_config):
         """Test running agent with exception."""
         cli, config = cli_with_config
@@ -491,7 +491,7 @@ class TestAgentRunning:
         assert result == 1  # Should return 1 on exception
     
     @pytest.mark.asyncio
-    @patch('flowlib.agent.runners.cli.AgentOrchestrator')
+    @patch('flowlib.agent.runners.cli.BaseAgent')
     async def test_run_agent_exception_with_debug(self, mock_orchestrator, cli_with_config):
         """Test running agent with exception and debug enabled."""
         cli, config = cli_with_config

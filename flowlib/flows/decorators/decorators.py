@@ -84,6 +84,9 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
                     metadata={"is_infrastructure": is_infrastructure}
                 )
                 
+                # Set name attribute on instance too
+                self.name = flow_name
+                
                 # Only call original_init if it's different from Flow.__init__
                 if original_init is not Flow.__init__:
                     try:
@@ -103,7 +106,8 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
             "is_infrastructure": is_infrastructure
         }
         
-        # Set the is_infrastructure flag directly on the class
+        # Set the name and is_infrastructure as direct attributes for easy access
+        cls.name = flow_name
         cls.is_infrastructure = is_infrastructure
         
         # Find pipeline methods first - only scan own class methods, not inherited
@@ -129,6 +133,7 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
         cls.__pipeline_method__ = pipeline_methods[0]
         
         # Create a single flow instance to store in the registry
+        flow_instance = None
         try:
             flow_instance = cls()
             # Set the name attribute directly on the flow instance
@@ -155,8 +160,11 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
         
         # Register the flow in the global registry
         try:
-            flow_registry.register_flow(flow_name, cls)
-            logger.debug(f"Registered flow '{flow_name}' in global registry")
+            if flow_instance is not None:
+                flow_registry.register_flow(flow_name, flow_instance)
+                logger.debug(f"Registered flow instance '{flow_name}' in global registry")
+            else:
+                logger.error(f"Failed to create instance for flow '{flow_name}', skipping registration")
         except Exception as e:
             logger.warning(f"Failed to register flow '{flow_name}' in registry: {e}")
             
