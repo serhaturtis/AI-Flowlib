@@ -1224,6 +1224,73 @@ class ChromaDBProvider(VectorDBProvider):
                 cause=e
             )
             
+    async def get_by_filter(self, filter: Dict[str, Any], top_k: int = 10, 
+                           include_vectors: bool = False, index_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get vectors by metadata filter without vector similarity search."""
+        try:
+            # Use settings as defaults
+            index_name = index_name or self.settings.index_name
+            
+            # Get collection
+            collection = await self._get_or_create_collection(index_name)
+            
+            # Use ChromaDB's get method with metadata filter
+            include_fields = ['metadatas', 'documents']
+            if include_vectors:
+                include_fields.append('embeddings')
+            
+            result = collection.get(
+                where=filter,
+                limit=top_k,
+                include=include_fields
+            )
+            
+            # Convert to standard format
+            results = []
+            if result and "ids" in result and result["ids"]:
+                ids = result["ids"]
+                metadatas = result.get("metadatas", [])
+                documents = result.get("documents", [])
+                embeddings = result.get("embeddings", []) if include_vectors else []
+                
+                for i in range(len(ids)):
+                    result_item = {
+                        "id": ids[i],
+                        "metadata": metadatas[i] if i < len(metadatas) else {},
+                        "document": documents[i] if i < len(documents) else ""
+                    }
+                    
+                    if include_vectors and embeddings and i < len(embeddings):
+                        result_item["vector"] = embeddings[i]
+                        
+                    results.append(result_item)
+            
+            logger.debug(f"Retrieved {len(results)} items by filter from {index_name}")
+            return results
+            
+        except ProviderError as e:
+            # Re-raise existing provider errors
+            raise e
+        except Exception as e:
+            # Wrap and re-raise other errors
+            raise ProviderError(
+                message=f"Failed to get by filter: {str(e)}",
+                context=ErrorContext.create(
+                    flow_name="chroma_provider",
+                    error_type="FilterQueryError",
+                    error_location="get_by_filter",
+                    component=self.name,
+                    operation="metadata_query"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="vector",
+                    operation="metadata_query",
+                    retry_count=0
+                ),
+                cause=e
+            )
+
     async def check_connection(self) -> bool:
         """Check if vector database connection is active.
         

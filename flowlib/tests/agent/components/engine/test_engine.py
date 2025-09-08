@@ -13,13 +13,12 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock, PropertyMock
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 
-from flowlib.agent.components.engine.engine import AgentEngine, ExecutionStrategy
+from flowlib.agent.components.engine import EngineComponent, ExecutionStrategy
 from flowlib.agent.models.config import AgentConfig, EngineConfig, PlannerConfig, ReflectionConfig
 from flowlib.agent.models.state import AgentState
-from flowlib.agent.components.planning.todo import TodoManager, TodoItem, TodoStatus, TodoPriority
-from flowlib.agent.components.planning.planner import AgentPlanner
-from flowlib.agent.components.planning.models import PlanningResult, PlanningExplanation
-from flowlib.agent.components.reflection.models import ReflectionResult
+from flowlib.agent.components.task_decomposition.todo import TodoManager, TodoItem, TodoStatus, TodoPriority
+from flowlib.agent.components.task_decomposition.planner import AgentPlanner
+from flowlib.agent.components.task_decomposition.models import PlanningResult, PlanningExplanation
 from flowlib.flows.models.results import FlowResult, AgentResult
 from flowlib.flows.models.metadata import FlowMetadata
 from flowlib.flows.models.constants import FlowStatus
@@ -303,7 +302,7 @@ class TestAgentEngine:
     def mock_all_registries(self):
         """Helper to mock all required registries with proper return values."""
         return patch('flowlib.flows.registry.flow_registry'), \
-               patch('flowlib.agent.components.planning.planner.flow_registry'), \
+               patch('flowlib.agent.components.task_decomposition.planner.flow_registry'), \
                patch('flowlib.resources.registry.registry.resource_registry'), \
                patch('flowlib.providers.core.registry.provider_registry')
     
@@ -328,7 +327,7 @@ class TestAgentEngine:
         mock_resource_registry.get.return_value = Mock()
         
         # Create mock LLM provider
-        from flowlib.agent.components.planning.models import Plan, PlanStep
+        from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
         mock_plan = Plan(
             task_description="Test task",
             steps=[
@@ -369,8 +368,8 @@ class TestAgentEngine:
         """Test successful engine initialization."""
         # Mock all the dependencies to avoid deep initialization issues
         with patch('flowlib.flows.registry.flow_registry') as mock_registry, \
-             patch('flowlib.agent.components.planning.planner.AgentPlanner.initialize', new_callable=AsyncMock) as mock_unified_init, \
-             patch('flowlib.agent.components.planning.todo.TodoManager.initialize', new_callable=AsyncMock) as mock_todo_init, \
+             patch('flowlib.agent.components.task_decomposition.planner.AgentPlanner.initialize', new_callable=AsyncMock) as mock_unified_init, \
+             patch('flowlib.agent.components.task_decomposition.todo.TodoManager.initialize', new_callable=AsyncMock) as mock_todo_init, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -410,7 +409,7 @@ class TestAgentEngine:
         self.engine._planner = planner
         
         with patch('flowlib.flows.registry.flow_registry') as mock_registry, \
-             patch('flowlib.agent.components.planning.todo.TodoManager.initialize', new_callable=AsyncMock), \
+             patch('flowlib.agent.components.task_decomposition.todo.TodoManager.initialize', new_callable=AsyncMock), \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -431,8 +430,8 @@ class TestAgentEngine:
         with patch('flowlib.flows.registry.flow_registry'), \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry, \
-             patch('flowlib.agent.components.planning.planner.AgentPlanner.initialize', new_callable=AsyncMock), \
-             patch('flowlib.agent.components.planning.todo.TodoManager.initialize', new_callable=AsyncMock):
+             patch('flowlib.agent.components.task_decomposition.planner.AgentPlanner.initialize', new_callable=AsyncMock), \
+             patch('flowlib.agent.components.task_decomposition.todo.TodoManager.initialize', new_callable=AsyncMock):
             
             # Mock the resource and provider registries
             mock_resource_registry.get.return_value = Mock()
@@ -493,7 +492,7 @@ class TestAgentEngine:
     @pytest.mark.asyncio
     async def test_execute_with_strategy_todo_driven_success(self):
         """Test TODO-driven execution strategy."""
-        with patch('flowlib.agent.components.planning.planner.flow_registry') as mock_registry, \
+        with patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_registry, \
              patch('flowlib.flows.registry.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
@@ -509,8 +508,8 @@ class TestAgentEngine:
             mock_resource_registry.get.return_value = Mock()
             
             # Create a proper async mock for LLM provider that respects output_type
-            from flowlib.agent.components.planning.models import Plan, PlanStep
-            from flowlib.agent.components.planning.todo import TodoItem
+            from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
+            from flowlib.agent.components.task_decomposition.todo import TodoItem
             mock_plan = Plan(
                 task_description="Test TODO task",
                 steps=[
@@ -589,7 +588,7 @@ class TestAgentEngine:
     async def test_execute_with_strategy_todo_driven_fallback(self):
         """Test TODO-driven execution falling back to single-cycle when no TODOs."""
         with patch('flowlib.flows.registry.flow_registry') as mock_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -603,7 +602,7 @@ class TestAgentEngine:
             mock_resource_registry.get.return_value = Mock()
             
             # Create a proper async LLM provider mock that respects output_type
-            from flowlib.agent.components.planning.models import Plan, PlanStep
+            from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
             mock_plan = Plan(
                 task_description="Test fallback task",
                 steps=[
@@ -669,7 +668,7 @@ class TestAgentEngine:
     async def test_execute_todo_cycle_success(self):
         """Test successful TODO cycle execution."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -723,7 +722,7 @@ class TestAgentEngine:
     async def test_execute_todo_cycle_error(self):
         """Test TODO cycle execution with error."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -845,7 +844,7 @@ class TestAgentEngine:
     async def test_reflect_on_overall_progress_success(self):
         """Test overall progress reflection with successful completion."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -882,7 +881,7 @@ class TestAgentEngine:
     async def test_reflect_on_overall_progress_low_success_rate(self):
         """Test overall progress reflection with low success rate."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -937,7 +936,7 @@ class TestAgentEngine:
     async def test_reflect_on_overall_progress_reflection_error(self):
         """Test overall progress reflection when reflection raises error."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -1024,7 +1023,7 @@ class TestUnifiedEngineIntegration:
     
     async def test_full_todo_driven_workflow(self):
         """Test complete TODO-driven workflow from start to finish."""
-        with patch('flowlib.agent.components.planning.planner.flow_registry') as mock_registry, \
+        with patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_registry, \
              patch('flowlib.flows.registry.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
@@ -1045,7 +1044,7 @@ class TestUnifiedEngineIntegration:
             mock_resource_registry.get.return_value = Mock()
             
             # Create a proper async LLM provider mock that respects output_type
-            from flowlib.agent.components.planning.models import Plan, PlanStep
+            from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
             mock_plan = Plan(
                 task_description="Build a web application with user authentication",
                 steps=[
@@ -1153,7 +1152,7 @@ class TestUnifiedEngineIntegration:
     async def test_todo_execution_with_failures(self):
         """Test TODO execution with some failures and error handling."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -1189,7 +1188,7 @@ class TestUnifiedEngineIntegration:
             mock_resource_registry.get.return_value = Mock()
             
             # Create mock LLM provider
-            from flowlib.agent.components.planning.models import Plan, PlanStep
+            from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
             mock_plan = Plan(
                 task_description="Test error handling in TODO execution",
                 steps=[
@@ -1267,7 +1266,7 @@ class TestUnifiedEngineIntegration:
     async def test_strategy_determination_edge_cases(self):
         """Test automatic strategy determination with various scenarios."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -1291,7 +1290,7 @@ class TestUnifiedEngineIntegration:
             mock_resource_registry.get.return_value = Mock()
             
             # Create mock LLM provider
-            from flowlib.agent.components.planning.models import Plan, PlanStep
+            from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
             mock_plan = Plan(
                 task_description="Test task",
                 steps=[
@@ -1357,7 +1356,7 @@ class TestUnifiedEngineIntegration:
     async def test_memory_integration_during_execution(self):
         """Test memory system integration during execution cycles."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -1380,7 +1379,7 @@ class TestUnifiedEngineIntegration:
             mock_resource_registry.get.return_value = Mock()
             
             # Create mock LLM provider
-            from flowlib.agent.components.planning.models import Plan, PlanStep
+            from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
             mock_plan = Plan(
                 task_description="Test memory integration",
                 steps=[
@@ -1430,7 +1429,7 @@ class TestUnifiedEngineIntegration:
     async def test_reflection_integration_and_completion(self):
         """Test reflection system integration and completion detection."""
         with patch('flowlib.flows.registry.flow_registry') as mock_flow_registry, \
-             patch('flowlib.agent.components.planning.planner.flow_registry') as mock_unified_registry, \
+             patch('flowlib.agent.components.task_decomposition.planner.flow_registry') as mock_unified_registry, \
              patch('flowlib.resources.registry.registry.resource_registry') as mock_resource_registry, \
              patch('flowlib.providers.core.registry.provider_registry') as mock_provider_registry:
             
@@ -1465,7 +1464,7 @@ class TestUnifiedEngineIntegration:
             mock_resource_registry.get.return_value = Mock()
             
             # Create mock LLM provider
-            from flowlib.agent.components.planning.models import Plan, PlanStep
+            from flowlib.agent.components.task_decomposition.models import Plan, PlanStep
             mock_plan = Plan(
                 task_description="Task that should complete quickly",
                 steps=[

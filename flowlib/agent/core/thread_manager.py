@@ -43,11 +43,9 @@ class AgentThreadPoolManager:
                 raise ValueError(f"Agent {agent_id} already exists")
             
             # Create agent with task description from config
-            task_description = config.task_description or f"Agent {agent_id}"
             agent = BaseAgent(
-                config=config, 
-                name=agent_id,
-                task_description=task_description
+                config=config,
+                task_description=config.task_description
             )
             
             # Store agent
@@ -98,24 +96,22 @@ class AgentThreadPoolManager:
         Raises:
             ValueError: If agent not found
         """
+        logger.debug(f"[ThreadManager] Looking for agent {agent_id}")
         agent = self.agents.get(agent_id)
         if not agent:
+            logger.error(f"[ThreadManager] Agent {agent_id} not found")
             raise ValueError(f"Agent {agent_id} not found")
         
+        logger.debug(f"[ThreadManager] Checking if agent {agent_id} is running")
         if not agent.is_running():
+            logger.error(f"[ThreadManager] Agent {agent_id} is not running")
             raise RuntimeError(f"Agent {agent_id} is not running")
         
-        # Send to agent's input queue from current event loop
-        # Use thread-safe method to schedule coroutine in agent's loop
-        future = asyncio.run_coroutine_threadsafe(
-            agent.input_queue.put(message),
-            agent._agent_loop
-        )
+        logger.debug(f"[ThreadManager] Scheduling message {message.message_id} to agent's queue")
+        # Send to agent's thread-safe input queue
+        agent.input_queue.put(message)
         
-        # Wait for send to complete
-        await asyncio.wrap_future(future)
-        
-        logger.debug(f"Sent message {message.message_id} to agent {agent_id}")
+        logger.info(f"[ThreadManager] Successfully sent message {message.message_id} to agent {agent_id}")
         return message.message_id
     
     async def wait_for_response(self, agent_id: str, message_id: str, timeout: Optional[float] = None) -> AgentResponse:
@@ -133,11 +129,16 @@ class AgentThreadPoolManager:
             ValueError: If agent not found
             TimeoutError: If response times out
         """
+        logger.debug(f"[ThreadManager] Getting router for agent {agent_id}")
         router = self.response_routers.get(agent_id)
         if not router:
+            logger.error(f"[ThreadManager] No router found for agent {agent_id}")
             raise ValueError(f"Agent {agent_id} not found")
         
-        return await router.wait_for_response(message_id, timeout)
+        logger.debug(f"[ThreadManager] Waiting for response to message {message_id}")
+        response = await router.wait_for_response(message_id, timeout)
+        logger.debug(f"[ThreadManager] Received response for message {message_id}")
+        return response
     
     def shutdown_agent(self, agent_id: str):
         """Shutdown an agent.
@@ -157,13 +158,17 @@ class AgentThreadPoolManager:
             # Stop response router
             router = self.response_routers.get(agent_id)
             if router and router.routing_task:
-                # Run async stop in sync context
+                # Check if we're in an async context
                 try:
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
+                    # We're in an async context, create task to stop router
+                    asyncio.create_task(router.stop())
                 except RuntimeError:
+                    # Not in async context, run synchronously
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                loop.run_until_complete(router.stop())
+                    loop.run_until_complete(router.stop())
+                    loop.close()
             
             # Clean up
             del self.agents[agent_id]

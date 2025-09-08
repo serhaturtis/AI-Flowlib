@@ -17,12 +17,12 @@ from flowlib.resources.models.constants import ResourceType
 logger = logging.getLogger(__name__)
 
 
-class CleanProviderRegistry(BaseRegistry[Any]):
-    """Clean provider registry with config-driven access only.
+class ProviderRegistry(BaseRegistry[Any]):
+    """Provider registry for managing all providers in the system.
     
-    This registry enforces the config-driven pattern for all provider access:
-    - No legacy type+name access methods
-    - Only get_by_config() for provider retrieval  
+    This registry provides both config-driven and direct access to providers:
+    - get_provider() for direct provider access by name and type
+    - get_by_config() for config-driven provider retrieval  
     - Centralized provider configuration management
     - Automatic provider initialization and lifecycle management
     """
@@ -87,7 +87,7 @@ class CleanProviderRegistry(BaseRegistry[Any]):
             self.register_provider(obj, **metadata)
         else:
             raise TypeError(
-                "CleanProviderRegistry only accepts Provider objects. "
+                "ProviderRegistry only accepts Provider objects. "
                 f"Got {type(obj).__name__}."
             )
 
@@ -516,4 +516,4 @@ class CleanProviderRegistry(BaseRegistry[Any]):
 
 
 # Global provider registry instance
-provider_registry = CleanProviderRegistry()
+provider_registry = ProviderRegistry()

@@ -1,6 +1,6 @@
 """Models for streaming knowledge extraction."""
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     KnowledgeExtractionRequest,
     KnowledgeExtractionResult,
     ExtractionState,

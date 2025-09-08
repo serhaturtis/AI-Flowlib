@@ -32,7 +32,7 @@ Text to analyze:
 {{text}}
 
 Extract entities that would be valuable for an AI agent working in the {{domain}} field.
-Output a JSON object with an 'entities' array."""
+Provide an 'entities' array with the extracted entities."""
     
     config: ClassVar[PromptConfigOverride] = PromptConfigOverride(
         temperature=0.3,  # Lower temperature for precise extraction
@@ -59,7 +59,7 @@ Focus on technical relationships that would help an AI understand how these enti
 Text to analyze:
 {{text}}
 
-Output a JSON object with a 'relationships' array."""
+Provide a 'relationships' array with the identified relationships."""
     
     config: ClassVar[PromptConfigOverride] = PromptConfigOverride(
         temperature=0.3,  # Lower temperature for precise extraction
@@ -83,7 +83,7 @@ Focus on concepts that are crucial for understanding {{domain}}.
 Text to analyze:
 {{text}}
 
-Output a JSON object with a 'concepts' array."""
+Provide a 'concepts' array with the most important concepts."""
     
     config: ClassVar[PromptConfigOverride] = PromptConfigOverride(
         temperature=0.3,  # Lower temperature for precise extraction

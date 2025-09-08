@@ -8,6 +8,8 @@ import subprocess
 import time
 import signal
 import atexit
+import socket
+import urllib.request
 
 # Add the project to the Python path (accounting for apps/ directory)
 apps_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,19 +28,27 @@ from flowlib.resources.registry.registry import resource_registry
 from flowlib.providers import provider_registry
 # Providers are now loaded via auto-discovery from ~/.flowlib/configs/
 import logging
-import urllib.request
+from flowlib.resources.auto_discovery import discover_configurations
+from flowlib.agent.models.config import StatePersistenceConfig
+from flowlib.agent.components.memory.component import AgentMemoryConfig
+from flowlib.agent.components.memory.vector import VectorMemoryConfig
+from flowlib.agent.components.memory.knowledge import KnowledgeMemoryConfig
+from flowlib.agent.components.memory.working import WorkingMemoryConfig
+import argparse
 
 # Import flows to ensure they get registered with the flow system
-from flowlib.agent.components.conversation import ConversationFlow
-from flowlib.agent.components.shell_command import ShellCommandFlow  
-from flowlib.agent.components.classification import MessageClassifierFlow
+# Note: Tool calling flow moved to tools package
+try:
+    from flowlib.agent.components.task_execution.calling import AgentToolCallingFlow
+except ImportError:
+    # Tool calling flow is being refactored - continue without it for now
+    pass
 
 logger = logging.getLogger(__name__)
 
 
 def check_port(port: int) -> bool:
     """Check if a port is available."""
-    import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = sock.connect_ex(('localhost', port))
     sock.close()
@@ -134,7 +144,6 @@ def manage_docker_services(action: str = "start", reset: bool = False) -> bool:
                     # Check both HTTP and Bolt ports
                     urllib.request.urlopen("http://localhost:7474", timeout=1)
                     # Also verify Bolt protocol is ready
-                    import socket
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(1)
                     result = sock.connect_ex(('localhost', 7687))
@@ -261,14 +270,12 @@ def configure_flowlib_logging(quiet_mode: bool = True):
         
         # Set moderately noisy loggers to WARNING  
         somewhat_noisy_loggers = [
-            'flowlib.agent.shell_command.flow',
             'flowlib.agent.core.dual_path_agent',
             'flowlib.agent.engine.base',
             'flowlib.agent.memory',
             'flowlib.agent.planning',
             'flowlib.agent.reflection',
-            'flowlib.agent.conversation',
-            'flowlib.agent.classification'
+            'flowlib.agent.conversation'
         ]
         
         for logger_name in somewhat_noisy_loggers:
@@ -297,8 +304,6 @@ async def setup_providers():
     1. Configuration files in ~/.flowlib/configs/
     2. Role assignments in ~/.flowlib/roles/assignments.py
     """
-    from flowlib.resources.auto_discovery import discover_configurations
-    
     # Trigger auto-discovery to load all configurations and role assignments
     discover_configurations()
     
@@ -359,34 +364,10 @@ async def main(persona=None):
     # Auto-discovery will load role assignments that map model names to providers
     # No need to manually ensure models exist - the system will fail cleanly if they don't
     
-    # Determine persona to use
-    default_persona = """You are an expert AI assistant for the Flowlib framework.
-
-You understand:
-- The flow-based architecture with @flow, @stage, and @pipeline decorators
-- The provider system for LLM, database, cache, and other services
-- The resource registry for prompts, models, and configurations
-- The agent system with memory, planning, and reflection capabilities
-
-You can help users:
-- Understand and navigate the Flowlib codebase
-- Create new flows and integrate providers
-- Debug issues and improve existing code
-- Work with the agent's memory and planning systems
-
-When users ask for help:
-1. Use tools to explore the codebase
-2. Break down complex tasks into TODOs
-3. Provide clear, actionable guidance
-4. Help debug any issues that arise
-
-You communicate clearly and provide structured, helpful responses."""
-
-    # Use custom persona if provided, otherwise use default
-    agent_persona = persona if persona else default_persona
+    # Use provided persona directly
+    agent_persona = persona
     
     # Configure state persistence for REPL
-    from flowlib.agent.models.config import StatePersistenceConfig, PlannerConfig, ReflectionConfig, AgentMemoryConfig, VectorMemoryConfig, KnowledgeMemoryConfig, WorkingMemoryConfig
     
     state_config = StatePersistenceConfig(
         persistence_type="file",
@@ -397,44 +378,33 @@ You communicate clearly and provide structured, helpful responses."""
         max_states=10  # Keep last 10 states per task
     )
     
-    planner_config = PlannerConfig(
-        model_name="agent-model-large",
-        provider_name="llamacpp"
-    )
-    
-    reflection_config = ReflectionConfig(
-        model_name="agent-model-large",
-        provider_name="llamacpp"
-    )
     
     memory_config = AgentMemoryConfig(
         working_memory=WorkingMemoryConfig(default_ttl_seconds=3600),
         vector_memory=VectorMemoryConfig(
-            vector_provider_name="chroma",
-            embedding_provider_name="llamacpp_embedding"
+            vector_provider_config="default-vector-db",
+            embedding_provider_config="default-embedding"
         ),
         knowledge_memory=KnowledgeMemoryConfig(
-            graph_provider_name="neo4j",
-            provider_settings={
-                "uri": "bolt://localhost:7687",
-                "username": "neo4j", 
-                "password": "pleaseChangeThisPassword"
-            }
+            graph_provider_config="default-graph-db"
         ),
-        fusion_provider_name="default-llm",
-        fusion_model_name="agent-model-small",
+        fusion_llm_config="default-llm",
         store_execution_history=True
     )
     
-    # Create agent configuration
+    # Create agent configuration with consolidated parameters
     config = AgentConfig(
         name="FlowlibAgent",
         provider_name="default-llm",
         persona=agent_persona,
         task_description="Interactive REPL development assistant",
-        planner_config=planner_config,
-        reflection_config=reflection_config,
-        memory_config=memory_config,
+        # Task decomposer settings (consolidated from PlannerConfig)
+        model_name="agent-model-large",
+        task_decomposer_max_tokens=1024,
+        task_decomposer_temperature=0.2,
+        # Memory configuration (required)
+        memory=memory_config,
+        # Other configs
         state_config=state_config
     )
     
@@ -447,7 +417,6 @@ You communicate clearly and provide structured, helpful responses."""
 
 
 if __name__ == "__main__":
-    import argparse
     
     parser = argparse.ArgumentParser(
         description="Run the Flowlib Agent interactive REPL",
@@ -491,8 +460,8 @@ Note: Configure your models and providers in ~/.flowlib directory.
     parser.add_argument(
         "--persona",
         type=str,
-        default=None,
-        help="Custom persona for the agent (default: uses built-in expert persona)"
+        required=True,
+        help="Persona for the agent (required)"
     )
     
     parser.add_argument(
@@ -545,7 +514,18 @@ Note: Configure your models and providers in ~/.flowlib directory.
     try:
         if args.simple:
             # Simple mode - just start the REPL with defaults
-            asyncio.run(start_agent_repl(history_file=args.history))
+            from flowlib.agent.models.config import AgentConfig
+            simple_config = AgentConfig(
+                name="SimpleAgent",
+                persona="a helpful assistant",
+                provider_name="default-llm",
+                memory=AgentMemoryConfig()
+            )
+            asyncio.run(start_agent_repl(
+                agent_id="simple_agent",
+                config=simple_config,
+                history_file=args.history
+            ))
         else:
             # Full mode with custom configuration
             asyncio.run(main(persona=args.persona))

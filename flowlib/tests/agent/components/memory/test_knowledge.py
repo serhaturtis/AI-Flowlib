@@ -59,7 +59,7 @@ class TestKnowledgeMemoryConfig:
     def test_default_config(self):
         """Test default configuration values."""
         config = KnowledgeMemoryConfig()
-        assert config.graph_provider_config == "default-graph"
+        assert config.graph_provider_config == "default-graph-db"
         assert config.default_importance == 0.7
         assert config.max_search_results == 50
         assert config.default_context == "knowledge"
@@ -109,7 +109,7 @@ class TestKnowledgeMemoryInitialization:
             assert memory._graph_provider == mock_graph_provider
             
             # Verify provider registry call
-            mock_registry.get_by_config.assert_called_once_with("default-graph")
+            mock_registry.get_by_config.assert_called_once_with("default-graph-db")
             
             await memory.shutdown()
     

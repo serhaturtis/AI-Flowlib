@@ -1435,4 +1435,48 @@ class PineconeProvider(VectorDBProvider):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )
+    
+    async def get_by_filter(self, filter: Dict[str, Any], top_k: int = 10, 
+                           include_vectors: bool = False, index_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get vectors by metadata filter without vector similarity search."""
+        try:
+            # Pinecone doesn't support metadata-only queries directly
+            # We would need to use query with a dummy vector or implement a different approach
+            # For now, raise NotImplementedError with a helpful message
+            raise NotImplementedError(
+                "Pinecone provider does not support metadata-only queries. "
+                "Use search() with a query vector instead."
+            )
+            
+        except Exception as e:
+            raise ProviderError(
+                message=f"Failed to get by filter: {str(e)}",
+                context=ErrorContext.create(
+                    flow_name="pinecone_provider",
+                    error_type="FilterQueryError",
+                    error_location="get_by_filter",
+                    component=self.name,
+                    operation="metadata_query"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="vector",
+                    operation="metadata_query",
+                    retry_count=0
+                ),
+                cause=e
+            )
+
+    async def check_connection(self) -> bool:
+        """Check if vector database connection is active."""
+        try:
+            # Check if we can access the index
+            if not self._index:
+                return False
+            # Try to get index stats as a health check
+            stats = self._index.describe_index_stats()
+            return True
+        except Exception as e:
+            logger.error(f"Pinecone connection check failed: {str(e)}")
+            return False 

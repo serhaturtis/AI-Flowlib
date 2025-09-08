@@ -97,6 +97,55 @@ class AgentActivityFormatter:
         return "\n".join(lines)
     
     @staticmethod
+    def format_activity_stream(activity_items: List[Dict[str, Any]]) -> str:
+        """Format activity stream items for display.
+        
+        Args:
+            activity_items: List of activity items from ActivityStream.activity_buffer
+            
+        Returns:
+            Formatted activity stream output
+        """
+        if not activity_items:
+            return ""
+        
+        lines = []
+        lines.append("🔄 Activity Stream:")
+        lines.append("─" * 40)
+        
+        for item in activity_items:
+            # Extract fields safely
+            timestamp = item.get('timestamp')
+            activity_type = item.get('type')
+            message = item.get('message', '')
+            details = item.get('details', {})
+            
+            # Format timestamp
+            time_str = ""
+            if timestamp:
+                time_str = f"[{timestamp.strftime('%H:%M:%S')}] "
+            
+            # Format activity type
+            type_str = ""
+            if activity_type:
+                # Get the emoji and name from ActivityType enum
+                type_str = f"{activity_type.value}: " if hasattr(activity_type, 'value') else f"{str(activity_type)}: "
+            
+            # Main activity line
+            lines.append(f"  {time_str}{type_str}{message}")
+            
+            # Add relevant details
+            if details:
+                for key, value in details.items():
+                    if key in ['inputs', 'result', 'query', 'selected', 'decision', 'content']:
+                        # Show important details
+                        value_str = str(value)[:80] + "..." if len(str(value)) > 80 else str(value)
+                        lines.append(f"    → {key}: {value_str}")
+        
+        lines.append("─" * 40)
+        return "\n".join(lines)
+    
+    @staticmethod
     def format_planning_activity(planning_info: Dict[str, Any]) -> str:
         """Format planning activity for display.
         

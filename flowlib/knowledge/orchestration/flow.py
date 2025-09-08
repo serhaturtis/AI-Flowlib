@@ -14,7 +14,7 @@ from flowlib.knowledge.extraction.flow import DocumentExtractionFlow
 from flowlib.knowledge.analysis.flow import EntityAnalysisFlow
 from flowlib.knowledge.vector.flow import VectorStorageFlow
 from flowlib.knowledge.graph.flow import GraphStorageFlow
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     DocumentExtractionInput,
     EntityExtractionInput,
     VectorStoreInput,

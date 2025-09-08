@@ -1,6 +1,6 @@
 """Knowledge base creation flows package public API."""
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     DocumentType,
     EntityType,
     RelationType,

@@ -10,12 +10,9 @@ from typing import Any, Dict, List, Optional
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import NotInitializedError, ExecutionError
-from flowlib.agent.models.config import AgentConfig
 from flowlib.flows.base.base import Flow
-from flowlib.flows.models.metadata import FlowMetadata
 from flowlib.flows.registry.registry import flow_registry, FlowRegistry
 from flowlib.flows.models.results import FlowResult
-from flowlib.agent.components.discovery.flow_discovery import FlowDiscovery
 
 logger = logging.getLogger(__name__)
 
@@ -37,35 +34,28 @@ class AgentFlowRunner(AgentComponent):
         """
         super().__init__(name)
         self._flows: Dict[str, Flow] = {}
-        self._flow_discovery: Optional[FlowDiscovery] = None
     
     async def _initialize_impl(self) -> None:
         """Initialize the flow runner."""
-        # Initialize flow discovery
-        self._flow_discovery = FlowDiscovery()
-        await self._flow_discovery.initialize()
-        
+        # Flow registry is initialized globally, no additional setup needed
         logger.info("Flow runner initialized")
     
     async def _shutdown_impl(self) -> None:
         """Shutdown the flow runner."""
-        if self._flow_discovery:
-            await self._flow_discovery.shutdown()
         logger.info("Flow runner shutdown")
     
     async def discover_flows(self) -> None:
         """Discover and register available flows."""
-        if not self._flow_discovery:
-            logger.warning("Flow discovery not initialized")
-            return
-        
         try:
-            # Use the synchronous discover_agent_flows method
-            discovered_flows = self._flow_discovery.discover_agent_flows()
-            logger.info(f"Discovered {len(discovered_flows)} flows")
-            
-            for flow in discovered_flows:
-                self.register_flow(flow)
+            # Get agent-selectable flows directly from the flow registry
+            if flow_registry:
+                discovered_flows = flow_registry.get_agent_selectable_flows()
+                logger.info(f"Discovered {len(discovered_flows)} flows")
+                
+                for flow_name, flow in discovered_flows.items():
+                    self.register_flow(flow)
+            else:
+                logger.warning("Flow registry not available")
         except Exception as e:
             logger.error(f"Error discovering flows: {e}")
     
@@ -274,18 +264,3 @@ class AgentFlowRunner(AgentComponent):
         """
         return self._flows.copy()
     
-    async def validate_required_flows(self) -> None:
-        """Validate that required flows are available."""
-        required_flows = ["conversation", "shell-command", "message-classifier-flow"]
-        missing_flows = []
-        
-        for flow_name in required_flows:
-            if flow_name not in self._flows:
-                # Check global registry
-                if not flow_registry or not flow_registry.get_flow(flow_name):
-                    missing_flows.append(flow_name)
-        
-        if missing_flows:
-            logger.warning(f"Missing required flows: {missing_flows}")
-        else:
-            logger.info("All required flows are available")

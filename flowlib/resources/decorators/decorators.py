@@ -2,6 +2,7 @@ from typing import Dict, Any, Protocol, runtime_checkable
 from flowlib.resources.models.constants import ResourceType
 from flowlib.resources.models.base import ResourceBase
 from flowlib.resources.models.model_resource import ModelResource
+from flowlib.core.interfaces import PromptTemplate
 
 
 def _get_resource_registry():
@@ -10,14 +11,6 @@ def _get_resource_registry():
     return resource_registry
 
 
-@runtime_checkable
-class PromptTemplate(Protocol):
-    """Protocol defining the interface for prompt templates.
-    
-    Any class decorated with @prompt must implement this interface.
-    """
-    template: str
-    config: Dict[str, Any]
 
 
 def resource(name: str, resource_type: str = ResourceType.MODEL_CONFIG, **metadata):

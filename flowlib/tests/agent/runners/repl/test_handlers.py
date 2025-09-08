@@ -14,7 +14,7 @@ from flowlib.agent.runners.repl.handlers import (
     TodoCommandHandler
 )
 from flowlib.agent.runners.repl.commands import Command, CommandType, CommandRegistry
-from flowlib.agent.runners.repl.tools.base import ToolResult, ToolResultStatus, REPLTool, ToolParameter
+from flowlib.agent.components.task_execution import ToolResult
 
 
 class TestDefaultCommandHandler:
@@ -850,7 +850,7 @@ class TestTodoCommandHandler:
     @pytest.mark.asyncio
     async def test_todo_list_with_items(self, handler, context_with_agent, mock_todo_manager, mock_todo_list):
         """Test listing todos with items."""
-        from flowlib.agent.components.planning.todo import TodoStatus, TodoPriority
+        from flowlib.agent.components.task_decomposition.todo import TodoStatus, TodoPriority
         
         # Mock todo items
         mock_todo = Mock()
@@ -865,7 +865,7 @@ class TestTodoCommandHandler:
         mock_todo_list.get_todos_by_status.return_value = [mock_todo]
         mock_todo_manager.get_current_list.return_value = mock_todo_list
         
-        with patch('flowlib.agent.components.planning.todo.TodoStatus', TodoStatus):
+        with patch('flowlib.agent.components.task_decomposition.todo.TodoStatus', TodoStatus):
             result = await handler.handle(command, context_with_agent)
             
             assert "**Current TODOs:**" in result
@@ -886,12 +886,12 @@ class TestTodoCommandHandler:
     @pytest.mark.asyncio
     async def test_todo_add_priority_detection(self, handler, context_with_agent, mock_todo_manager):
         """Test adding todo with priority detection."""
-        from flowlib.agent.components.planning.todo import TodoPriority
+        from flowlib.agent.components.task_decomposition.todo import TodoPriority
         
         command = Command(CommandType.SLASH, "todo", ["add", "urgent", "task"], "/todo add urgent task")
         mock_todo_manager.add_todo.return_value = "abc123def456"
         
-        with patch('flowlib.agent.components.planning.todo.TodoPriority', TodoPriority):
+        with patch('flowlib.agent.components.task_decomposition.todo.TodoPriority', TodoPriority):
             result = await handler.handle(command, context_with_agent)
             
             # Should detect "urgent" and set high priority

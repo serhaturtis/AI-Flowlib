@@ -87,6 +87,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
             )
         
         self._model_path = None
+        self._model_config = None
         self._lock = asyncio.Lock()
         
         logger.info(f"LlamaCppEmbeddingProvider '{name}' configured")
@@ -94,6 +95,68 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
     async def _initialize(self) -> None:
         """Initialize the embedding provider."""
         logger.info(f"LlamaCppEmbeddingProvider '{self.name}' initialized successfully")
+        
+    async def _initialize_model(self, model_name: str):
+        """Initialize a specific embedding model.
+        
+        Args:
+            model_name: Name of the model to initialize
+            
+        Raises:
+            ProviderError: If initialization fails
+        """
+        if self._model and self._model_config and hasattr(self._model_config, 'path'):
+            return  # Already loaded
+            
+        try:
+            # Get model configuration from registry - similar to LlamaCppProvider
+            model_config_raw = await self.get_model_config(model_name)
+            
+            # Convert to model config with path attribute
+            if isinstance(model_config_raw, dict):
+                # Extract path from dict
+                if 'path' not in model_config_raw:
+                    raise ValueError(f"Model config for '{model_name}' missing required 'path' field")
+                model_path = model_config_raw['path']
+                self._model_config = model_config_raw
+            else:
+                # Handle ModelResource format - access config dictionary
+                if hasattr(model_config_raw, 'config') and isinstance(model_config_raw.config, dict):
+                    if 'path' not in model_config_raw.config:
+                        raise ValueError(f"Model config for '{model_name}' missing required 'path' field")
+                    model_path = model_config_raw.config['path']
+                    self._model_config = model_config_raw.config
+                elif hasattr(model_config_raw, 'path'):
+                    # Direct access to path attribute
+                    model_path = model_config_raw.path
+                    self._model_config = model_config_raw
+                else:
+                    raise ValueError(f"Model config for '{model_name}' has no accessible 'path' field")
+                    
+            # Load the model with the path from config
+            await self._load_model(model_path)
+            
+            logger.info(f"Initialized embedding model '{model_name}' from: {model_path}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize embedding model '{model_name}': {e}")
+            raise ProviderError(
+                f"Embedding model initialization failed for '{model_name}': {str(e)}",
+                context=ErrorContext.create(
+                    flow_name="embedding_model_initialization",
+                    error_type="ProviderError",
+                    error_location=f"{self.__class__.__name__}._initialize_model",
+                    component=self.name,
+                    operation="model_initialization"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="embedding",
+                    operation="model_initialization",
+                    retry_count=0
+                ),
+                cause=e
+            ) from e
 
     async def _load_model(self, model_path: str) -> None:
         """Load a specific embedding model."""
@@ -151,8 +214,19 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 object.__setattr__(self, '_model', None)
                 logger.info(f"Embedding model resources released for: {self._model_path}")
             
-    async def embed(self, text: Union[str, List[str]], model_path: str = None) -> List[List[float]]:
-        """Generate embeddings for the given text(s)."""
+    async def embed(self, text: Union[str, List[str]], model_name: str = None) -> List[List[float]]:
+        """Generate embeddings for the given text(s).
+        
+        Args:
+            text: Text(s) to generate embeddings for
+            model_name: Name of the model to use (optional, will use default if not provided)
+            
+        Returns:
+            List of embedding vectors
+            
+        Raises:
+            ProviderError: If embedding generation fails
+        """
         if not self.initialized:
             raise ProviderError(
                 message="Embedding provider is not initialized.",
@@ -171,27 +245,13 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 )
             )
             
-        # Load model if not already loaded or if different model path provided
-        if not self._model or (model_path and model_path != self._model_path):
-            if model_path:
-                await self._load_model(model_path)
+        # Initialize model if not already loaded
+        if not self._model:
+            if model_name:
+                await self._initialize_model(model_name)
             else:
-                raise ProviderError(
-                    message="No model loaded and no model path provided.",
-                    context=ErrorContext.create(
-                        flow_name="llama_cpp_embedding_provider",
-                        error_type="ConfigurationError",
-                        error_location="embed",
-                        component=self.name,
-                        operation="model_loading"
-                    ),
-                    provider_context=ProviderErrorContext(
-                        provider_name=self.name,
-                        provider_type="embedding",
-                        operation="model_loading",
-                        retry_count=0
-                    )
-                )
+                # Use default embedding model role
+                await self._initialize_model("default-embedding-model")
             
         async with self._lock:
             try:

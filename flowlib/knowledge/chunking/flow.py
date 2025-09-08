@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 from pathlib import Path
 
 from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     TextChunk, DocumentContent, ChunkingStrategy, 
     ChunkingInput, ChunkingOutput
 )

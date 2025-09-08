@@ -7,7 +7,7 @@ import logging
 import pytest
 from pathlib import Path
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     KnowledgeExtractionRequest,
     ExtractionConfig,
     ChunkingStrategy,
@@ -89,7 +89,7 @@ class TestSmartChunking:
         """Test smart chunking flow."""
         from flowlib.knowledge.chunking.flow import SmartChunkingFlow
         from flowlib.knowledge.chunking.models import ChunkingInput
-        from flowlib.knowledge.models.models import (
+        from flowlib.knowledge.models import (
             DocumentContent, DocumentMetadata, DocumentType, 
             ProcessingStatus, ExtractionConfig, ChunkingStrategy
         )

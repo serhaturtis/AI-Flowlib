@@ -68,13 +68,7 @@ class AgentConfigManager(AgentComponent):
             
             # If None, create default config
             elif config is None:
-                logger.warning("No config provided, creating default AgentConfig")
-                self._config = AgentConfig(
-                    name="default_agent",
-                    persona="Default helpful assistant",
-                    provider_name="llamacpp"
-                )
-                return self._config
+                raise ConfigurationError("Configuration is required - no default agent configuration allowed")
             
             # Invalid config type
             else:

@@ -10,7 +10,7 @@ from flowlib.core.container.container import (
     get_container,
     set_global_container
 )
-from flowlib.core.interfaces.interfaces import Configuration
+from flowlib.core.interfaces import Configuration
 
 
 class MockProvider:

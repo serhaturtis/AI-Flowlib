@@ -3,11 +3,16 @@ Base class for embedding providers.
 """
 
 
-from typing import List, Union, Any, Generic, TypeVar
+import logging
+from typing import List, Union, Any, Generic, TypeVar, Dict
 from pydantic import Field
 
 from flowlib.providers.core.base import Provider, ProviderSettings
 from flowlib.core.errors.models import ProviderErrorContext
+from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.resources.registry.registry import resource_registry
+
+logger = logging.getLogger(__name__)
 
 # Type variable for embedding settings
 T = TypeVar('T', bound='EmbeddingProviderSettings')
@@ -50,9 +55,54 @@ class EmbeddingProvider(Provider[T], Generic[T]):
         """
         raise NotImplementedError("Subclasses must implement 'embed'.")
 
+    async def get_model_config(self, model_name: str) -> Dict[str, Any]:
+        """Get configuration for a model from the resource registry.
+        
+        Args:
+            model_name: Name of the model to retrieve
+            
+        Returns:
+            Model configuration dictionary
+            
+        Raises:
+            ProviderError: If model is not found or invalid
+        """
+        try:
+            # Use legitimate registry method - this is NOT a fallback pattern
+            model_config = resource_registry.get(model_name)
+            
+            # Log the model config for debugging
+            logger.info(f"Retrieved embedding model config for '{model_name}': {model_config}")
+            
+            # If model_config is a class (not instance), create an instance
+            if isinstance(model_config, type):
+                logger.info(f"Embedding model '{model_name}' is a class, creating instance")
+                model_config = model_config()
+                
+            return model_config
+        except Exception as e:
+            error_context = ErrorContext.create(
+                flow_name="model_config_retrieval",
+                error_type="ProviderError",
+                error_location=f"{self.__class__.__name__}.get_model_config",
+                component=self.name,
+                operation="get_model_config"
+            )
+            
+            provider_context = ProviderErrorContext(
+                provider_name=self.name,
+                provider_type="embedding",
+                operation="get_model_config",
+                retry_count=0
+            )
+            
+            raise ProviderError(
+                message=f"Failed to get embedding model config '{model_name}': {str(e)}",
+                context=error_context,
+                provider_context=provider_context,
+                cause=e
+            ) from e
+
     # Optional: Add methods for specific embedding tasks if needed
     # async def embed_query(self, query: str) -> List[float]: ...
-    # async def embed_documents(self, documents: List[str]) -> List[List[float]]: ...
-
-    # Default initialize/shutdown can be inherited from Provider
-    # if no specific logic is needed for the base class. 
+    # async def embed_documents(self, documents: List[str]) -> List[List[float]]: ... 

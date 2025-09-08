@@ -1,5 +1,5 @@
 """
-Tests for the CleanProviderRegistry.
+Tests for the ProviderRegistry.
 
 This module tests the core provider registry functionality including
 provider registration, configuration-based access, factory patterns,
@@ -11,7 +11,7 @@ import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from typing import Dict, Any, Optional
 
-from flowlib.providers.core.registry import CleanProviderRegistry, provider_registry
+from flowlib.providers.core.registry import ProviderRegistry, provider_registry
 from flowlib.providers.core.base import Provider, ProviderSettings
 from flowlib.core.errors.errors import ExecutionError
 from flowlib.resources.models.config_resource import ProviderConfigResource
@@ -106,12 +106,12 @@ class MockProviderConfigResource(ProviderConfigResource):
         )
 
 
-class TestCleanProviderRegistry:
-    """Test the CleanProviderRegistry class."""
+class TestProviderRegistry:
+    """Test the ProviderRegistry class."""
     
     def setup_method(self):
         """Set up each test with a fresh registry."""
-        self.registry = CleanProviderRegistry()
+        self.registry = ProviderRegistry()
     
     def test_init(self):
         """Test registry initialization."""
@@ -166,7 +166,7 @@ class TestCleanProviderRegistry:
     
     def test_register_interface_with_non_provider(self):
         """Test BaseRegistry register interface with non-provider."""
-        with pytest.raises(TypeError, match="CleanProviderRegistry only accepts Provider objects"):
+        with pytest.raises(TypeError, match="ProviderRegistry only accepts Provider objects"):
             self.registry.register("test", "not a provider")
     
     def test_register_factory(self):
@@ -555,7 +555,7 @@ class TestGlobalRegistry:
     def test_global_registry_exists(self):
         """Test that global registry is available."""
         assert provider_registry is not None
-        assert isinstance(provider_registry, CleanProviderRegistry)
+        assert isinstance(provider_registry, ProviderRegistry)
     
     def test_global_registry_singleton(self):
         """Test that importing gives same instance."""
@@ -566,7 +566,7 @@ class TestGlobalRegistry:
 @pytest.mark.asyncio
 async def test_integration_provider_lifecycle():
     """Integration test for complete provider lifecycle."""
-    registry = CleanProviderRegistry()
+    registry = ProviderRegistry()
     
     # Create factory that uses settings from config
     created_provider = None

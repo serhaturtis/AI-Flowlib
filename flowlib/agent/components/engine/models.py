@@ -4,7 +4,9 @@ Models for agent execution engine component.
 This module contains Pydantic models used by the agent execution engine.
 """
 
-from typing import Dict, Any, Optional, List, Union
+from __future__ import annotations
+
+from typing import Dict, Any, Optional, List, Union, Literal
 from pydantic import Field, ConfigDict
 from enum import Enum
 from datetime import datetime
@@ -28,6 +30,106 @@ class ExecutionStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class ExecutionContext(StrictBaseModel):
+    """Typed execution context replacing Dict[str, Any] context fields."""
+    
+    # Request identification
+    request_id: Optional[str] = Field(default=None, description="Unique request identifier")
+    session_id: Optional[str] = Field(default=None, description="Session identifier")
+    user_id: Optional[str] = Field(default=None, description="User identifier")
+    
+    # Execution environment
+    working_directory: str = Field(default=".", description="Working directory")
+    environment_type: Literal["development", "testing", "production"] = Field(
+        default="development", description="Execution environment"
+    )
+    
+    # Agent configuration
+    agent_name: Optional[str] = Field(default=None, description="Agent name/identifier")
+    agent_version: Optional[str] = Field(default=None, description="Agent version")
+    
+    # Performance settings
+    max_execution_time: Optional[float] = Field(default=300.0, description="Maximum execution time")
+    max_memory_usage: Optional[int] = Field(default=None, description="Maximum memory usage in MB")
+    
+    # Feature flags
+    debug_mode: bool = Field(default=False, description="Enable debug mode")
+    verbose_logging: bool = Field(default=False, description="Enable verbose logging")
+    
+    # Resource constraints
+    max_llm_calls: Optional[int] = Field(default=None, description="Maximum LLM calls allowed")
+    max_tool_calls: Optional[int] = Field(default=None, description="Maximum tool calls allowed")
+    
+    # Escape hatch for additional context
+    metadata: Dict[str, str] = Field(
+        default_factory=dict, description="Additional string metadata"
+    )
+
+
+class FlowInput(StrictBaseModel):
+    """Typed inputs for flow execution replacing Dict[str, Any]."""
+    
+    # Core task data
+    task_description: Optional[str] = Field(default=None, description="Task to execute")
+    user_message: Optional[str] = Field(default=None, description="Original user message")
+    
+    # Context information
+    working_directory: Optional[str] = Field(default=None, description="Working directory")
+    session_id: Optional[str] = Field(default=None, description="Session identifier")
+    
+    # Agent context
+    agent_persona: Optional[str] = Field(default=None, description="Agent persona/personality")
+    conversation_history: Optional[List[Dict[str, Any]]] = Field(
+        default_factory=list, description="Conversation history (legacy format)"
+    )
+    
+    # Execution parameters
+    max_cycles: Optional[int] = Field(default=None, description="Maximum execution cycles")
+    timeout: Optional[float] = Field(default=None, description="Execution timeout in seconds")
+    
+    # Tool and flow context
+    available_tools: Optional[List[str]] = Field(default_factory=list, description="Available tool names")
+    flow_name: Optional[str] = Field(default=None, description="Target flow name")
+    
+    # Escape hatch for flow-specific parameters
+    metadata: Dict[str, str] = Field(
+        default_factory=dict, description="Additional string metadata for specific flows"
+    )
+
+
+class FlowOutput(StrictBaseModel):
+    """Typed outputs from flow execution replacing Dict[str, Any]."""
+    
+    # Execution results
+    success: bool = Field(description="Whether execution succeeded")
+    result: Optional[str] = Field(default=None, description="Primary execution result")
+    error_message: Optional[str] = Field(default=None, description="Error message if failed")
+    
+    # Generated content
+    response: Optional[str] = Field(default=None, description="Agent response/output")
+    generated_tasks: Optional[List[str]] = Field(default_factory=list, description="Generated task list")
+    
+    # Execution metadata
+    execution_time_ms: Optional[float] = Field(default=None, description="Execution time in milliseconds")
+    cycles_executed: Optional[int] = Field(default=None, description="Number of cycles executed")
+    token_usage: Optional[int] = Field(default=None, description="LLM token usage")
+    
+    # Tool execution results
+    tools_called: Optional[List[str]] = Field(default_factory=list, description="Tools that were called")
+    tool_results: Optional[List[str]] = Field(default_factory=list, description="Results from tool calls")
+    
+    # State information
+    final_state: Optional[str] = Field(default=None, description="Final execution state")
+    intermediate_results: Optional[List[str]] = Field(
+        default_factory=list, description="Intermediate execution results"
+    )
+    
+    # Escape hatch for flow-specific outputs
+    metadata: Dict[str, str] = Field(
+        default_factory=dict, description="Additional string metadata for specific outputs"
+    )
+
+
 class EngineConfig(StrictBaseModel):
     """Configuration for the agent execution engine."""
     # Inherits strict configuration from StrictBaseModel
@@ -35,8 +137,6 @@ class EngineConfig(StrictBaseModel):
     execution_mode: ExecutionMode = Field(default=ExecutionMode.SINGLE_CYCLE, description="Default execution mode")
     max_cycles: int = Field(default=10, description="Maximum execution cycles")
     cycle_timeout: float = Field(default=300.0, description="Timeout per cycle in seconds")
-    enable_reflection: bool = Field(default=True, description="Whether to enable reflection")
-    enable_planning: bool = Field(default=True, description="Whether to enable planning")
 
 
 class ExecutionRequest(StrictBaseModel):
@@ -46,7 +146,7 @@ class ExecutionRequest(StrictBaseModel):
     task_description: str = Field(description="Description of task to execute")
     execution_mode: Optional[ExecutionMode] = Field(default=None, description="Override execution mode")
     max_cycles: Optional[int] = Field(default=None, description="Override max cycles")
-    context: Dict[str, Any] = Field(default_factory=dict, description="Additional execution context")
+    context: ExecutionContext = Field(default_factory=ExecutionContext, description="Typed execution context")
 
 
 class ExecutionStep(StrictBaseModel):
@@ -55,26 +155,14 @@ class ExecutionStep(StrictBaseModel):
     
     step_id: str = Field(description="Unique step identifier")
     flow_name: str = Field(description="Name of flow executed")
-    inputs: Dict[str, Any] = Field(default_factory=dict, description="Inputs to the flow")
-    outputs: Dict[str, Any] = Field(default_factory=dict, description="Outputs from the flow")
+    inputs: FlowInput = Field(default_factory=FlowInput, description="Typed inputs to the flow")
+    outputs: FlowOutput = Field(default_factory=FlowOutput, description="Typed outputs from the flow")
     status: ExecutionStatus = Field(description="Step execution status")
     start_time: Optional[datetime] = Field(default=None, description="Step start time")
     end_time: Optional[datetime] = Field(default=None, description="Step end time")
     duration: Optional[float] = Field(default=None, description="Step duration in seconds")
     error: Optional[str] = Field(default=None, description="Error message if step failed")
 
-
-class ExecutionResult(StrictBaseModel):
-    """Result of engine execution."""
-    # Inherits strict configuration from StrictBaseModel
-    
-    status: ExecutionStatus = Field(description="Overall execution status")
-    steps: List[ExecutionStep] = Field(default_factory=list, description="Execution steps")
-    total_cycles: int = Field(default=0, description="Total cycles executed")
-    total_duration: Optional[float] = Field(default=None, description="Total execution time")
-    final_output: Dict[str, Any] = Field(default_factory=dict, description="Final execution output")
-    errors: List[str] = Field(default_factory=list, description="Any errors encountered")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
 class EngineStats(StrictBaseModel):
@@ -87,3 +175,5 @@ class EngineStats(StrictBaseModel):
     average_duration: float = Field(default=0.0, description="Average execution duration")
     average_cycles: float = Field(default=0.0, description="Average cycles per execution")
     last_execution: Optional[datetime] = Field(default=None, description="Last execution timestamp")
+
+

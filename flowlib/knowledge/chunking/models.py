@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 from typing import Dict, Any
-from flowlib.knowledge.models.models import DocumentContent, ExtractionConfig
+from flowlib.knowledge.models import DocumentContent, ExtractionConfig
 
 # Re-export for convenience
 ChunkingInput = DocumentContent.__class__.__dict__.copy()

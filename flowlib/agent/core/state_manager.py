@@ -5,12 +5,13 @@ This module handles agent state persistence, loading, and management
 operations that were previously in BaseAgent.
 """
 
+import os
 import logging
 from typing import Any, Dict, List, Optional
 
 from flowlib.agent.core.base import AgentComponent
-from flowlib.agent.core.errors import StatePersistenceError, ConfigurationError
-from flowlib.agent.models.state import AgentState
+from flowlib.agent.core.errors import StatePersistenceError, ConfigurationError, NotInitializedError
+from flowlib.agent.models.state import AgentState, ConversationTurn
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.components.persistence.base import BaseStatePersister
 from flowlib.agent.components.persistence.factory import create_state_persister
@@ -212,3 +213,79 @@ class AgentStateManager(AgentComponent):
         """
         return (config.state_config and 
                 config.state_config.auto_save)
+    
+    async def add_conversation_turn(self, turn: ConversationTurn) -> None:
+        """Add conversation turn to session history.
+        
+        Args:
+            turn: Conversation turn to add
+            
+        Raises:
+            NotInitializedError: If state not initialized
+        """
+        if not self._current_state:
+            raise NotInitializedError("State not initialized", "add_conversation_turn")
+        
+        # Get current model
+        model = self._current_state.as_model()
+        
+        # Add turn to session conversation history
+        model.session.conversation_history.append(turn)
+        
+        # Update state with new session
+        self._current_state._update_model(session=model.session)
+        
+    async def get_session_context(self) -> Dict[str, Any]:
+        """Get complete session context for tool execution.
+        
+        Returns:
+            Session context dictionary
+        """
+        if not self._current_state:
+            return {
+                "session_id": None,
+                "conversation_history": [],
+                "shared_context": {},
+                "working_directory": os.getcwd(),
+                "agent_name": None
+            }
+        
+        model = self._current_state.as_model()
+        
+        # Get agent name from config manager if available
+        agent_name = None
+        if self._registry:
+            config_manager = self._registry.get("config_manager")
+            if config_manager and hasattr(config_manager, 'config'):
+                agent_name = config_manager.config.name
+        
+        return {
+            "session_id": model.session.session_id,
+            "conversation_history": [
+                turn.model_dump() for turn in model.session.conversation_history
+            ],
+            "shared_context": model.session.shared_context,
+            "working_directory": model.session.working_directory,
+            "agent_name": agent_name,
+            "collaborating_agents": model.session.collaborating_agents
+        }
+    
+    async def update_shared_context(self, context_updates: Dict[str, Any]) -> None:
+        """Update shared context in session.
+        
+        Args:
+            context_updates: Updates to apply to shared context
+            
+        Raises:
+            NotInitializedError: If state not initialized
+        """
+        if not self._current_state:
+            raise NotInitializedError("State not initialized", "update_shared_context")
+        
+        model = self._current_state.as_model()
+        
+        # Update shared context
+        model.session.shared_context.update(context_updates)
+        
+        # Update state
+        self._current_state._update_model(session=model.session)

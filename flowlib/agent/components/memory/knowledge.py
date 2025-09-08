@@ -12,15 +12,14 @@ from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
 from ...core.errors import MemoryError, ErrorContext
-from .interfaces import MemoryInterface
 from .models import (
     MemoryStoreRequest,
     MemoryRetrieveRequest,
     MemorySearchRequest,
     MemoryContext
 )
-# Import MemoryItem and MemorySearchResult from the same location to ensure compatibility
-from ...models.memory import MemoryItem, MemorySearchResult
+# Import MemoryItem and MemorySearchResult from the proper location
+from .models import MemoryItem, MemorySearchResult
 from flowlib.providers.core.registry import provider_registry
 from ....providers.graph.models import Entity, EntityAttribute, EntityRelationship
 
@@ -30,7 +29,7 @@ class KnowledgeMemoryConfig(StrictBaseModel):
     """Configuration for knowledge memory."""
     
     graph_provider_config: str = Field(
-        default="default-graph",
+        default="default-graph-db",
         description="Provider config name for graph database"
     )
     default_importance: float = Field(
@@ -50,7 +49,7 @@ class KnowledgeMemoryConfig(StrictBaseModel):
     )
 
 
-class KnowledgeMemory(MemoryInterface):
+class KnowledgeMemory:
     """Modern knowledge memory implementation with graph-based storage."""
     
     def __init__(self, config: Optional[KnowledgeMemoryConfig] = None):
@@ -157,7 +156,10 @@ class KnowledgeMemory(MemoryInterface):
                 item_dict = {'content': content}
                 
             # Create entity from content
-            entity_type = item_dict['type'] if 'type' in item_dict else (request.context or self._config.default_context)
+            # Fail fast - no fallbacks allowed
+            if 'type' not in item_dict:
+                raise ValueError("Memory item must contain 'type' field")
+            entity_type = item_dict['type']
             
             # Get or create entity
             entity = await self._graph_provider.get_entity(request.key)
@@ -224,7 +226,7 @@ class KnowledgeMemory(MemoryInterface):
             content = (entity.attributes['content'] if 'content' in entity.attributes else EntityAttribute(name='content', value=str(entity), source='system')).value
             
             # Create typed metadata for retrieved entity
-            from ...models.memory import MemoryItemMetadata
+            from .models import MemoryItemMetadata
             metadata = MemoryItemMetadata(
                 source=entity.type,
                 item_type="knowledge_entity",
@@ -271,7 +273,7 @@ class KnowledgeMemory(MemoryInterface):
                     content = (entity.attributes['content'] if 'content' in entity.attributes else EntityAttribute(name='content', value=str(entity), source='system')).value
                     
                     # Create memory item with typed metadata
-                    from ...models.memory import MemoryItemMetadata
+                    from .models import MemoryItemMetadata
                     metadata = MemoryItemMetadata(
                         source=entity.type,
                         item_type="knowledge_entity",
@@ -289,7 +291,7 @@ class KnowledgeMemory(MemoryInterface):
                     score = entity.importance  # Use entity importance as base score
                     
                     # Create search metadata with proper typing
-                    from ...models.memory import MemorySearchMetadata
+                    from .models import MemorySearchMetadata
                     search_metadata = MemorySearchMetadata(
                         search_query=request.query,
                         search_type="graph_search",
@@ -302,11 +304,8 @@ class KnowledgeMemory(MemoryInterface):
                         metadata=search_metadata
                     ))
             else:
-                # Fallback: get all entities and filter (less efficient)
-                logger.warning(f"Graph provider '{self._graph_provider}' does not support search_entities, using fallback")
-                # This would require a 'get_all_entities' method which may not exist
-                # For now, return empty results
-                pass
+                # Fail fast - no fallbacks allowed
+                raise NotImplementedError(f"Graph provider '{self._graph_provider}' does not support search_entities operation")
             
             logger.debug(f"Found {len(search_results)} knowledge entities for query '{request.query}'")
             return search_results

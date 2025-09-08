@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple, Callable, Set
 from dataclasses import dataclass
 
-from flowlib.core.interfaces.interfaces import Provider, Resource, Flow, Configuration, Container
+from flowlib.core.interfaces import Provider, Resource, Flow, Configuration, Container
 from flowlib.core.loader.loader import DynamicLoader
 from .models import ProviderMetadata, ResourceMetadata, FlowMetadata, ConfigMetadata, RegistryEntryData
 

@@ -31,13 +31,13 @@ from flowlib.providers.core.registry import provider_registry
 # Removed ProviderType import - using config-driven provider access
 from flowlib.providers.mq.base import MQProvider, MessageMetadata
 from flowlib.agent.components.persistence.base import BaseStatePersister
-from .models import AgentTaskMessage, AgentResultMessage
+from flowlib.agent.runners.remote.models import AgentTaskMessage, AgentResultMessage
 from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.models.state import AgentState
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.runners.autonomous import run_autonomous # Reusing autonomous runner logic
 # Import the config loader
-from .config_loader import load_remote_config, RemoteConfig 
+from flowlib.agent.runners.remote.config_loader import load_remote_config, RemoteConfig 
 # Example persister import from the new location:
 from flowlib.agent.components.persistence.adapters import RedisStatePersister 
 

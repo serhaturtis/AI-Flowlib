@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock
 from typing import Any, Dict, List, Optional
 
-from flowlib.core.interfaces.interfaces import (
+from flowlib.core.interfaces import (
     Provider,
     LLMProvider,
     VectorProvider,

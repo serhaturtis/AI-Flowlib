@@ -14,14 +14,13 @@ from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
 from ...core.errors import MemoryError, ErrorContext
-from .interfaces import MemoryInterface
 from .models import (
     MemoryStoreRequest,
     MemoryRetrieveRequest,
     MemorySearchRequest,
     MemoryContext
 )
-from ...models.memory import MemoryItem, MemorySearchResult
+from .models import MemoryItem, MemorySearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +50,7 @@ class WorkingMemoryConfig(StrictBaseModel):
     )
 
 
-class WorkingMemory(MemoryInterface):
+class WorkingMemory:
     """Modern working memory implementation with TTL and resource management."""
     
     def __init__(self, config: Optional[WorkingMemoryConfig] = None):
@@ -281,10 +280,12 @@ class WorkingMemory(MemoryInterface):
         """Retrieve relevant memories based on query."""
         if not self._initialized:
             raise MemoryError("WorkingMemory not initialized")
+        if context is None:
+            raise ValueError("Context cannot be None - explicit context is required")
             
         search_request = MemorySearchRequest(
             query=query,
-            context=context or "default",
+            context=context,
             limit=limit
         )
         

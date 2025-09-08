@@ -523,7 +523,7 @@ class TestAgentComponentRegistry:
         working_memory = MockComponent("working")
         await container.register_component("working_memory", working_memory)
         
-        with patch('flowlib.agent.components.planning.planner.AgentPlanner') as MockPlanning:
+        with patch('flowlib.agent.components.task_decomposition.planner.AgentPlanner') as MockPlanning:
             planning_instance = Mock()
             MockPlanning.return_value = planning_instance
             
@@ -533,27 +533,6 @@ class TestAgentComponentRegistry:
             assert "planning" in container._components
             assert container._dependencies["planning"] == ["working_memory"]
     
-    @pytest.mark.asyncio
-    async def test_setup_reflection_components(self):
-        """Test setting up reflection components."""
-        container = ComponentContainer()
-        config = {}
-        
-        # First register dependencies
-        working_memory = MockComponent("working")
-        planning = MockComponent("planning")
-        await container.register_component("working_memory", working_memory)
-        await container.register_component("planning", planning)
-        
-        with patch('flowlib.agent.components.reflection.base.AgentReflection') as MockReflection:
-            reflection_instance = Mock()
-            MockReflection.return_value = reflection_instance
-            
-            await AgentComponentRegistry.setup_reflection_components(container, config)
-            
-            # Verify reflection component was registered
-            assert "reflection" in container._components
-            assert set(container._dependencies["reflection"]) == {"working_memory", "planning"}
 
 
 class TestComponentContainerIntegration:

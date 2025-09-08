@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.knowledge.models.models import DocumentType, KnowledgeExtractionRequest, ExtractionConfig, ChunkingStrategy
+from flowlib.knowledge.models import DocumentType, KnowledgeExtractionRequest, ExtractionConfig, ChunkingStrategy
 from flowlib.knowledge.streaming.flow import KnowledgeExtractionFlow
 from flowlib.knowledge.plugin_generation.models import (
     PluginGenerationRequest, PluginGenerationResult, PluginGenerationSummary,

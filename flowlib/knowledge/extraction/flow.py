@@ -8,7 +8,7 @@ from datetime import datetime
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 import asyncio
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     DocumentType,
     DocumentMetadata,
     TextChunk,

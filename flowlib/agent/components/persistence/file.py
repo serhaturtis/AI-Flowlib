@@ -68,6 +68,9 @@ class FileStatePersister(BaseStatePersister):
             # Get state as dictionary for JSON serialization
             state_dict = state.model_dump()
             
+            # Ensure directory exists
+            os.makedirs(self.settings.directory, exist_ok=True)
+            
             # Create file path
             file_path = os.path.join(self.settings.directory, f"{state.task_id}.json")
             

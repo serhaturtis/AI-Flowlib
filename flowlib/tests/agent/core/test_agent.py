@@ -367,27 +367,24 @@ class TestBaseAgent:
         assert agent.persona == "Config assistant"
         assert agent.config is config
     
-    def test_init_with_dict_config(self):
-        """Test agent initialization with dict configuration."""
-        config_dict = {
-            "name": "dict_agent",
-            "persona": "Dict assistant",
-            "provider_name": "llamacpp"
-        }
+    def test_init_with_agentconfig(self):
+        """Test agent initialization with AgentConfig."""
+        config = AgentConfig(
+            name="config_agent",
+            persona="Config assistant",
+            provider_name="llamacpp"
+        )
         
-        agent = BaseAgent(config=config_dict)
+        agent = BaseAgent(config=config)
         
-        assert agent.name == "dict_agent"
-        assert agent.persona == "Dict assistant"
+        assert agent.name == "config_agent"
+        assert agent.persona == "Config assistant"
         assert isinstance(agent.config, AgentConfig)
     
     def test_init_with_no_config(self):
-        """Test agent initialization with no config (uses defaults)."""
-        agent = BaseAgent()
-        
-        assert agent.name == "default_agent"
-        assert agent.persona == "Default helpful assistant"
-        assert isinstance(agent.config, AgentConfig)
+        """Test agent initialization with no config raises TypeError."""
+        with pytest.raises(TypeError):
+            agent = BaseAgent()
     
     def test_init_with_invalid_config(self):
         """Test agent initialization with invalid config type."""
@@ -457,8 +454,7 @@ class TestBaseAgent:
              patch('flowlib.agent.core.orchestrator.AgentEngine', return_value=self.mock_engine), \
              patch.object(agent._memory_manager, 'setup_memory', AsyncMock()), \
              patch.object(agent._learning_manager, 'initialize_learning_capability', AsyncMock()), \
-             patch.object(agent._flow_runner, 'discover_flows', AsyncMock()), \
-             patch.object(agent._flow_runner, 'validate_required_flows', AsyncMock()):
+             patch.object(agent._flow_runner, 'discover_flows', AsyncMock()):
             
             mock_registry.get_by_config = AsyncMock(return_value=Mock(name="test_provider"))
             
@@ -1251,8 +1247,7 @@ async def test_integration_complete_agent_lifecycle():
          patch('flowlib.agent.core.orchestrator.AgentEngine', return_value=mock_engine), \
          patch.object(agent._memory_manager, 'setup_memory', AsyncMock()), \
          patch.object(agent._learning_manager, 'initialize_learning_capability', AsyncMock()), \
-         patch.object(agent._flow_runner, 'discover_flows', AsyncMock()), \
-         patch.object(agent._flow_runner, 'validate_required_flows', AsyncMock()):
+         patch.object(agent._flow_runner, 'discover_flows', AsyncMock()):
         
         # Mock provider registry
         mock_registry.get_by_config = AsyncMock(return_value=Mock(name="test_provider"))

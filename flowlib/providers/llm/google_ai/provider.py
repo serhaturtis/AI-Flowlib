@@ -29,7 +29,7 @@ from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
 from flowlib.providers.llm.base import LLMProvider, ModelType
 from flowlib.providers.core.base import ProviderSettings
-from flowlib.resources.decorators.decorators import PromptTemplate
+from flowlib.core.interfaces import PromptTemplate
 from flowlib.agent.core.resilience import ResilienceManager
 
 logger = logging.getLogger(__name__)

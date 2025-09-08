@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     DocumentType,
     KnowledgeExtractionRequest,
     KnowledgeBaseResult,

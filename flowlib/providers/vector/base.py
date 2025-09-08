@@ -85,6 +85,7 @@ class VectorSearchResult(BaseModel):
     id: str
     score: float
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    text: Optional[str] = None
     vector: Optional[List[float]] = None
 
 
@@ -495,6 +496,27 @@ class VectorDBProvider(Provider):
         """
         raise NotImplementedError("Subclasses must implement count()")
         
+    async def get_by_filter(self, filter: Dict[str, Any], top_k: int = 10, 
+                           include_vectors: bool = False, index_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get vectors by metadata filter without vector similarity search.
+        
+        This method is for metadata-only queries where you want to find vectors
+        based on their metadata properties, not vector similarity.
+        
+        Args:
+            filter: Metadata filter conditions
+            top_k: Maximum number of results to return
+            include_vectors: Whether to include vector data in results
+            index_name: Index name (default from settings if None)
+            
+        Returns:
+            List of results with id, metadata, and optionally vector data
+            
+        Raises:
+            ProviderError: If query fails
+        """
+        raise NotImplementedError("Subclasses must implement get_by_filter()")
+
     async def check_connection(self) -> bool:
         """Check if vector database connection is active.
         

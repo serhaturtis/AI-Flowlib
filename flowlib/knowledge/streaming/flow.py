@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Set, AsyncGenerator
 
 from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     KnowledgeExtractionRequest, KnowledgeExtractionResult,
     ExtractionState, ExtractionConfig, ExtractionProgress,
     DocumentContent, KnowledgeBaseStats, DocumentType
@@ -236,7 +236,7 @@ class KnowledgeExtractionFlow:
     async def _extract_entities_relationships(self, doc_content: DocumentContent, request: KnowledgeExtractionRequest):
         """Extract entities and relationships from document."""
         
-        from flowlib.knowledge.models.models import EntityExtractionInput
+        from flowlib.knowledge.models import EntityExtractionInput
         
         analysis_flow = EntityAnalysisFlow()
         

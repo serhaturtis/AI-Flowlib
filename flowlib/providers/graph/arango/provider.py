@@ -20,7 +20,7 @@ from flowlib.providers.graph.models import (
     RelationshipSearchResult, GraphQueryResult, EntitySearchResult, 
     GraphDeleteResult, GraphUpdateResult, GraphHealthResult
 )
-from ..base import Provider
+from flowlib.providers.core.base import Provider
 
 logger = logging.getLogger(__name__)
 

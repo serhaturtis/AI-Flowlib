@@ -8,7 +8,7 @@ from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
 from flowlib.resources.registry.registry import resource_registry
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     DocumentContent,
     Entity,
     Relationship,
@@ -36,7 +36,7 @@ class EntityAnalysisFlow:
         logger.info(f"Analyzing single document: {doc_content.document_id}")
         
         # Create minimal input for single document
-        from flowlib.knowledge.models.models import EntityExtractionInput
+        from flowlib.knowledge.models import EntityExtractionInput
         
         single_doc_input = EntityExtractionInput(
             documents=[doc_content],
@@ -103,7 +103,7 @@ class EntityAnalysisFlow:
         
         logger.info(f"Extracted {len(entities)} entities and {len(relationships)} relationships from single document")
         
-        from flowlib.knowledge.models.models import EntityExtractionOutput
+        from flowlib.knowledge.models import EntityExtractionOutput
         return EntityExtractionOutput(
             entities=entities,
             relationships=relationships,
@@ -131,7 +131,7 @@ class EntityAnalysisFlow:
                 except Exception as e:
                     logger.error(f"Failed to process document {doc.document_id}: {e}")
                     # Create empty result for failed document
-                    from flowlib.knowledge.models.models import EntityExtractionOutput
+                    from flowlib.knowledge.models import EntityExtractionOutput
                     empty_result = EntityExtractionOutput(
                         entities=[],
                         relationships=[],

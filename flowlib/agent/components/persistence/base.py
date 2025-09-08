@@ -16,7 +16,6 @@ from flowlib.providers.core.base import Provider, ProviderSettings
 # Removed BaseComponent import
 from flowlib.agent.core.errors import StatePersistenceError
 from flowlib.agent.models.state import AgentState
-from .interfaces import StatePersistenceInterface
 
 logger = logging.getLogger(__name__)
 

@@ -1457,4 +1457,48 @@ class QdrantProvider(VectorDBProvider):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )
+    
+    async def get_by_filter(self, filter: Dict[str, Any], top_k: int = 10, 
+                           include_vectors: bool = False, index_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get vectors by metadata filter without vector similarity search."""
+        try:
+            # Qdrant doesn't support metadata-only queries without a vector
+            # We would need to implement scroll or search with dummy vector
+            # For now, raise NotImplementedError with a helpful message
+            raise NotImplementedError(
+                "Qdrant provider does not currently support metadata-only queries. "
+                "Use search() with a query vector instead."
+            )
+            
+        except Exception as e:
+            raise ProviderError(
+                message=f"Failed to get by filter: {str(e)}",
+                context=ErrorContext.create(
+                    flow_name="qdrant_provider",
+                    error_type="FilterQueryError",
+                    error_location="get_by_filter",
+                    component=self.name,
+                    operation="metadata_query"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="vector",
+                    operation="metadata_query",
+                    retry_count=0
+                ),
+                cause=e
+            )
+
+    async def check_connection(self) -> bool:
+        """Check if vector database connection is active."""
+        try:
+            # Check if we can access the client
+            if not self._client:
+                return False
+            # Try to get collection info as a health check
+            collection_info = await self._client.get_collection(self.settings.index_name)
+            return True
+        except Exception as e:
+            logger.error(f"Qdrant connection check failed: {str(e)}")
+            return False 

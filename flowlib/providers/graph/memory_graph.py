@@ -19,8 +19,8 @@ from pydantic import ValidationError
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
-from .base import GraphDBProvider, GraphDBProviderSettings
-from .models import (
+from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
+from flowlib.providers.graph.models import (
     Entity, EntityAttribute, EntityRelationship, EntitySearchResult, 
     GraphStoreResult, GraphQueryParams, GraphQueryResult,
     RelationshipSearchResult, GraphDeleteResult, GraphStats, TraversalParams)

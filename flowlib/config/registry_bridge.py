@@ -189,56 +189,41 @@ class RegistryBridge:
                 settings=final_settings  # Unified: always pass as settings dict
             )
         elif config_type == "model_config":
-            # Model configuration - can be either ModelResource or ResourceBase
-            # For ResourceBase models (complete LlamaModelConfig), use all extracted settings
+            # Model configuration - dynamically determine the correct model class
             # Remove provider_type from settings to avoid duplicate if it exists
             model_settings = {k: v for k, v in settings.items() if k not in ['provider_type', 'name', 'type']}
             
-            # If settings contain LlamaModelConfig fields, create a proper ResourceBase class
-            # Updated field set to match the clean separation - required fields only
-            required_llama_fields = {'path', 'model_type', 'n_ctx', 'use_gpu', 'n_gpu_layers', 'temperature', 'max_tokens'}
-            if required_llama_fields.issubset(set(settings.keys())):
-                # This is a complete LlamaModelConfig - create ResourceBase subclass with defined fields
-                from flowlib.resources.models.base import ResourceBase
-                from pydantic import Field
-                from typing import Union, Optional
-                
-                # Create a dynamic class with all LlamaModelConfig fields properly defined
-                class CompleteModelConfig(ResourceBase):
-                    # Override ResourceBase config to allow extra fields
-                    model_config = ResourceBase.model_config.copy()
-                    model_config.update({"extra": "allow"})
-                    
-                    # Required model-specific fields
-                    path: str = Field(..., description="Path to the model file")
-                    model_type: str = Field(..., description="Type of model") 
-                    n_ctx: int = Field(..., description="Context window size (model-specific)")
-                    use_gpu: bool = Field(..., description="Whether this model should use GPU")
-                    n_gpu_layers: int = Field(..., description="Number of GPU layers for this model")
-                    temperature: float = Field(..., description="Default sampling temperature for this model")
-                    max_tokens: int = Field(..., description="Default maximum tokens for this model")
-                    
-                    # Optional model overrides (use provider defaults if not specified)
-                    top_p: Optional[float] = Field(default=None, description="Top-p sampling parameter")
-                    top_k: Optional[int] = Field(default=None, description="Top-k sampling parameter") 
-                    repeat_penalty: Optional[float] = Field(default=None, description="Repetition penalty")
-                    n_threads: Optional[int] = Field(default=None, description="Override provider n_threads")
-                    n_batch: Optional[int] = Field(default=None, description="Override provider n_batch")
-                    verbose: Optional[bool] = Field(default=None, description="Override provider verbose")
-                
-                # Create instance with all data
-                return CompleteModelConfig(
-                    name=settings['name'] if 'name' in settings else canonical_name,
-                    type=settings['type'] if 'type' in settings else 'model',
-                    **model_settings
-                )
+            # Use provider_type to determine the correct model class dynamically
+            provider_type = settings.get('provider_type', 'unknown')
+            model_class = self._get_model_class_for_provider(provider_type)
+            
+            if model_class:
+                # Create model instance using the proper model class
+                try:
+                    model_instance = model_class(**model_settings)
+                    # Register as ResourceBase
+                    resource_registry.register(
+                        name=name,
+                        resource_type=ResourceType.MODEL,
+                        resource_class=type(model_instance),
+                        settings=model_instance.model_dump()
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create model instance for {name}: {e}")
+                    # Fallback to ModelResource wrapper
+                    resource_registry.register(
+                        name=name,
+                        resource_type=ResourceType.MODEL,
+                        resource_class=ModelResource,
+                        settings={"provider_type": provider_type, "config": model_settings}
+                    )
             else:
-                # This is a ModelResource-style model
-                return ModelResource(
-                    name=canonical_name,
-                    type="model",
-                    provider_type=provider_type,
-                    **model_settings
+                # Unknown provider type - use generic ModelResource wrapper
+                resource_registry.register(
+                    name=name,
+                    resource_type=ResourceType.MODEL,
+                    resource_class=ModelResource,
+                    settings={"provider_type": provider_type, "config": model_settings}
                 )
         elif config_type == "database_config":
             return DatabaseConfigResource(
@@ -291,6 +276,35 @@ class RegistryBridge:
             )
         else:
             raise ValueError(f"Unsupported configuration type: {config_type}")
+    
+    def _get_model_class_for_provider(self, provider_type: str):
+        """Get the appropriate model class for a provider type.
+        
+        Args:
+            provider_type: The provider type (e.g., 'llamacpp', 'google_ai')
+            
+        Returns:
+            Model class or None if not found
+        """
+        # Dynamic mapping of provider types to their model classes
+        provider_to_model_class = {
+            'llamacpp': 'flowlib.providers.llm.models.LlamaModelConfig',
+            'google_ai': 'flowlib.providers.llm.models.GoogleAIModelConfig',
+            # Add more mappings as needed
+        }
+        
+        class_path = provider_to_model_class.get(provider_type)
+        if not class_path:
+            return None
+        
+        try:
+            # Dynamically import the model class
+            module_path, class_name = class_path.rsplit('.', 1)
+            module = __import__(module_path, fromlist=[class_name])
+            return getattr(module, class_name)
+        except (ImportError, AttributeError) as e:
+            logger.warning(f"Failed to import model class for provider '{provider_type}': {e}")
+            return None
     
     def _extract_settings_from_content(self, content: str, config_type: str) -> Dict[str, Any]:
         """Extract configuration settings from Python file content.

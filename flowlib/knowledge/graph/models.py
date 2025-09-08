@@ -3,7 +3,7 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     GraphStoreInput,
     GraphStoreOutput,
     GraphNode,

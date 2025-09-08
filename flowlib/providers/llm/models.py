@@ -25,9 +25,11 @@ class LlamaModelConfig(StrictBaseModel):
     # Model-specific capabilities and limits
     n_ctx: int = Field(..., description="Context window size (model-specific)")
     
-    # Model-specific hardware requirements (can override provider defaults)
+    # Model-specific hardware requirements (no provider defaults - all required)
     use_gpu: bool = Field(..., description="Whether this model should use GPU acceleration")
     n_gpu_layers: int = Field(..., description="Number of layers to offload to GPU for this model")
+    n_threads: int = Field(..., description="Number of CPU threads for inference with this model")
+    n_batch: int = Field(..., description="Batch size for processing optimization with this model")
     
     # Model-specific generation parameters
     temperature: float = Field(..., description="Default sampling temperature for this model")
@@ -39,9 +41,7 @@ class LlamaModelConfig(StrictBaseModel):
     # Model-specific chat formatting
     chat_format: Optional[str] = Field(default=None, description="Chat format template for this model (e.g., 'chatml', 'alpaca', 'vicuna')")
     
-    # Optional model-specific overrides for inference settings
-    n_threads: Optional[int] = Field(default=None, description="Override provider n_threads for this model")
-    n_batch: Optional[int] = Field(default=None, description="Override provider n_batch for this model")
+    # Optional provider-level overrides
     verbose: Optional[bool] = Field(default=None, description="Override provider verbose setting for this model")
     
     # Note: All strict settings inherited from StrictBaseModel

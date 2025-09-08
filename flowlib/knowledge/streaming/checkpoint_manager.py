@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import shutil
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     ExtractionState, CheckpointData, PluginManifest,
     Entity, Relationship, KnowledgeBaseStats
 )

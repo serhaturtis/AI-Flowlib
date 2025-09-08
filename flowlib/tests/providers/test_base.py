@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from flowlib.providers.core.base import Provider, ProviderSettings
 from flowlib.providers.core.provider_base import ProviderBase
-from flowlib.providers.core.registry import provider_registry, CleanProviderRegistry
+from flowlib.providers.core.registry import provider_registry, ProviderRegistry
 from flowlib.core.errors.errors import ConfigurationError, ProviderError
 
 
@@ -129,7 +129,7 @@ class TestProviderRegistry:
     
     def setup_method(self):
         """Setup for each test."""
-        self.registry = CleanProviderRegistry()
+        self.registry = ProviderRegistry()
     
     def test_registry_registration(self):
         """Test provider registration."""
@@ -250,7 +250,7 @@ class TestProviderIntegration:
     @pytest.mark.asyncio
     async def test_multiple_provider_initialization(self):
         """Test initializing multiple providers."""
-        registry = CleanProviderRegistry()
+        registry = ProviderRegistry()
         
         # Register multiple providers
         provider1 = MockProvider(name="provider1", provider_type="llm")
@@ -341,7 +341,7 @@ class TestProviderConcurrency:
     @pytest.mark.asyncio
     async def test_provider_registry_thread_safety(self):
         """Test registry thread safety."""
-        registry = CleanProviderRegistry()
+        registry = ProviderRegistry()
         
         async def register_provider(provider_id: int):
             provider = MockProvider(name=f"provider_{provider_id}", provider_type="llm")

@@ -13,7 +13,7 @@ All imports are at the top of files, no circular dependencies possible.
 """
 
 # Core interfaces - no dependencies
-from .interfaces.interfaces import (
+from .interfaces import (
     Provider, LLMProvider, VectorProvider, GraphProvider, 
     DatabaseProvider, CacheProvider, ToolProvider, Resource, Configuration,
     PromptResource, ModelResource, Flow, AgentFlow, Stage,

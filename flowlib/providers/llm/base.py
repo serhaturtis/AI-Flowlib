@@ -14,7 +14,7 @@ from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.base import Provider, ProviderSettings
 
 from flowlib.resources.registry.registry import resource_registry
-from flowlib.resources.decorators.decorators import PromptTemplate
+from flowlib.core.interfaces import PromptTemplate
 
 from ...utils.pydantic.schema import model_to_simple_json_schema
 

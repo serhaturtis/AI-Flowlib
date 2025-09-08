@@ -9,8 +9,8 @@ from abc import abstractmethod
 from typing import Dict, List, Optional, Any
 
 from flowlib.providers.core.base import Provider
-from ...flows.base import FlowSettings
-from .models import (
+from flowlib.core.models import StrictBaseModel
+from flowlib.providers.graph.models import (
     Entity, GraphQueryResult, EntitySearchResult, RelationshipSearchResult, 
     GraphStoreResult, GraphDeleteResult, GraphUpdateResult, GraphStats, 
     GraphHealthResult, EntityRelationship, GraphQueryParams, TraversalParams
@@ -18,7 +18,7 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-class GraphDBProviderSettings(FlowSettings):
+class GraphDBProviderSettings(StrictBaseModel):
     """Settings for graph database providers.
     
     Attributes:

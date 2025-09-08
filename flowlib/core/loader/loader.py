@@ -12,7 +12,7 @@ import logging
 from pydantic import Field, ConfigDict
 from flowlib.core.models import StrictBaseModel
 
-from flowlib.core.interfaces.interfaces import Provider, Resource, Flow
+from flowlib.core.interfaces import Provider, Resource, Flow
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +71,12 @@ class DynamicLoader:
         'relationship-learning': 'flowlib.agent.learn.relationship_learning.flow:RelationshipLearningFlow',
         'knowledge-integration': 'flowlib.agent.learn.knowledge_integration.flow:KnowledgeIntegrationFlow',
         'conversation': 'flowlib.agent.components.conversation.flow:ConversationFlow',
-        'classification': 'flowlib.agent.components.classification.flow:MessageClassifierFlow',
-        'planning': 'flowlib.agent.components.planning.planner:AgentPlanner',
+        'planning': 'flowlib.agent.components.task.decomposition.task_decomposer:TaskDecomposer',
         'reflection': 'flowlib.agent.components.reflection.base:BaseReflection',
         
-        # Knowledge flows
-        'knowledge-extraction': 'flowlib.agent.components.knowledge_flows.knowledge_extraction:KnowledgeExtractionFlow',
-        'knowledge-retrieval': 'flowlib.agent.components.knowledge_flows.knowledge_retrieval:KnowledgeRetrievalFlow',
+        # Agent knowledge flows
+        'agent-knowledge-extraction': 'flowlib.agent.components.knowledge.flows:AgentKnowledgeExtractionFlow',
+        'agent-knowledge-retrieval': 'flowlib.agent.components.knowledge.flows:AgentKnowledgeRetrievalFlow',
         
         # Music generation flows
         'track-generation': 'music_generation.track.generation.flow:TrackGenerationFlow',

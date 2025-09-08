@@ -24,11 +24,7 @@ class ExampleLlamaCppProviderConfig(LLMConfigResource):
             type=type,
             provider_type="llamacpp",
             settings={
-                # Provider-level settings (LlamaCppSettings) - Infrastructure only
-                "n_threads": 4,                    # Number of CPU threads for inference
-                "n_batch": 512,                    # Batch size for processing optimization
-                "use_gpu": True,                   # Enable GPU acceleration capability
-                "n_gpu_layers": -1,                # Default GPU layers to offload (-1=all layers)
+                # Pure infrastructure settings (LlamaCppSettings) - Provider concerns only
                 "max_concurrent_models": 3,        # Maximum models loaded simultaneously
                 
                 # Provider reliability settings (from ProviderSettings)

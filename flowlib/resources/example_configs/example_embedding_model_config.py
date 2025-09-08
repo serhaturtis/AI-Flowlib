@@ -21,7 +21,7 @@ class BGEEmbeddingModelConfig(StrictBaseModel):
 
 
 @model_config("example-embedding-model", provider_type="llamacpp_embedding", config={
-    "path": "/path/to/models/bge-m3-f16.gguf",
+    "path": "/home/swr/tools/embedding_models/bge-m3-q8_0.gguf",
     "model_name": "bge-m3",
     "dimensions": 1024,
     "max_length": 8192,
@@ -34,15 +34,4 @@ class BGEM3EmbeddingModelConfig(BGEEmbeddingModelConfig):
     provider type to load and run this specific embedding model file.
     Model configs specify the provider_type, provider configs handle infrastructure.
     """
-    
-    def __init__(self):
-        super().__init__(
-            # REQUIRED: Model file and identification
-            path="/path/to/models/bge-m3-f16.gguf",
-            model_name="bge-m3",
-            
-            # REQUIRED: Model capabilities
-            dimensions=1024,        # BGE-M3 produces 1024-dimensional embeddings
-            max_length=8192,        # BGE-M3 supports long context (8K tokens)
-            normalize=True,         # Always normalize BGE embeddings
-        )
+    pass

@@ -11,7 +11,7 @@ from flowlib.providers.llm.base import (
 )
 from flowlib.providers.core.base import ProviderSettings
 from flowlib.core.errors.errors import ProviderError
-from flowlib.resources.decorators.decorators import PromptTemplate
+from flowlib.core.interfaces import PromptTemplate
 
 
 class MockModel(BaseModel):

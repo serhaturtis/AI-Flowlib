@@ -13,11 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowlib.gui.logic.settings_discovery import SettingsDiscovery
-
-# Import the dialog class at runtime to avoid circular imports
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from .provider_config_dialog import ProviderConfigurationDialog
+from flowlib.gui.ui.dialogs.provider_config_dialog import ProviderConfigurationDialog
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +29,7 @@ class ProviderFormFactory:
         config_type: str = "provider",
         existing_config: Optional[Dict[str, Any]] = None,
         parent: Optional[QWidget] = None
-    ) -> Optional['ProviderConfigurationDialog']:
+    ) -> Optional[ProviderConfigurationDialog]:
         """
         Create a configuration dialog for the specified provider type.
         
@@ -49,9 +45,6 @@ class ProviderFormFactory:
         """
         try:
             logger.info(f"Creating universal form dialog for {provider_type} ({config_type})")
-            
-            # Import here to avoid circular imports
-            from .provider_config_dialog import ProviderConfigurationDialog
             
             dialog = ProviderConfigurationDialog(
                 provider_type=provider_type,
@@ -304,7 +297,7 @@ def create_provider_form_dialog(
     config_type: str = "provider",
     existing_config: Optional[Dict[str, Any]] = None,
     parent: Optional[QWidget] = None
-) -> Optional['ProviderConfigurationDialog']:
+) -> Optional[ProviderConfigurationDialog]:
     """
     Convenience function to create a provider form dialog.
     

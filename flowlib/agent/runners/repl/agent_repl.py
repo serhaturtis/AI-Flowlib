@@ -3,11 +3,14 @@
 import asyncio
 import sys
 import os
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 import json
 from pydantic import BaseModel, Field, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 try:
     import readline  # For command history
@@ -31,6 +34,7 @@ from flowlib.agent.core.models.messages import (
 )
 from flowlib.agent.runners.repl.commands import CommandRegistry, CommandType
 from flowlib.agent.runners.repl.handlers import DefaultCommandHandler, AgentCommandHandler, ToolCommandHandler, TodoCommandHandler
+from flowlib.agent.core.agent_activity_formatter import AgentActivityFormatter
 
 
 class SessionStats(BaseModel):
@@ -76,11 +80,12 @@ class AgentREPL:
         history_file: Optional[str] = None
     ):
         self.agent_id = agent_id
-        self.config = config or AgentConfig()
+        if not config:
+            raise ValueError("AgentConfig is required - no default agent configuration allowed")
+        self.config = config
         self.console = Console()
         self.command_registry = CommandRegistry()
         self.repl_context = REPLContext()
-        self.conversation_history: List[Dict[str, str]] = []
         
         # Queue-based agent communication
         self.thread_pool_manager = AgentThreadPoolManager()
@@ -95,8 +100,7 @@ class AgentREPL:
             "mode": self.repl_context.mode,
             "debug": self.repl_context.debug,
             "verbose": self.repl_context.verbose,
-            "stream": self.repl_context.stream,
-            "conversation_history": self.conversation_history
+            "stream": self.repl_context.stream
         }
         
         # Setup history
@@ -152,6 +156,9 @@ class AgentREPL:
         router = self.thread_pool_manager.get_response_router(self.agent_id)
         if router:
             await router.start()
+            self.console.print(f"[green]✓[/green] Response router started")
+        else:
+            self.console.print(f"[red]✗[/red] No response router found")
         
         self.console.print(f"[green]✓[/green] Agent {self.agent_id} initialized and running")
     
@@ -294,12 +301,13 @@ class AgentREPL:
     async def _get_agent_response(self, message: str) -> str:
         """Get response from agent using queue-based communication."""
         try:
+            logger.debug(f"[REPL] Creating agent message for: {message[:50]}...")
+            
             # Create agent message
             agent_message = AgentMessage(
                 message_type=AgentMessageType.CONVERSATION,
                 content=message,
                 context={
-                    "conversation_history": self.conversation_history,
                     "session_stats": self.context["session_stats"],
                     "mode": self.context["mode"]
                 },
@@ -308,18 +316,24 @@ class AgentREPL:
                 timeout=None  # Disabled timeout
             )
             
+            logger.debug(f"[REPL] Agent message created with ID: {agent_message.message_id}")
+            
             # Show immediate acknowledgment
             self.console.print("[dim]Message received, processing...[/dim]")
             
             # Send to agent queue
+            logger.debug(f"[REPL] Sending message to agent queue...")
             message_id = await self.thread_pool_manager.send_message(
                 self.agent_id, agent_message
             )
+            logger.debug(f"[REPL] Message sent to agent queue with ID: {message_id}")
             
             # Wait for response
+            logger.debug(f"[REPL] Waiting for response from agent...")
             response = await self.thread_pool_manager.wait_for_response(
                 self.agent_id, message_id, agent_message.timeout
             )
+            logger.debug(f"[REPL] Received response from agent: success={response.success}")
             
             # Handle response
             if not response.success:
@@ -342,18 +356,12 @@ class AgentREPL:
             
             # Show activity if available
             if response.activity_stream:
-                activity_lines = []
-                for activity_item in response.activity_stream:
-                    activity_lines.append(str(activity_item))
-                output_parts.append("\n".join(activity_lines))
+                formatted_activity = AgentActivityFormatter.format_activity_stream(response.activity_stream)
+                if formatted_activity.strip():
+                    output_parts.append(formatted_activity)
             
             # Update conversation history
-            if content and content != "Task completed":
-                self.conversation_history.append({"role": "user", "content": message})
-                self.conversation_history.append({"role": "assistant", "content": content})
-                # Keep conversation history to a reasonable size (last 10 exchanges = 20 entries)
-                if len(self.conversation_history) > 20:
-                    self.conversation_history = self.conversation_history[-20:]
+            # Conversation history is managed by agent state manager - no duplication needed
             
             # Add main content
             if content and content != "Task completed":

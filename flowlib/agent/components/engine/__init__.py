@@ -1,7 +1,7 @@
 """Engine module for agent execution and coordination."""
 
-from .engine import AgentEngine
+from .component import EngineComponent
 
 __all__ = [
-    "AgentEngine"
+    "EngineComponent"
 ]

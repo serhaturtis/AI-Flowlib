@@ -21,14 +21,14 @@ from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
 from flowlib.providers.graph.base import GraphDBProvider
-from ..base import Provider
+from flowlib.providers.core.base import Provider
 from flowlib.providers.graph.models import (
     Entity, EntityAttribute, EntityRelationship, EntitySearchResult, 
     GraphStoreResult, GraphQueryResult, RelationshipSearchResult, 
     GraphDeleteResult, Neo4jQueryParams, GraphQueryParams, TraversalParams, GraphStats
 )
-from .models import Neo4jAttributeData
-from .models import Neo4jNodeData, Neo4jRelationshipData, Neo4jQueryResult
+from flowlib.providers.graph.neo4j.models import Neo4jAttributeData
+from flowlib.providers.graph.neo4j.models import Neo4jNodeData, Neo4jRelationshipData, Neo4jQueryResult
 
 # Import necessary types for Provider inheritance  
 from flowlib.providers.core.base import ProviderSettings

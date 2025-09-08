@@ -220,7 +220,6 @@ class TestDynamicLoader:
         assert isinstance(flows, list)
         assert len(flows) > 0
         assert "conversation" in flows
-        assert "classification" in flows
     
     def test_provider_modules_mapping(self):
         """Test that provider modules mapping is complete."""
@@ -247,7 +246,7 @@ class TestDynamicLoader:
     def test_flow_modules_mapping(self):
         """Test that flow modules mapping includes expected flows."""
         expected_flows = [
-            'conversation', 'classification', 'knowledge-extraction',
+            'conversation', 'knowledge-extraction',
             'knowledge-retrieval'
         ]
         

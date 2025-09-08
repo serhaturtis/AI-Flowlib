@@ -255,54 +255,10 @@ def tool(name: str, description: str, **metadata):
                 pass
     """
     def decorator(cls):
-        # Validate tool class structure
-        if not hasattr(cls, 'Parameters'):
-            raise ValueError(f"Tool '{name}' must define a Parameters class")
-        
-        if not hasattr(cls, 'execute'):
-            raise ValueError(f"Tool '{name}' must implement execute() method")
-        
-        # Create tool provider wrapper
-        from flowlib.providers.tools.base import BaseToolProvider, ToolProviderSettings
-        from flowlib.providers.tools.models import ToolExecutionContext
-        
-        class ToolProviderWrapper(BaseToolProvider):
-            """Automatically generated tool provider wrapper."""
-            
-            def __init__(self):
-                settings = ToolProviderSettings()
-                super().__init__(name=name, settings=settings)
-                # Use object.__setattr__ to bypass frozen constraint
-                object.__setattr__(self, '_description', description)
-                self._tool_instance = cls()
-            
-            def get_parameter_model(self):
-                return cls.Parameters
-            
-            async def execute_tool(self, parameters, context=None):
-                # Create proper parameters instance
-                validated_params = cls.Parameters(**parameters)
-                
-                # Execute the tool
-                return await self._tool_instance.execute(validated_params, context)
-        
-        # Register via event system (no circular dependencies)
-        from flowlib.core.events.events import emit_registration, RegistrationEvent
-        
-        emit_registration(RegistrationEvent(
-            item_type="provider",
-            name=name,
-            factory=lambda: ToolProviderWrapper(),
-            metadata={
-                "provider_type": "tool",
-                "description": description,
-                "tool_name": name,
-                **metadata
-            }
-        ))
-        
-        # Return original class unchanged
-        return cls
+        raise DeprecationWarning(
+            "The @tool decorator in flowlib.core.decorators is deprecated. "
+            "Use @tool from flowlib.agent.components.task_execution.decorators instead."
+        )
     
     return decorator
 

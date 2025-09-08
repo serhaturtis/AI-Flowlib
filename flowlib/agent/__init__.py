@@ -1,7 +1,9 @@
 """Agent module for autonomous AI agents with memory, planning, and learning capabilities."""
 
 from flowlib.agent.core.base_agent import BaseAgent
-from flowlib.agent.agents.dual_path import DualPathAgent
+
+# Import debriefing components to trigger decorator registration
+from flowlib.agent.components.task.debriefing import flows, prompts
 
 # Create utils alias for test compatibility
 try:
@@ -15,6 +17,5 @@ except ImportError:
 
 __all__ = [
     "BaseAgent",
-    "DualPathAgent", 
     "utils",
 ]

@@ -22,7 +22,7 @@ from flowlib.providers.llm.llama_cpp.provider import (
     LlamaCppSettings,
 )
 from flowlib.core.errors.errors import ProviderError
-from flowlib.resources.decorators.decorators import PromptTemplate
+from flowlib.core.interfaces import PromptTemplate
 
 
 class MockOutputModel(BaseModel):
@@ -45,33 +45,19 @@ class TestLlamaCppSettings:
         """Test default LLaMA.cpp settings (clean provider-only settings)."""
         settings = LlamaCppSettings()
         
-        # Clean provider-only settings (no n_ctx - that's model-specific now)
-        assert settings.n_threads == 4
-        assert settings.n_batch == 512
-        assert settings.use_gpu is False
-        assert settings.n_gpu_layers == 0
-        assert settings.chat_format is None
+        # Clean provider-only settings (hardware settings moved to model config)
+        assert settings.max_concurrent_models == 3
         assert settings.verbose is False
     
     def test_custom_settings(self):
         """Test custom LLaMA.cpp settings (clean provider-only settings)."""
         settings = LlamaCppSettings(
-            n_threads=8,
-            n_batch=1024,
-            use_gpu=True,
-            n_gpu_layers=35,
-            chat_format="chatml",
             verbose=True,
             timeout=600,
             max_concurrent_models=5
         )
         
-        # Only test provider-level settings (n_ctx, temperature, max_tokens are model-specific now)
-        assert settings.n_threads == 8
-        assert settings.n_batch == 1024
-        assert settings.use_gpu is True
-        assert settings.n_gpu_layers == 35
-        assert settings.chat_format == "chatml"
+        # Only test provider-level settings (hardware settings moved to model config)
         assert settings.verbose is True
         assert settings.timeout == 600
         assert settings.max_concurrent_models == 5
@@ -95,10 +81,6 @@ class TestLlamaCppProvider:
     def settings(self):
         """Create test settings (clean provider-only settings)."""
         return LlamaCppSettings(
-            n_threads=4,
-            n_batch=512,
-            use_gpu=False,
-            n_gpu_layers=0,
             verbose=False
         )
     
@@ -489,16 +471,16 @@ class TestLlamaCppProvider:
         assert "Generate a person profile." in result
         assert "json" in result.lower()
     
-    def test_format_prompt_chat_format(self):
-        """Test prompt formatting with chat format."""
-        # Create provider with chat format settings
-        settings = LlamaCppSettings(chat_format="chatml")
-        provider = LlamaCppProvider(name="test_chat", provider_type="llm", settings=settings)
+    def test_format_prompt_model_type(self):
+        """Test prompt formatting with model type."""
+        # Create provider with clean settings (no chat_format - that's model-specific now)
+        settings = LlamaCppSettings()
+        provider = LlamaCppProvider(name="test_format", provider_type="llm", settings=settings)
         prompt = "Hello, how are you?"
         
-        result = provider._format_prompt(prompt, model_type="chat")
+        result = provider._format_prompt(prompt, model_type="default")
         
-        # Should apply chat formatting
+        # Should apply model type formatting
         assert prompt in result
     
     def test_create_completion_params(self, provider):
@@ -535,10 +517,6 @@ class TestLlamaCppProviderIntegration:
     def settings(self):
         """Create integration test settings (clean provider-only settings)."""
         return LlamaCppSettings(
-            n_threads=2,
-            n_batch=128,
-            use_gpu=False,
-            n_gpu_layers=0,
             verbose=False
         )
     
@@ -559,10 +537,6 @@ class TestLlamaCppProviderIntegration:
     
     def test_settings_integration(self, settings):
         """Test settings integration with real values (clean provider-only settings)."""
-        assert settings.n_threads == 2
-        assert settings.n_batch == 128
-        assert settings.use_gpu is False
-        assert settings.n_gpu_layers == 0
         assert settings.verbose is False
     
     def test_provider_creation_integration(self, settings):
@@ -570,8 +544,6 @@ class TestLlamaCppProviderIntegration:
         provider = LlamaCppProvider(name="integration_test", provider_type="llm", settings=settings)
         
         assert provider.name == "integration_test"
-        assert provider._settings.n_threads == 2
-        assert provider._settings.n_batch == 128
         assert not provider.initialized
     
     def test_model_path_validation_integration(self, provider):
@@ -598,7 +570,4 @@ class TestLlamaCppProviderIntegration:
         # LlamaCppProvider doesn't have _create_completion_params method
         # It extracts parameters directly in generate/generate_structured methods
         # This test verifies that the provider settings are correctly configured (clean provider-only)
-        assert provider._settings.n_threads == 2
-        assert provider._settings.n_batch == 128
-        assert provider._settings.use_gpu is False
-        assert provider._settings.n_gpu_layers == 0
+        assert provider._settings.verbose is False

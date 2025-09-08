@@ -69,6 +69,19 @@ class AgentComponent(ABC):
         """Check if component is initialized."""
         return self._initialized
     
+    def _check_initialized(self) -> None:
+        """Check if the component is initialized.
+        
+        Raises:
+            NotInitializedError: If the component is not initialized
+        """
+        if not self._initialized:
+            from .errors import NotInitializedError
+            raise NotInitializedError(
+                component_name=self._name,
+                operation="component operation"
+            )
+    
     async def initialize(self) -> None:
         """Initialize the component."""
         if self._initialized:

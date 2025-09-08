@@ -7,7 +7,7 @@ from datetime import datetime
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
 
-from flowlib.knowledge.models.models import DocumentContent, TextChunk
+from flowlib.knowledge.models import DocumentContent, TextChunk
 from flowlib.knowledge.vector.models import (
     VectorStoreInput,
     VectorStoreOutput,

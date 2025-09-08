@@ -12,15 +12,14 @@ from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
 from ...core.errors import MemoryError, ErrorContext
-from .interfaces import MemoryInterface
 from .models import (
     MemoryStoreRequest,
     MemoryRetrieveRequest,
     MemorySearchRequest,
     MemoryContext
 )
-# Import MemoryItem and MemorySearchResult from the same location to ensure compatibility
-from ...models.memory import MemoryItem, MemorySearchResult
+# Import MemoryItem and MemorySearchResult from the proper location
+from .models import MemoryItem, MemorySearchResult
 from flowlib.providers.core.registry import provider_registry
 
 logger = logging.getLogger(__name__)
@@ -62,7 +61,7 @@ class VectorMemoryConfig(StrictBaseModel):
     )
 
 
-class VectorMemory(MemoryInterface):
+class VectorMemory:
     """Modern vector memory implementation with semantic search capabilities."""
     
     def __init__(self, config: Optional[VectorMemoryConfig] = None):
@@ -208,13 +207,12 @@ class VectorMemory(MemoryInterface):
             if request.metadata:
                 metadata.update(request.metadata)
             
-            # Store in vector database
-            await self._vector_provider.add_documents(
-                collection_name=self._config.collection_name,
-                documents=[content],
-                embeddings=[embedding],
+            # Store in vector database using standard interface
+            await self._vector_provider.insert_batch(
+                vectors=[embedding],
+                metadatas=[metadata],
                 ids=[doc_id],
-                metadatas=[metadata]
+                index_name=self._config.collection_name
             )
             
             logger.debug(f"Stored vector memory item '{request.key}' in context '{request.context}'")
@@ -235,29 +233,34 @@ class VectorMemory(MemoryInterface):
             raise MemoryError("VectorMemory not initialized")
             
         try:
-            # Query by metadata filter for exact match
-            results = await self._vector_provider.query(
-                collection_name=self._config.collection_name,
-                query_embeddings=None,
-                n_results=1,
-                where={
+            # Query by metadata filter for exact match using new standard interface
+            results = await self._vector_provider.get_by_filter(
+                filter={
                     "context": request.context,
                     "key": request.key
-                }
+                },
+                top_k=1,
+                index_name=self._config.collection_name
             )
             
-            if results and 'documents' in results and results['documents'] and len(results['documents']) > 0:
-                # Reconstruct memory item from stored data
-                doc = results['documents'][0][0] if isinstance(results['documents'][0], list) else results['documents'][0]
-                metadatas = results['metadatas'] if 'metadatas' in results else []
-                metadata = metadatas[0][0] if metadatas and isinstance(metadatas[0], list) else (metadatas[0] if metadatas else {})
+            if results and len(results) > 0:
+                # Reconstruct memory item from stored data - new format is list of dicts
+                result_item = results[0]
+                doc = result_item.get('document', '')
+                metadata = result_item.get('metadata', {})
                 
-                # Create basic memory item
+                # Create basic memory item - only pass user metadata to MemoryItem
+                # System metadata stays in the vector db, user metadata goes to MemoryItem
+                user_metadata = {}
+                for key_meta, value_meta in metadata.items():
+                    if key_meta not in ('context', 'key', 'content', 'item_type'):
+                        user_metadata[key_meta] = value_meta
+                
                 item = MemoryItem(
                     key=request.key,
                     value=doc,
                     context=request.context,
-                    metadata=metadata
+                    metadata=user_metadata
                 )
                 
                 logger.debug(f"Retrieved vector memory item '{request.key}' from context '{request.context}'")
@@ -283,47 +286,48 @@ class VectorMemory(MemoryInterface):
             if request.context:
                 where_filter["context"] = request.context
             
-            # Perform vector search
-            results = await self._vector_provider.query(
-                collection_name=self._config.collection_name,
-                query_embeddings=[query_embedding],
-                n_results=min(request.limit or self._config.max_results, self._config.max_results),
-                where=where_filter if where_filter else None
+            # Perform vector search using standard interface
+            results = await self._vector_provider.search(
+                query_vector=query_embedding,
+                top_k=min(request.limit or self._config.max_results, self._config.max_results),
+                filter=where_filter if where_filter else None,
+                index_name=self._config.collection_name
             )
             
             search_results = []
             
-            if results and 'documents' in results and results['documents']:
-                documents = results['documents'][0] if results['documents'] else []
-                metadatas = results['metadatas'][0] if 'metadatas' in results and results['metadatas'] else []
-                distances = results['distances'][0] if 'distances' in results and results['distances'] else []
+            # Results are now List[SimilaritySearchResult] from standard interface
+            for result in results:
+                # Extract data from SimilaritySearchResult object
+                doc = result.text or ""
+                metadata = result.metadata or {}
+                similarity = 1.0 - result.score  # Convert score back to similarity
                 
-                for i, doc in enumerate(documents):
-                    metadata = metadatas[i] if i < len(metadatas) else {}
-                    distance = distances[i] if i < len(distances) else 1.0
-                    
-                    # Convert distance to similarity score (0-1 scale)
-                    similarity = 1.0 - distance
-                    
-                    # Filter by similarity threshold
-                    if similarity >= self._config.similarity_threshold:
-                        # Reconstruct memory item
-                        item = MemoryItem(
-                            key=metadata['key'] if 'key' in metadata else 'unknown',
-                            value=doc,
-                            context=metadata['context'] if 'context' in metadata else (request.context or 'default'),
-                            metadata=metadata
-                        )
+                # Filter by similarity threshold
+                if similarity >= self._config.similarity_threshold:
+                    # Reconstruct memory item
+                    # Fail fast - no fallbacks allowed
+                    if 'key' not in metadata:
+                        raise ValueError("Memory item metadata must contain 'key' field")
+                    if 'context' not in metadata:
+                        raise ValueError("Memory item metadata must contain 'context' field")
                         
-                        search_results.append(MemorySearchResult(
-                            item=item,
-                            score=similarity,
-                            metadata={
-                                "search_type": "semantic",
-                                "distance": distance,
-                                "similarity": similarity
-                            }
-                        ))
+                    item = MemoryItem(
+                        key=metadata['key'],
+                        value=doc,
+                        context=metadata['context'],
+                        metadata=metadata
+                    )
+                    
+                    search_results.append(MemorySearchResult(
+                        item=item,
+                        score=similarity,
+                        metadata={
+                            "search_type": "semantic",
+                            "distance": result.score,  # Use original score as distance
+                            "similarity": similarity
+                        }
+                    ))
             
             logger.debug(f"Found {len(search_results)} vector memory results for query '{request.query}'")
             return search_results
@@ -361,20 +365,19 @@ class VectorMemory(MemoryInterface):
             raise MemoryError("VectorMemory not initialized")
             
         try:
-            # Get all documents in this context
-            results = await self._vector_provider.query(
-                collection_name=self._config.collection_name,
-                query_embeddings=None,
-                n_results=10000,  # Large number to get all
-                where={"context": context}
+            # Get all documents in this context using standard interface
+            results = await self._vector_provider.get_by_filter(
+                filter={"context": context},
+                top_k=10000,  # Large number to get all
+                index_name=self._config.collection_name
             )
             
-            if results and 'ids' in results and results['ids']:
-                ids_to_delete = results['ids'][0] if results['ids'] else []
+            if results and len(results) > 0:
+                ids_to_delete = [result['id'] for result in results]
                 
                 if ids_to_delete:
-                    await self._vector_provider.delete(
-                        collection_name=self._config.collection_name,
+                    await self._vector_provider.delete_vectors(
+                        index_name=self._config.collection_name,
                         ids=ids_to_delete
                     )
                     
@@ -396,7 +399,7 @@ class VectorMemory(MemoryInterface):
         """Generate embedding for text using the embedding provider."""
         try:
             # Generate embedding
-            embeddings = await self._embedding_provider.embed_texts([text])
+            embeddings = await self._embedding_provider.embed([text])
             
             if not embeddings or len(embeddings) == 0:
                 raise MemoryError(

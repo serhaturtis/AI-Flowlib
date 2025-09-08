@@ -19,7 +19,7 @@ from ...core.decorators import provider
 from ..base import LLMProvider, ModelType
 from flowlib.providers.core.base import ProviderSettings
 from ..models import LlamaModelConfig
-from flowlib.resources.decorators.decorators import PromptTemplate
+from flowlib.core.interfaces import PromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -73,26 +73,20 @@ class StructuredGenerationParams(GenerationParams):
 
 
 class LlamaCppSettings(ProviderSettings):
-    """Settings for the LlamaCpp provider - Infrastructure/Provider concerns only.
+    """Settings for the LlamaCpp provider - Pure infrastructure concerns only.
     
     Provider-level settings that control how the LlamaCpp provider operates,
     independent of specific models loaded through it. Inherits common fields
-    from ProviderSettings (timeout, max_retries, verbose, etc.) and adds
-    LlamaCpp-specific fields.
+    from ProviderSettings (timeout, max_retries, verbose, etc.).
+    
+    All model-specific settings (use_gpu, n_gpu_layers, n_threads, n_batch)
+    are now defined only in model configurations for clean separation of concerns.
     
     LlamaCpp-specific attributes:
-        n_threads: Number of CPU threads to use for inference
-        n_batch: Batch size for processing (infrastructure optimization)
-        use_gpu: Whether to enable GPU acceleration capability
-        n_gpu_layers: Number of layers to offload to GPU (can be overridden per model)
         max_concurrent_models: Maximum number of models to keep loaded simultaneously
     """
     
-    # LlamaCpp-specific settings (infrastructure-level only)
-    n_threads: int = Field(default=4, description="Number of CPU threads for inference (e.g., 4 for quad-core)")
-    n_batch: int = Field(default=512, description="Batch size for processing optimization (512 for balanced performance)")
-    use_gpu: bool = Field(default=False, description="Enable GPU acceleration (requires CUDA/Metal)")
-    n_gpu_layers: int = Field(default=0, description="GPU layers to offload (0=CPU only, -1=all layers)")
+    # Pure infrastructure settings only
     max_concurrent_models: int = Field(default=3, description="Maximum models loaded simultaneously (prevents OOM)")
 
 
@@ -171,9 +165,9 @@ class LlamaCppProvider(LLMProvider):
             use_gpu = model_config.use_gpu
             n_gpu_layers = model_config.n_gpu_layers
             
-            # Use provider settings for infrastructure concerns, with model overrides
-            n_threads = model_config.n_threads if model_config.n_threads is not None else self._settings.n_threads
-            n_batch = model_config.n_batch if model_config.n_batch is not None else self._settings.n_batch
+            # All model-specific settings come from model config only (no provider defaults)
+            n_threads = model_config.n_threads
+            n_batch = model_config.n_batch
             verbose = model_config.verbose if model_config.verbose is not None else self._settings.verbose
             
             # Check if model path exists
@@ -569,6 +563,12 @@ class LlamaCppProvider(LLMProvider):
         if prompt_variables:
             # Format the template with variables
             formatted_prompt_text = self.format_template(template_str, {"variables": prompt_variables})
+        
+        # DEBUG: Show what's actually being sent to LLM
+        print("\n🎯 ACTUAL FORMATTED PROMPT SENT TO LLM:")
+        print("=" * 80)
+        print(formatted_prompt_text)
+        print("=" * 80)
         
         # Format the prompt according to model type
         formatted_prompt = self._format_prompt(formatted_prompt_text, model_type, output_type)

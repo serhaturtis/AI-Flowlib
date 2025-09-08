@@ -3,7 +3,7 @@
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from flowlib.agent.runners.repl.commands import CommandHandler, Command, CommandType
-from flowlib.agent.runners.repl.tools.base import tool_registry
+from flowlib.providers.core.registry import provider_registry
 
 
 class MemoryStats(BaseModel):
@@ -248,14 +248,24 @@ class AgentCommandHandler(CommandHandler):
     
     async def _show_available_tools(self, agent: Any) -> str:
         """Show tools available to the agent."""
-        if hasattr(agent, "tools"):
-            tools = agent.tools
+        try:
+            from flowlib.agent.components.task_execution import tool_registry
+            
+            tools = tool_registry.list_tools()
             if tools:
                 tool_list = "**Available Tools:**\n"
-                for tool_name, tool in tools.items():
-                    description = tool.description if hasattr(tool, 'description') else 'No description'
-                    tool_list += f"  • {tool_name}: {description}\n"
+                for tool_name in tools:
+                    try:
+                        metadata = tool_registry.get_metadata(tool_name)
+                        description = metadata.description
+                        category = metadata.category
+                        tool_list += f"  • {tool_name} ({category}): {description}\n"
+                    except Exception:
+                        tool_list += f"  • {tool_name}: Available\n"
                 return tool_list
+            
+        except Exception as e:
+            return f"Error getting tools: {str(e)}"
         
         return "No tools available."
 
@@ -418,8 +428,11 @@ class ToolCommandHandler(CommandHandler):
             # Handle @tool_name commands
             if command.raw_input.startswith("@"):
                 tool_name = command.raw_input[1:].split()[0]
-                tool = tool_registry.get(tool_name)
-                return tool is not None
+                try:
+                    from flowlib.agent.components.task_execution import tool_registry
+                    return tool_registry.has_tool(tool_name)
+                except Exception:
+                    return False
         return False
     
     async def handle(self, command: Command, context: Dict[str, Any]) -> Any:
@@ -467,39 +480,66 @@ class ToolCommandHandler(CommandHandler):
     
     async def _list_tools(self) -> str:
         """List all available tools."""
-        tools = tool_registry.list_tools()
-        if not tools:
-            return "No tools available."
-        
-        tool_list = "**Available Tools:**\n"
-        for tool_name in sorted(tools):
-            tool = tool_registry.get(tool_name)
-            description = tool.description if tool else "No description"
-            tool_list += f"  • {tool_name}: {description}\n"
-        
-        return tool_list
+        try:
+            from flowlib.agent.components.task_execution import tool_registry
+            
+            tools = tool_registry.list_tools()
+            if not tools:
+                return "No tools available."
+            
+            tool_list = "**Available Tools:**\n"
+            for tool_name in sorted(tools):
+                try:
+                    metadata = tool_registry.get_metadata(tool_name)
+                    description = metadata.description
+                    category = metadata.category
+                    tool_list += f"  • {tool_name} ({category}): {description}\n"
+                except Exception:
+                    tool_list += f"  • {tool_name}: Available\n"
+            
+            return tool_list
+            
+        except Exception as e:
+            return f"Error listing tools: {str(e)}"
     
     async def _describe_tool(self, tool_name: str) -> str:
         """Describe a specific tool."""
-        tool = tool_registry.get(tool_name)
-        if not tool:
-            return f"Tool '{tool_name}' not found."
-        
-        description = f"**Tool: {tool_name}**\n\n"
-        description += f"Description: {tool.description}\n\n"
-        description += "Parameters:\n"
-        
-        for param in tool.parameters:
-            required = " (required)" if param.required else " (optional)"
-            default = f" [default: {param.default}]" if param.default is not None else ""
-            description += f"  • {param.name} ({param.type}){required}{default}\n"
-            description += f"    {param.description}\n"
-        
-        description += f"\n**Usage Examples:**\n"
-        description += f"  @{tool_name} param1=value1 param2=value2\n"
-        description += f"  /tool execute {tool_name} param1=value1\n"
-        
-        return description
+        try:
+            from flowlib.agent.components.task_execution import tool_registry
+            
+            if not tool_registry.has_tool(tool_name):
+                return f"Tool '{tool_name}' not found."
+            
+            metadata = tool_registry.get_metadata(tool_name)
+            schema = tool_registry.get_parameter_schema(tool_name)
+            
+            description = f"**Tool: {tool_name}**\n\n"
+            description += f"Description: {metadata.description}\n"
+            description += f"Category: {metadata.category}\n"
+            description += f"Version: {metadata.version}\n\n"
+            
+            # Show parameters
+            if schema and 'properties' in schema:
+                parameters = schema['properties']
+                required = schema.get('required', [])
+                
+                if parameters:
+                    description += "Parameters:\n"
+                    for param_name, param_info in parameters.items():
+                        is_required = " (required)" if param_name in required else " (optional)"
+                        param_type = param_info.get('type', 'unknown')
+                        param_desc = param_info.get('description', 'No description')
+                        description += f"  • {param_name} ({param_type}){is_required}\n"
+                        description += f"    {param_desc}\n"
+            
+            description += f"\n**Usage Examples:**\n"
+            description += f"  @{tool_name} param1=value1 param2=value2\n"
+            description += f"  /tool execute {tool_name} param1=value1\n"
+            
+            return description
+            
+        except Exception as e:
+            return f"Error describing tool '{tool_name}': {str(e)}"
     
     async def _execute_tool_directly(self, command_text: str, context: Dict[str, Any]) -> str:
         """Execute a tool directly from @tool_name syntax."""
@@ -515,42 +555,49 @@ class ToolCommandHandler(CommandHandler):
     
     async def _execute_tool(self, tool_name: str, args_text: str, context: Dict[str, Any]) -> str:
         """Execute a tool with given arguments."""
-        tool = tool_registry.get(tool_name)
-        if not tool:
-            return f"Tool '{tool_name}' not found. Use '/tool list' to see available tools."
-        
-        # Parse arguments
         try:
-            args = self._parse_tool_args(args_text)
-        except ValueError as e:
-            return f"Error parsing arguments: {str(e)}"
-        
-        # Execute tool
-        try:
-            result = await tool_registry.execute_tool(tool_name, **args)
+            from flowlib.agent.components.task_execution import tool_orchestrator, ToolExecutionRequest
+            
+            if not tool_orchestrator.get_available_tools():
+                return "No tools available. Tool system may not be initialized."
+            
+            if tool_name not in tool_orchestrator.get_available_tools():
+                return f"Tool '{tool_name}' not found. Use '/tool list' to see available tools."
+            
+            # Parse arguments
+            try:
+                args = self._parse_tool_args(args_text)
+            except ValueError as e:
+                return f"Error parsing arguments: {str(e)}"
+            
+            # Create execution context
+            exec_context = tool_orchestrator.create_execution_context(
+                working_directory=".",
+                agent_id="repl-agent",
+                session_id="repl-session"
+            )
+            
+            # Create and execute request
+            request = ToolExecutionRequest(
+                tool_name=tool_name,
+                raw_parameters=args,
+                context=exec_context
+            )
+            
+            response = await tool_orchestrator.execute_tool(request)
             
             # Format result
-            if result.status.value == "success":
+            if response.is_success():
                 output = f"✅ **{tool_name}** executed successfully"
-                if result.content:
-                    output += f"\n\n{result.content}"
-                if result.metadata and 'verbose' in context and context['verbose']:
-                    output += f"\n\n**Metadata:** {result.metadata}"
+                content = response.get_display_content()
+                if content:
+                    output += f"\n\n{content}"
                 return output
-            elif result.status.value == "warning":
-                output = f"⚠️ **{tool_name}** completed with warnings"
-                if result.content:
-                    output += f"\n\n{result.content}"
-                if result.error:
-                    output += f"\n\n**Warning:** {result.error}"
-                return output
+            elif response.is_error():
+                error_msg = response.error.error_message if response.error else "Unknown error"
+                return f"❌ **{tool_name}** failed: {error_msg}"
             else:
-                output = f"❌ **{tool_name}** failed"
-                if result.error:
-                    output += f"\n\n**Error:** {result.error}"
-                if result.content:
-                    output += f"\n\n**Output:** {result.content}"
-                return output
+                return f"⚠️ **{tool_name}** completed with status: {response.status.value}"
                 
         except Exception as e:
             return f"❌ Error executing tool '{tool_name}': {str(e)}"
@@ -568,7 +615,7 @@ class ToolCommandHandler(CommandHandler):
         
         # Regular expression to match key=value pairs where value might be JSON
         # This handles quoted strings, arrays, objects, and simple values
-        pattern = r'(\w+)=(["\'].*?["\']|\[.*?\]|\{.*?\}|\S+)'
+        pattern = r'(\w+)=((?:"[^"]*"|\'[^\']*\'|\[.*?\]|\{.*?\}|[^"\'\s]\S*(?:\s+(?![\w]+=)[^\s]+)*|\S+))'
         
         matches = re.findall(pattern, args_text)
         
@@ -711,7 +758,7 @@ class TodoCommandHandler(CommandHandler):
         if not current_list or not current_list.items:
             return "No TODOs in current list."
         
-        from ...components.planning.todo import TodoStatus
+        from ...components.task import TodoStatus
         
         result = ["**Current TODOs:**\n"]
         
@@ -751,7 +798,7 @@ class TodoCommandHandler(CommandHandler):
     
     async def _add_todo(self, todo_manager, content: str) -> str:
         """Add a new TODO."""
-        from ...components.planning.todo import TodoPriority
+        from ...components.task import TodoPriority
         
         # Determine priority from content
         priority = TodoPriority.MEDIUM

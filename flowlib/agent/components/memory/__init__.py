@@ -1,12 +1,26 @@
 """Memory module for agent memory management and retrieval."""
 
-from .agent_memory import AgentMemory
-from .models import MemoryStoreRequest, MemoryRetrieveRequest, MemorySearchRequest, MemorySearchResult
+from .component import MemoryComponent
+from .models import (
+    MemoryStoreRequest, MemoryRetrieveRequest, MemorySearchRequest, 
+    MemorySearchResult, MemorySearchResultCollection, MemoryItem,
+    MemoryItemMetadata, MemorySearchMetadata, MemoryContext,
+    ExecutionMemoryItem, EntityMemoryItem
+)
+from .manager import AgentMemoryManager
 
 __all__ = [
-    "AgentMemory",
+    "MemoryComponent", 
+    "AgentMemoryManager",
+    "MemoryItem",
+    "MemoryItemMetadata", 
+    "MemorySearchMetadata",
     "MemoryStoreRequest",
     "MemoryRetrieveRequest", 
     "MemorySearchRequest",
-    "MemorySearchResult"
+    "MemorySearchResult",
+    "MemorySearchResultCollection",
+    "MemoryContext",
+    "ExecutionMemoryItem",
+    "EntityMemoryItem"
 ]

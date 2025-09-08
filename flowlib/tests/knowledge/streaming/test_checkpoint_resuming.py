@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
-from flowlib.knowledge.models.models import (
+from flowlib.knowledge.models import (
     ExtractionState, ExtractionProgress, ExtractionConfig, ChunkingStrategy
 )
 from flowlib.knowledge.streaming.checkpoint_manager import CheckpointManager
@@ -128,7 +128,7 @@ class TestCheckpointResuming:
             state.streaming_graph_db_path = str(checkpoint_manager.streaming_graph_db_dir)
             
             # Mock some accumulated data
-            from flowlib.knowledge.models.models import Entity, Relationship, EntityType, RelationType
+            from flowlib.knowledge.models import Entity, Relationship, EntityType, RelationType
             
             mock_entity = Entity(
                 entity_id="test_entity_1",
@@ -202,7 +202,7 @@ class TestCheckpointResuming:
                 state.streaming_graph_db_path = str(checkpoint_manager.streaming_graph_db_dir)
                 
                 # Add mock data
-                from flowlib.knowledge.models.models import Entity, EntityType
+                from flowlib.knowledge.models import Entity, EntityType
                 mock_entity = Entity(
                     entity_id=f"entity_{i}",
                     name=f"Entity{i}",
@@ -274,7 +274,7 @@ class TestCheckpointResuming:
             
             # Create checkpoint by exporting plugin
             # Add mock data for plugin export
-            from flowlib.knowledge.models.models import Entity, EntityType
+            from flowlib.knowledge.models import Entity, EntityType
             mock_entity = Entity(
                 entity_id="resume_test_entity",
                 name="ResumeTestEntity",
@@ -355,7 +355,7 @@ class TestCheckpointResuming:
                 
                 # Create checkpoint plugin
                 # Add mock data for the batch
-                from flowlib.knowledge.models.models import Entity, EntityType
+                from flowlib.knowledge.models import Entity, EntityType
                 mock_entity = Entity(
                     entity_id=f"{batch_id}_entity",
                     name=f"Entity{batch_id}",

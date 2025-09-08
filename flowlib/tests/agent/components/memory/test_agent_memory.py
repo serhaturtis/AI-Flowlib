@@ -14,7 +14,7 @@ from flowlib.agent.components.memory.models import (
     MemoryRetrieveRequest,
     MemorySearchRequest,
 )
-from flowlib.agent.models.memory import MemoryItem, MemorySearchResult
+from flowlib.agent.components.memory.models import MemoryItem, MemorySearchResult
 from flowlib.agent.core.errors import MemoryError
 
 

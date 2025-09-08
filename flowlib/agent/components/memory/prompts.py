@@ -30,12 +30,10 @@ User Query: "{{query}}"
 ### Knowledge Plugin Results (Domain-specific):
 {{plugin_results}}
 
-### Synthesized Output (JSON format):
-Produce a JSON object containing:
-- relevant_items: List[str] - Key pieces of relevant information synthesized across all sources.
-- summary: str - Brief (1-2 sentence) summary acknowledging which sources contributed (or didn't).
-
-Synthesized Output:
+### Synthesized Output:
+Provide:
+- relevant_items: Key pieces of relevant information synthesized across all sources
+- summary: Brief (1-2 sentence) summary acknowledging which sources contributed (or didn't)
 """
 
 
@@ -62,7 +60,7 @@ User Query: "{{query}}"
 
 Context (Optional): {{context}}
 
-Relevant Keywords/Entities for KG Search (Return as JSON list of strings):
+Relevant Keywords/Entities for KG Search:
 """
 
 class ExtractedKGQueryTerms(StrictBaseModel):

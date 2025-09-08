@@ -17,7 +17,7 @@ from flowlib.providers.llm.google_ai.provider import (
     GoogleAISettings,
 )
 from flowlib.core.errors.errors import ProviderError
-from flowlib.resources.decorators.decorators import PromptTemplate
+from flowlib.core.interfaces import PromptTemplate
 from flowlib.providers.llm.base import PromptConfigOverride
 
 
