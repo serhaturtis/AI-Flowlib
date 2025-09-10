@@ -6,7 +6,7 @@ and enriches them with context for optimal processing.
 
 import logging
 import time
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ExecutionError
@@ -14,7 +14,10 @@ from flowlib.flows.registry import flow_registry
 from .models import (
     TaskGenerationInput, TaskGenerationOutput, GeneratedTask
 )
-from flowlib.agent.models.conversation import ConversationMessage
+from flowlib.agent.models.conversation import ConversationMessage, MessageRole
+
+if TYPE_CHECKING:
+    from flowlib.agent.core.context.models import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +49,12 @@ class TaskGeneratorComponent(AgentComponent):
     
     async def convert_message_to_task(
         self,
-        user_message: str,
-        conversation_history: List[ConversationMessage],
-        agent_persona: str,
-        working_directory: str = "."
+        context: 'ExecutionContext'
     ) -> TaskGenerationOutput:
         """Generate enriched task definition from user message.
         
         Args:
-            user_message: The user's message to process
-            conversation_history: Previous conversation messages for context
-            agent_persona: Agent's persona/personality
-            working_directory: Current working directory
+            context: Unified execution context containing all necessary information
             
         Returns:
             TaskGenerationOutput with generated task from user message
@@ -67,6 +64,18 @@ class TaskGeneratorComponent(AgentComponent):
         start_time = time.time()
         
         try:
+            # Extract information from unified context
+            user_message = context.session.current_message
+            conversation_history = [
+                ConversationMessage(
+                    role=MessageRole.USER if msg.role == "user" else MessageRole.ASSISTANT,
+                    content=msg.content,
+                    timestamp=msg.timestamp
+                ) for msg in context.session.conversation_history
+            ]
+            agent_persona = context.session.agent_persona
+            working_directory = context.session.working_directory
+            
             # Create input for task generation flow
             task_input = TaskGenerationInput(
                 user_message=user_message,

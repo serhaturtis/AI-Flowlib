@@ -30,9 +30,7 @@ try:
     logger.info("Assigned role 'default-embedding' to 'example-llamacpp-embedding-provider'")
     
     # Model Resource Aliases - maps standard role names to internal model names
-    # This allows code that uses "agent-model-small/large" to work with standard roles
-    role_manager.assign_role("agent-model-small", "example-llamacpp-provider")
-    role_manager.assign_role("agent-model-large", "example-llamacpp-provider") 
+    # Note: agent-model-small and agent-model-large are deprecated - use default-model instead 
     role_manager.assign_role("agent-embedding-model", "example-llamacpp-embedding-provider")
     logger.info("Assigned internal model aliases to standard providers")
     

@@ -317,9 +317,8 @@ async def setup_model_resources():
     
     try:
         # Check if LLM models are registered
-        small_model = resource_registry.get("agent-model-small")
-        large_model = resource_registry.get("agent-model-large")
-        logger.info(f"LLM models registered - Small: {bool(small_model)}, Large: {bool(large_model)}")
+        default_model = resource_registry.get("default-model")
+        logger.info(f"LLM model registered - Default: {bool(default_model)}")
     except Exception as e:
         logger.warning(f"LLM model not found: {e}")
     
@@ -399,7 +398,7 @@ async def main(persona=None):
         persona=agent_persona,
         task_description="Interactive REPL development assistant",
         # Task decomposer settings (consolidated from PlannerConfig)
-        model_name="agent-model-large",
+        model_name="default-model",
         task_decomposer_max_tokens=1024,
         task_decomposer_temperature=0.2,
         # Memory configuration (required)

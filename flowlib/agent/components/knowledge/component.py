@@ -243,7 +243,7 @@ class KnowledgeComponent(AgentComponent):
             prompt=extraction_prompt,
             prompt_variables=prompt_vars,
             output_type=KnowledgeSet,
-            model_name="default"
+            model_name="default-model"
         )
         
         # Add source context to all extracted items

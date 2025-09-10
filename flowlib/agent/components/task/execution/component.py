@@ -5,12 +5,15 @@ following the architectural principle that ALL tasks go through decomposition fi
 """
 
 import logging
-from typing import List
+from typing import List, TYPE_CHECKING
 
 from flowlib.agent.core.base import AgentComponent
 from .models import TaskExecutionResult, ToolExecutionContext
 from ..models import TodoItem
 from flowlib.flows.registry import flow_registry
+
+if TYPE_CHECKING:
+    from flowlib.agent.core.context.models import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -65,4 +68,42 @@ class TaskExecutionComponent(AgentComponent):
         # Create input model for the flow
         flow_input = TodoBatchExecutionInput(todos=todos, context=context)
         return await execution_flow.execute_todo_batch(flow_input)
+    
+    async def execute_todos(
+        self,
+        context: 'ExecutionContext'
+    ) -> TaskExecutionResult:
+        """Execute TODOs from unified execution context.
+        
+        Args:
+            context: Unified execution context containing TODOs and all necessary information
+            
+        Returns:
+            Aggregated execution result
+        """
+        self._check_initialized()
+        
+        # Extract TODOs from context
+        todos = context.task.todos
+        
+        # Create ToolExecutionContext for backward compatibility with existing flow
+        import uuid
+        from .models import ToolExecutionSharedData
+        
+        tool_context = ToolExecutionContext(
+            working_directory=context.session.working_directory,
+            timeout_seconds=context.component.execution_timeout,
+            agent_id=context.session.agent_name,
+            agent_persona=context.session.agent_persona,
+            session_id=context.session.session_id,
+            task_id=context.task.description[:50],  # Use task description as ID
+            execution_id=str(uuid.uuid4()),
+            parent_execution_id=None,
+            execution_depth=0,
+            previous_results=[],
+            shared_data=ToolExecutionSharedData()
+        )
+        
+        # Use existing execution method
+        return await self.execute_decomposed_todos(todos, tool_context)
     

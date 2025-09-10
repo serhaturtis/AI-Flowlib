@@ -110,10 +110,9 @@ class TaskDecompositionFlow:
             context_lines.append(f"Working Directory: {context.working_directory}")
         
         if context.previous_messages:
-            if len(context.previous_messages) > 0:
-                context_lines.append(f"Previous Messages: {len(context.previous_messages)} messages in conversation history")
-            else:
-                context_lines.append("Previous Messages: No previous conversation")
+            # Use actual conversation content instead of useless count
+            conversation_history = self._format_conversation_history(context.previous_messages)
+            context_lines.append(f"Previous Conversation:\n{conversation_history}")
         
         if context.agent_name:
             context_lines.append(f"Agent Name: {context.agent_name}")

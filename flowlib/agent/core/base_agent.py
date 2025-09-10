@@ -25,6 +25,7 @@ from flowlib.agent.core.config_manager import AgentConfigManager
 from flowlib.agent.core.state_manager import AgentStateManager
 from flowlib.agent.components.memory.manager import AgentMemoryManager
 from flowlib.agent.core.flow_runner import AgentFlowRunner
+from flowlib.agent.core.context.manager import AgentContextManager
 from flowlib.agent.core.activity_stream import ActivityStream
 from flowlib.agent.core.agent_activity_formatter import AgentActivityFormatter
 from flowlib.agent.components.engine import EngineComponent
@@ -93,6 +94,10 @@ class BaseAgent:
         self._memory_manager.set_registry(self._registry)
         self._registry.register("memory_manager", self._memory_manager, AgentMemoryManager)
         
+        self._context_manager = AgentContextManager(config.context)
+        self._context_manager.set_registry(self._registry)
+        self._registry.register("context_manager", self._context_manager, AgentContextManager)
+        
         self._flow_runner = AgentFlowRunner()
         self._flow_runner.set_registry(self._registry)
         self._registry.register("flow_runner", self._flow_runner, AgentFlowRunner)
@@ -155,6 +160,7 @@ class BaseAgent:
             await self._config_manager.initialize()
             await self._state_manager.initialize()
             await self._memory_manager.initialize()
+            await self._context_manager.initialize()
             await self._flow_runner.initialize()
             # Learning now handled by knowledge component
             
@@ -168,6 +174,15 @@ class BaseAgent:
             
             # Setup memory system
             await self._memory_manager.setup_memory(self._config_manager.config.memory)
+            
+            # Initialize session context
+            await self._context_manager.initialize_session(
+                session_id=self._state_manager.current_state.task_id,
+                agent_name=self._config_manager.config.name,
+                agent_persona=self._config_manager.config.persona,
+                working_directory=os.getcwd(),
+                user_id=None
+            )
             
             # Learning capability is now part of KnowledgeComponent
             
@@ -216,6 +231,7 @@ class BaseAgent:
             
             # Shutdown all managers
             await self._flow_runner.shutdown()
+            await self._context_manager.shutdown()
             await self._memory_manager.shutdown()
             await self._state_manager.shutdown()
             await self._config_manager.shutdown()
@@ -293,7 +309,8 @@ class BaseAgent:
             task_decomposer=self._task_decomposer,
             task_executor=self._task_executor,
             task_debriefer=self._task_debriefer,
-            activity_stream=self._activity_stream
+            activity_stream=self._activity_stream,
+            context_manager=self._context_manager
         )
         self._engine.set_registry(self._registry)
         self._registry.register("engine", self._engine, EngineComponent)
@@ -708,22 +725,6 @@ class BaseAgent:
         
         await self._state_manager.add_conversation_turn(turn)
     
-    async def _learn_from_conversation(self, message: str, response: str, context: Optional[Dict[str, Any]] = None) -> bool:
-        """Learn from a conversation exchange.
-        
-        Returns:
-            True if learning failed, False otherwise
-        """
-        if self._knowledge:
-            try:
-                content = f"User: {message}\nAssistant: {response}"
-                # Delegate to knowledge component
-                await self._knowledge.learn_from_content(content, "conversation", ["dialogue"])
-                return False  # Success
-            except Exception as e:
-                logger.warning(f"Learning system error: {e}")
-                return True  # Failed
-        return False
     
     # Thread and Queue Management
     
@@ -957,26 +958,15 @@ class BaseAgent:
         response = await self._send_to_engine(message, context)
         logger.debug(f"[Agent-{self._name}] Flow processing complete, response: {str(response)[:100]}...")
         
-        # Learn from conversation if learning is enabled
-        learning_warning = None
-        if self._knowledge:
-            logger.debug(f"[Agent-{self._name}] Learning from conversation")
-            learning_error = await self._learn_from_conversation(message, response, context)
-            if learning_error:
-                learning_warning = "⚠️ Knowledge extraction failed - check system configuration"
-        
         # Build response with metadata
         response_content = response if isinstance(response, str) else str(response)
-        if learning_warning:
-            response_content = f"{response_content}\n\n{learning_warning}"
         
         response_data = {
             "content": response_content,
             "metadata": {
                 "flows_executed": self._flow_runner._last_executed_flows if hasattr(self._flow_runner, '_last_executed_flows') else [],
                 "memory_enabled": self.config.enable_memory,
-                "learning_enabled": bool(self._knowledge),
-                "learning_warning": learning_warning
+                "learning_enabled": bool(self._knowledge)
             }
         }
         

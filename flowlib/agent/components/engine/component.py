@@ -3,17 +3,12 @@
 import logging
 import os
 import time
-import uuid
-from datetime import datetime
 from typing import Dict, Any, Optional
-from flowlib.core.models import StrictBaseModel
+
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ExecutionError
-from flowlib.agent.models.state import AgentState, ExecutionResult  
-from flowlib.agent.components.task.decomposition import TaskDecompositionComponent
+from flowlib.agent.models.state import AgentState, ExecutionResult
 from flowlib.agent.components.task.decomposition import TodoManager
-from flowlib.agent.components.task.execution.models import ToolExecutionContext
-from flowlib.agent.components.knowledge import KnowledgeComponent, LearningInput
 # Using existing AgentMessage from core models for conversation history
 
 logger = logging.getLogger(__name__)
@@ -22,9 +17,11 @@ logger = logging.getLogger(__name__)
 class EngineComponent(AgentComponent):
     """Engine that orchestrates TaskGeneration → TaskDecomposition → TaskExecution → TaskDebriefing."""
     
-    def __init__(self, agent_name: str, agent_persona: str, max_iterations: int = 10, 
-                 memory=None, knowledge=None, task_generator=None, task_decomposer=None, task_executor=None, 
-                 task_debriefer=None, activity_stream=None, name: str = "agent_engine"):
+    def __init__(self, agent_name: str, agent_persona: str, max_iterations: int = 10,
+                 memory=None, knowledge=None, task_generator=None,
+                 task_decomposer=None, task_executor=None, task_debriefer=None,
+                 activity_stream=None, context_manager=None,
+                 name: str = "agent_engine"):
         """Initialize the agent engine.
         
         Args:
@@ -34,13 +31,18 @@ class EngineComponent(AgentComponent):
             memory: Memory component
             knowledge: Knowledge component
             task_generator: Task generator component
-            task_decomposer: Task decomposer component  
+            task_decomposer: Task decomposer component
             task_executor: Task executor component
             task_debriefer: Task debriefer component
             activity_stream: Activity stream
+            context_manager: Context manager (required)
             name: Component name
         """
         super().__init__(name)
+        
+        # Context manager is required - fail fast if missing
+        if not context_manager:
+            raise ExecutionError("EngineComponent requires AgentContextManager - fix configuration")
         
         self._agent_name = agent_name
         self._agent_persona = agent_persona
@@ -52,6 +54,7 @@ class EngineComponent(AgentComponent):
         self._task_executor = task_executor
         self._task_debriefer = task_debriefer
         self._activity_stream = activity_stream
+        self._context_manager = context_manager
         self._todo_manager = TodoManager("EngineToDoManager", activity_stream=activity_stream)
         self._iteration = 0
             
@@ -128,26 +131,37 @@ class EngineComponent(AgentComponent):
             raise
     
     async def execute_cycle(self, state, conversation_history=None, memory_context: str = "agent", no_flow_is_error: bool = False) -> bool:
-        """Execute a single execution cycle.
+        """Execute a single execution cycle with clean context management.
         
-        Orchestrates: TaskGenerator → TaskDecomposer → TaskExecution
+        Orchestrates: TaskGenerator → TaskDecomposer → TaskExecution using unified context.
         """
         try:
             # Update state
             self._iteration += 1
             state.increment_cycle()
+            await self._context_manager.increment_cycle()
             
             logger.info(f"Starting execution cycle {state.cycles}")
             
             if self._activity_stream:
                 self._activity_stream.execution(f"Starting cycle {state.cycles} for task: {state.task_description[:50]}...", cycle=state.cycles)
             
-            # 1. Generate task from user message
+            # Start task in context manager
+            await self._context_manager.start_task(state.task_description)
+            
+            # 1. Task Generation with managed context
+            task_gen_context = await self._context_manager.create_execution_context(
+                component_type="task_generation"
+            )
+            
             task_generation_result = await self._task_generator.convert_message_to_task(
-                user_message=state.task_description,
-                conversation_history=conversation_history,
-                agent_persona=self._agent_persona,
-                working_directory=os.getcwd()
+                context=task_gen_context
+            )
+            
+            await self._context_manager.update_from_execution(
+                component_type="task_generation",
+                execution_result=task_generation_result,
+                success=task_generation_result.success
             )
             
             if not task_generation_result.success:
@@ -158,25 +172,18 @@ class EngineComponent(AgentComponent):
             generated_task = task_generation_result.generated_task
             logger.info(f"Generated task: {generated_task.task_description}")
             
-            # 2. Decompose the generated task into TODOs with proper context
-            from flowlib.agent.components.task.models import RequestContext
-            
-            # State must have metadata - fail fast if not
-            # metadata is returned as dict from Context, access session_id directly
-            # session_id is optional in StateMetadata, can be None
-            decomposition_context = RequestContext(
-                session_id=state.metadata["session_id"],
-                user_id=None,  # Not available at this level
-                agent_name=self._agent_name,
-                previous_messages=conversation_history,
-                working_directory=os.getcwd(),
-                agent_persona=self._agent_persona,
-                memory_context=f"{memory_context}_cycle_{self._iteration}"
+            # 2. Task Decomposition with managed context
+            decomp_context = await self._context_manager.create_execution_context(
+                component_type="task_decomposition",
+                task_description=generated_task.task_description
             )
             
-            todos = await self._task_decomposer.decompose_task(
-                task_description=generated_task.task_description,
-                context=decomposition_context
+            todos = await self._task_decomposer.decompose_task(context=decomp_context)
+            
+            await self._context_manager.update_from_execution(
+                component_type="task_decomposition", 
+                execution_result=todos,
+                success=len(todos) > 0
             )
             
             # 3. Check if we got TODOs
@@ -185,24 +192,29 @@ class EngineComponent(AgentComponent):
                 state.set_complete("No actionable items generated")
                 return False
             
-            # 4. Execute the TODOs
-            execution_context = ToolExecutionContext(
-                working_directory=os.getcwd(),
-                agent_id=self._agent_name,
-                agent_persona=self._agent_persona,
-                execution_id=str(uuid.uuid4()),
-                task_id=state.task_id,
-                session_id=state.metadata["session_id"]
+            # 4. Task Execution with managed context  
+            exec_context = await self._context_manager.create_execution_context(
+                component_type="task_execution",
+                todos=todos
             )
             
             # Execute the TODOs
             try:
-                execution_result = await self._task_executor.execute_decomposed_todos(
-                    todos=todos,
-                    context=execution_context
+                execution_result = await self._task_executor.execute_todos(context=exec_context)
+                
+                await self._context_manager.update_from_execution(
+                    component_type="task_execution",
+                    execution_result=execution_result,
+                    success=getattr(execution_result, 'overall_success', True)
                 )
+                
             except Exception as e:
                 logger.error(f"Task execution failed: {e}")
+                await self._context_manager.update_from_execution(
+                    component_type="task_execution",
+                    execution_result=str(e),
+                    success=False
+                )
                 # Create failed execution result
                 from flowlib.agent.components.task.execution.models import TaskExecutionResult, ToolResult, ToolStatus
                 execution_result = TaskExecutionResult(
@@ -210,7 +222,7 @@ class EngineComponent(AgentComponent):
                     todos_executed=todos,
                     tool_results=[
                         ToolResult(
-                            status=ToolStatus.FAILURE,
+                            status=ToolStatus.ERROR,
                             message=f"Execution failed: {str(e)}",
                             execution_time_ms=0
                         )
@@ -253,17 +265,27 @@ class EngineComponent(AgentComponent):
             
             # Act based on debriefing decision
             if debriefing_result.decision.value == "present_success":
+                # Add assistant response to conversation history
+                await self._context_manager.add_assistant_response(debriefing_result.user_response)
+                
                 state.progress = 100
                 state.set_complete(debriefing_result.user_response)
                 logger.info(f"Task completed successfully: {debriefing_result.reasoning}")
                 return False
             elif debriefing_result.decision.value == "retry_with_correction":
+                # Add assistant response to conversation history
+                response_content = self._format_execution_response(execution_result)
+                await self._context_manager.add_assistant_response(response_content)
+                
                 # Update task description for next cycle
                 state.task_description = debriefing_result.corrective_task
                 state.progress = 30  # Some progress made
                 logger.info(f"Retrying with correction: {debriefing_result.reasoning}")
                 return True
             else:  # present_failure
+                # Add assistant response to conversation history
+                await self._context_manager.add_assistant_response(debriefing_result.user_response)
+                
                 state.set_complete(debriefing_result.user_response)
                 logger.info(f"Task failed after analysis: {debriefing_result.reasoning}")
                 return False
@@ -273,7 +295,53 @@ class EngineComponent(AgentComponent):
             state.add_error(error_message)
             state.set_complete(f"Task failed: {str(e)}")
             logger.error(error_message, exc_info=True)
+            
+            # Update context manager with cycle failure
+            await self._context_manager.update_from_execution(
+                component_type="execution_cycle",
+                execution_result=str(e),
+                success=False
+            )
+            
             return False
+    
+    def _format_execution_response(self, execution_result) -> str:
+        """Format execution result for user response.
+        
+        Args:
+            execution_result: Results from task execution
+            
+        Returns:
+            Formatted response string for user
+        """
+        if not execution_result:
+            return "Task execution completed with no results."
+        
+        response_parts = []
+        
+        # Format tool results if available
+        if hasattr(execution_result, 'tool_results') and execution_result.tool_results:
+            successful_tools = [tr for tr in execution_result.tool_results if hasattr(tr, 'status') and tr.status.value == 'SUCCESS']
+            failed_tools = [tr for tr in execution_result.tool_results if hasattr(tr, 'status') and tr.status.value == 'FAILURE']
+            
+            if successful_tools:
+                response_parts.append(f"Successfully executed {len(successful_tools)} operations.")
+                
+            if failed_tools:
+                response_parts.append(f"Failed to execute {len(failed_tools)} operations.")
+                for tool_result in failed_tools[:3]:  # Show first 3 failures
+                    if hasattr(tool_result, 'message'):
+                        response_parts.append(f"- {tool_result.message}")
+        
+        # Use final response if available
+        if hasattr(execution_result, 'final_response') and execution_result.final_response:
+            response_parts.append(execution_result.final_response)
+        
+        # Fallback to string representation
+        if not response_parts:
+            response_parts.append(str(execution_result))
+            
+        return " ".join(response_parts)
     
     def _format_execution_for_learning(self, execution_result) -> str:
         """Format execution results for knowledge extraction.
@@ -306,6 +374,49 @@ class EngineComponent(AgentComponent):
             content_parts.append(str(execution_result))
             
         return " ".join(content_parts)
+    
+    def _is_task_complete(self, execution_result) -> bool:
+        """Check if the task is complete based on execution results.
+        
+        Args:
+            execution_result: Results from task execution
+            
+        Returns:
+            True if task appears complete, False otherwise
+        """
+        if not execution_result:
+            return False
+            
+        # Check if execution result indicates completion
+        if hasattr(execution_result, 'overall_success') and execution_result.overall_success:
+            return True
+            
+        # Check if final response indicates completion
+        if hasattr(execution_result, 'final_response') and execution_result.final_response:
+            completion_indicators = [
+                "completed successfully", "task complete", "finished", 
+                "done", "success", "accomplished"
+            ]
+            response_lower = execution_result.final_response.lower()
+            if any(indicator in response_lower for indicator in completion_indicators):
+                return True
+        
+        # Check if all tools succeeded
+        if hasattr(execution_result, 'tool_results') and execution_result.tool_results:
+            successful_tools = [
+                tr for tr in execution_result.tool_results 
+                if hasattr(tr, 'status') and tr.status.value == 'SUCCESS'
+            ]
+            failed_tools = [
+                tr for tr in execution_result.tool_results 
+                if hasattr(tr, 'status') and tr.status.value == 'FAILURE'
+            ]
+            
+            # If we have some successful tools and no failures, consider complete
+            if successful_tools and not failed_tools:
+                return True
+        
+        return False
     
     async def _create_cycle_context(self, memory_context: str, iteration: int) -> str:
         """Create context string for this execution cycle."""

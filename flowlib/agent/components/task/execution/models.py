@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Literal
 from pydantic import Field
 from enum import Enum
 
-from flowlib.core.models import StrictBaseModel
+from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
 
 # Import RequestContext from parent task models
 from ..models import RequestContext

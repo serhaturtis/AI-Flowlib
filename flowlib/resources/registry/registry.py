@@ -117,7 +117,7 @@ class ResourceRegistry(BaseRegistry[T]):
             prompt = resource_registry.get("my-prompt-name")
             config = resource_registry.get("my-config")
             # Works with aliases too:
-            llm = resource_registry.get("knowledge-extraction")  # alias -> canonical
+            llm = resource_registry.get("default-model")  # alias -> canonical
         """
         # Trigger auto-discovery on first access
         self._auto_discover_configurations()

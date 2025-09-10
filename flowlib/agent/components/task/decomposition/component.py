@@ -1,9 +1,12 @@
 """Agent task decomposer component."""
 
 import logging
-from typing import List, Optional, Any
+from typing import List, Optional, Any, TYPE_CHECKING
 from flowlib.agent.core.base import AgentComponent
 from ..models import TodoItem
+
+if TYPE_CHECKING:
+    from flowlib.agent.core.context.models import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +34,11 @@ class TaskDecompositionComponent(AgentComponent):
         """Shutdown the task decomposer."""
         logger.info("Task decomposer shutdown")
     
-    async def decompose_task(self, task_description: str, context) -> List[TodoItem]:
+    async def decompose_task(self, context: 'ExecutionContext') -> List[TodoItem]:
         """Decompose a task into TODOs with assigned tools.
         
         Args:
-            task_description: The task to decompose
-            context: Additional context for decomposition
+            context: Unified execution context containing all necessary information
             
         Returns:
             List of TodoItem with assigned tools
@@ -52,10 +54,24 @@ class TaskDecompositionComponent(AgentComponent):
         if not decomposition_flow:
             raise RuntimeError("TaskDecompositionFlow not found in registry")
         
+        # Extract task description from context
+        task_description = context.task.description
+        
+        # Create RequestContext for backward compatibility with existing flow
+        request_context = RequestContext(
+            session_id=context.session.session_id,
+            user_id=context.session.user_id,
+            agent_name=context.session.agent_name,
+            previous_messages=context.session.conversation_history,
+            working_directory=context.session.working_directory,
+            agent_persona=context.session.agent_persona,
+            memory_context=f"cycle_{context.task.cycle}"
+        )
+        
         # Create input for task decomposition
         flow_input = TaskDecompositionInput(
             task_description=task_description,
-            context=context  # Pass the actual context instead of creating empty one
+            context=request_context
         )
         
         # Run the flow

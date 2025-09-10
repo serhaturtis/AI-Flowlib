@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 from datetime import datetime
 from pydantic import Field
-from flowlib.core.models import StrictBaseModel
+from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
 
 
 class KnowledgeType(str, Enum):
@@ -30,7 +30,7 @@ class ConfidenceLevel(str, Enum):
     VERY_HIGH = "very_high"
 
 
-class Entity(StrictBaseModel):
+class Entity(MutableStrictBaseModel):
     """Entity representation with strict validation."""
     
     name: str = Field(..., min_length=1, description="Entity name")
@@ -42,7 +42,7 @@ class Entity(StrictBaseModel):
     aliases: List[str] = Field(default_factory=list, description="Alternative names")
 
 
-class Concept(StrictBaseModel):
+class Concept(MutableStrictBaseModel):
     """Concept representation with strict validation."""
     
     name: str = Field(..., min_length=1, description="Concept name")
@@ -53,7 +53,7 @@ class Concept(StrictBaseModel):
     source_context: str = Field(..., description="Source context")
 
 
-class Relationship(StrictBaseModel):
+class Relationship(MutableStrictBaseModel):
     """Relationship representation with strict validation."""
     
     source: str = Field(..., min_length=1, description="Source entity/concept")
@@ -64,7 +64,7 @@ class Relationship(StrictBaseModel):
     source_context: str = Field(..., description="Source context")
 
 
-class Pattern(StrictBaseModel):
+class Pattern(MutableStrictBaseModel):
     """Pattern representation with strict validation."""
     
     name: str = Field(..., min_length=1, description="Pattern name")

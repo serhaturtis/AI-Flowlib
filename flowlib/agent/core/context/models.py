@@ -1,0 +1,159 @@
+"""Unified context models for agent operations.
+
+This module defines the single source of truth for all agent context,
+replacing fragmented context types with unified models.
+"""
+
+from __future__ import annotations
+from datetime import datetime
+from typing import Dict, List, Optional, Any, Literal
+from pydantic import Field
+from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
+from flowlib.agent.components.task.models import TodoItem
+
+
+class ConversationMessage(StrictBaseModel):
+    """Individual conversation message."""
+    
+    role: Literal["user", "assistant"] = Field(..., description="Message role")
+    content: str = Field(..., description="Message content") 
+    timestamp: datetime = Field(default_factory=datetime.now, description="Message timestamp")
+
+
+class UserProfile(StrictBaseModel):
+    """Learned user patterns and preferences."""
+    
+    preferred_tools: List[str] = Field(default_factory=list, description="User's preferred tools")
+    coding_style: Dict[str, Any] = Field(default_factory=dict, description="User's coding style preferences")
+    communication_style: str = Field(default="direct", description="User's communication style")
+    domain_expertise: List[str] = Field(default_factory=list, description="User's areas of expertise")
+
+
+class WorkspaceKnowledge(StrictBaseModel):
+    """Knowledge about the current project/workspace."""
+    
+    project_type: Optional[str] = Field(default=None, description="Detected project type")
+    languages: List[str] = Field(default_factory=list, description="Programming languages in project")
+    dependencies: List[str] = Field(default_factory=list, description="Project dependencies")
+    common_patterns: List[str] = Field(default_factory=list, description="Common code patterns")
+    file_structure: Dict[str, Any] = Field(default_factory=dict, description="Project file structure overview")
+
+
+class SuccessfulPattern(MutableStrictBaseModel):
+    """Pattern that has been successful in the past."""
+    
+    pattern_type: str = Field(..., description="Type of successful pattern")
+    description: str = Field(..., description="Pattern description")
+    success_count: int = Field(default=1, description="Number of times this pattern succeeded")
+    last_used: datetime = Field(default_factory=datetime.now, description="Last time pattern was used")
+    
+
+class RecoveryStrategy(StrictBaseModel):
+    """Strategy for recovering from errors."""
+    
+    error_type: str = Field(..., description="Type of error this strategy addresses")
+    strategy: str = Field(..., description="Recovery strategy description")
+    success_rate: float = Field(default=0.0, description="Success rate of this strategy")
+    usage_count: int = Field(default=0, description="Number of times strategy was used")
+
+
+class SessionContext(MutableStrictBaseModel):
+    """Session-wide persistent context."""
+    
+    # Session identification
+    session_id: str = Field(..., description="Unique session identifier")
+    user_id: Optional[str] = Field(default=None, description="User identifier") 
+    agent_name: str = Field(..., description="Agent name")
+    agent_persona: str = Field(..., description="Agent persona")
+    working_directory: str = Field(..., description="Current working directory")
+    
+    # Conversation state
+    current_message: str = Field(..., description="Current user message")
+    conversation_history: List[ConversationMessage] = Field(
+        default_factory=list, description="Full conversation history"
+    )
+    conversation_summary: Optional[str] = Field(
+        default=None, description="Auto-compacted conversation summary"
+    )
+    
+    # Learning state
+    user_profile: UserProfile = Field(
+        default_factory=UserProfile, description="Learned user patterns"
+    )
+    workspace_knowledge: WorkspaceKnowledge = Field(
+        default_factory=WorkspaceKnowledge, description="Project understanding"
+    )
+
+
+class TaskContext(MutableStrictBaseModel):
+    """Current task execution context."""
+    
+    description: str = Field(..., description="Task description")
+    cycle: int = Field(default=1, description="Current execution cycle")
+    todos: List[TodoItem] = Field(default_factory=list, description="Current TODOs")
+    execution_results: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Results from previous cycles"
+    )
+    started_at: datetime = Field(default_factory=datetime.now, description="Task start time")
+
+
+class ComponentContext(StrictBaseModel):
+    """Component-specific execution context."""
+    
+    component_type: Literal[
+        "task_generation", "task_decomposition", "task_execution", "task_debriefing"
+    ] = Field(..., description="Current component type")
+    component_config: Dict[str, Any] = Field(
+        default_factory=dict, description="Component-specific configuration"
+    )
+    
+    # Tool and execution settings
+    tool_configurations: Dict[str, Any] = Field(
+        default_factory=dict, description="Available tool configurations"
+    )
+    execution_timeout: Optional[int] = Field(
+        default=None, description="Execution timeout in seconds"
+    )
+    retry_policy: str = Field(default="simple", description="Retry policy for failed operations")
+
+
+class LearningContext(MutableStrictBaseModel):
+    """Learning and adaptation context."""
+    
+    successful_patterns: List[SuccessfulPattern] = Field(
+        default_factory=list, description="Previously successful patterns"
+    )
+    user_preferences: Dict[str, Any] = Field(
+        default_factory=dict, description="Learned user preferences"
+    )
+    error_recovery_strategies: List[RecoveryStrategy] = Field(
+        default_factory=list, description="Error recovery strategies"
+    )
+    total_executions: int = Field(default=0, description="Total number of executions")
+    successful_executions: int = Field(default=0, description="Number of successful executions")
+
+
+class ExecutionContext(StrictBaseModel):
+    """THE unified context model for all agent operations."""
+    
+    session: SessionContext = Field(..., description="Session-wide persistent context")
+    task: TaskContext = Field(..., description="Current task context")  
+    component: ComponentContext = Field(..., description="Component-specific context")
+    learning: LearningContext = Field(..., description="Learning and adaptation context")
+    
+    @property 
+    def token_count(self) -> int:
+        """Estimate token count for auto-compaction."""
+        # Simple estimation based on string lengths
+        session_tokens = len(str(self.session.conversation_history)) // 4
+        task_tokens = len(self.task.description) // 4
+        summary_tokens = len(self.session.conversation_summary or "") // 4
+        
+        return session_tokens + task_tokens + summary_tokens
+    
+    @property
+    def success_rate(self) -> float:
+        """Calculate current success rate."""
+        if self.learning.total_executions == 0:
+            return 0.0
+        return self.learning.successful_executions / self.learning.total_executions

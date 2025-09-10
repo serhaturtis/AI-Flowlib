@@ -335,7 +335,7 @@ class EntityAnalysisFlow:
             entity_result = await llm.generate_structured(
                 prompt=entity_prompt,
                 output_type=LLMEntityExtractionResult,
-                model_name="knowledge-extraction",
+                model_name="default-model",
                 prompt_variables={
                     "domain": config.extraction_domain,
                     "context": f"Document: {document.metadata.file_name}",
@@ -361,7 +361,7 @@ class EntityAnalysisFlow:
                 rel_result = await llm.generate_structured(
                     prompt=rel_prompt,
                     output_type=LLMRelationshipExtractionResult,
-                    model_name="knowledge-extraction",
+                    model_name="default-model",
                     prompt_variables={
                         "domain": config.extraction_domain,
                         "entity_list": ', '.join(entity_names),
