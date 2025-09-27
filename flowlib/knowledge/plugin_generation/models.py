@@ -1,7 +1,5 @@
 """Models for knowledge plugin generation."""
 
-from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Any, Optional
 from pydantic import Field, ConfigDict
 from flowlib.core.models import StrictBaseModel
@@ -40,8 +38,8 @@ class DatabaseSettings(StrictBaseModel):
     """Database settings configuration."""
     # Inherits strict configuration from StrictBaseModel
     
-    chromadb: DatabaseConfig = Field(default=None, description="ChromaDB configuration")
-    neo4j: DatabaseConfig = Field(default=None, description="Neo4j configuration")
+    chromadb: Optional[DatabaseConfig] = Field(default=None, description="ChromaDB configuration")
+    neo4j: Optional[DatabaseConfig] = Field(default=None, description="Neo4j configuration")
 
 
 class ExtractionStats(StrictBaseModel):
@@ -58,7 +56,7 @@ class ExtractionStats(StrictBaseModel):
     extraction_error: Optional[str] = Field(default=None, description="Error message if extraction failed")
 
 
-class ProcessedDataStats(BaseModel):
+class ProcessedDataStats(StrictBaseModel):
     """Statistics for processed data."""
     # Inherits strict configuration from StrictBaseModel
     
@@ -68,7 +66,7 @@ class ProcessedDataStats(BaseModel):
     chunks: int = Field(default=0, description="Number of chunks")
 
 
-class ProcessedData(BaseModel):
+class ProcessedData(StrictBaseModel):
     """Processed knowledge extraction data."""
     model_config = ConfigDict(extra="forbid")
     
@@ -79,7 +77,7 @@ class ProcessedData(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Processing metadata")
 
 
-class PluginGenerationSummary(BaseModel):
+class PluginGenerationSummary(StrictBaseModel):
     """Summary of plugin generation results."""
     model_config = ConfigDict(extra="forbid")
     
@@ -92,7 +90,7 @@ class PluginGenerationSummary(BaseModel):
     files_created: List[str] = Field(description="List of created files")
 
 
-class PluginGenerationRequest(BaseModel):
+class PluginGenerationRequest(StrictBaseModel):
     """Request model for plugin generation."""
     model_config = ConfigDict(extra="forbid")
     
@@ -112,7 +110,7 @@ class PluginGenerationRequest(BaseModel):
     domain_config: Optional[DomainStrategyConfig] = Field(default=None, description="Domain strategy configuration")
 
 
-class PluginGenerationResult(BaseModel):
+class PluginGenerationResult(StrictBaseModel):
     """Result model for plugin generation."""
     model_config = ConfigDict(extra="forbid")
     

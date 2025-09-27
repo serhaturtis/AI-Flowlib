@@ -5,15 +5,13 @@ offering a common interface for working with different embedding models.
 """
 
 from .base import EmbeddingProvider
-from .llama_cpp.provider import LlamaCppEmbeddingProvider, LlamaCppEmbeddingProviderSettings
+from .llama_cpp.provider import LlamaCppEmbeddingProvider
 
-from flowlib.core.errors.errors import ConfigurationError
 import logging
 
 __all__ = [
     "EmbeddingProvider",
-    "LlamaCppEmbeddingProvider", 
-    "embedding_model"
+    "LlamaCppEmbeddingProvider"
 ]
 
 logger = logging.getLogger(__name__)

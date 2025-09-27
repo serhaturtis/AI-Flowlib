@@ -6,7 +6,7 @@ and extracting structured data.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar, cast, Generic
 from pydantic import BaseModel, Field, field_validator
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
@@ -14,9 +14,11 @@ from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.base import Provider, ProviderSettings
 
 from flowlib.resources.registry.registry import resource_registry
-from flowlib.core.interfaces import PromptTemplate
+from typing import Protocol
+from flowlib.utils.pydantic.schema import model_to_simple_json_schema
 
-from ...utils.pydantic.schema import model_to_simple_json_schema
+class PromptTemplate(Protocol):
+    template: str
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +108,11 @@ class LLMProviderSettings(ProviderSettings):
         return v
 
 
-T = TypeVar('T', bound=LLMProviderSettings)
+SettingsT = TypeVar('SettingsT', bound=LLMProviderSettings)
 ModelType = TypeVar('ModelType', bound=BaseModel)
 
 
-class LLMProvider(Provider):
+class LLMProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for local LLM backends.
     
     This class provides the interface for:
@@ -119,7 +121,7 @@ class LLMProvider(Provider):
     3. Type-safe response handling
     """
     
-    def __init__(self, name: str, provider_type: str, settings: Optional[ProviderSettings] = None, **kwargs: Any):
+    def __init__(self, name: str, provider_type: str, settings: Optional[SettingsT] = None, **kwargs: object):
         """Initialize LLM provider.
         
         Args:
@@ -130,28 +132,28 @@ class LLMProvider(Provider):
         """
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         self._initialized = False
-        self._models = {}
+        self._models: Dict[str, Any] = {}
         
     @property
     def initialized(self) -> bool:
         """Return whether provider has been initialized."""
         return self._initialized
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the provider.
-        
+
         This method should be implemented by subclasses.
         """
         self._initialized = True
-        
-    async def shutdown(self):
+
+    async def shutdown(self) -> None:
         """Clean up resources.
-        
+
         This method should be implemented by subclasses.
         """
         self._initialized = False
         
-    async def get_model_config(self, model_name: str) -> Dict[str, Any]:
+    async def get_model_config(self, model_name: str) -> Dict[str, object]:
         """Get configuration for a model from the resource registry.
         
         Args:
@@ -165,16 +167,14 @@ class LLMProvider(Provider):
         """
         try:
             # Use legitimate registry method - this is NOT a fallback pattern
-            model_config = resource_registry.get(model_name)
-            
+            resource = resource_registry.get(model_name)
+
             # Log the model config for debugging
-            logger.info(f"Retrieved model config for '{model_name}': {model_config}")
-            
-            # If model_config is a class (not instance), create an instance
-            if isinstance(model_config, type):
-                logger.info(f"Model '{model_name}' is a class, creating instance")
-                model_config = model_config()
-                
+            logger.info(f"Retrieved model resource for '{model_name}': {resource}")
+
+            # Convert ResourceBase to dict for backward compatibility with existing code
+            model_config = resource.model_dump()
+
             return model_config
         except Exception as e:
             logger.error(f"Error retrieving model '{model_name}': {str(e)}")
@@ -221,7 +221,7 @@ class LLMProvider(Provider):
         
         return config_attr
     
-    def _merge_generation_config(self, model_config: Dict[str, Any], prompt_config: Optional[PromptConfigOverride] = None) -> Dict[str, Any]:
+    def _merge_generation_config(self, model_config: Dict[str, object], prompt_config: Optional[PromptConfigOverride] = None) -> Dict[str, object]:
         """Merge model defaults with prompt config overrides.
         
         Args:
@@ -249,7 +249,7 @@ class LLMProvider(Provider):
         # Filter out None values
         return {k: v for k, v in merged_config.items() if v is not None}
         
-    async def generate(self, prompt: PromptTemplate, model_name: str, prompt_variables: Optional[Dict[str, Any]] = None) -> str:
+    async def generate(self, prompt: PromptTemplate, model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> str:
         """Generate a response from the LLM.
         
         Args:
@@ -265,7 +265,7 @@ class LLMProvider(Provider):
         """
         raise NotImplementedError("Subclasses must implement generate()")
         
-    async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, Any]] = None) -> ModelType:
+    async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> ModelType:
         """Generate a structured response from the LLM.
         
         Args:
@@ -282,7 +282,7 @@ class LLMProvider(Provider):
         """
         raise NotImplementedError("Subclasses must implement generate_structured()")
         
-    def format_template(self, template: str, kwargs: Dict[str, Any]) -> str:
+    def format_template(self, template: str, kwargs: Dict[str, object]) -> str:
         """Format a template with variables.
         
         Replaces {{variable}} placeholders in the template with corresponding values.
@@ -307,7 +307,7 @@ class LLMProvider(Provider):
                     len(template), available_vars)
         
         # Variables already validated - proceed with formatting
-        variables = kwargs["variables"]
+        variables = cast(Dict[str, object], kwargs["variables"])
         result = template
         
         # Replace {{variable}} with corresponding values

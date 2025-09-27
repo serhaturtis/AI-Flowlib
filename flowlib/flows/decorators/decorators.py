@@ -8,20 +8,19 @@ system has been removed in favor of clean subflow composition.
 import functools
 import logging
 import datetime
-import types
-from typing import Any, Callable, Dict, Optional, Type, TypeVar, List
+from typing import Callable, Optional, TypeVar, Any, Union
 from pydantic import BaseModel
 
 from flowlib.flows.base.base import Flow
 from flowlib.flows.registry.registry import flow_registry
 
-F = TypeVar('F', bound=Callable)
+F = TypeVar('F', bound=Callable[..., Any])
 C = TypeVar('C', bound=type)
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
-def flow(cls=None, *, name: str = None, description: str, is_infrastructure: bool = False):
+def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: str, is_infrastructure: bool = False) -> Union[Callable[[C], C], C]:
     """
     Decorator to mark a class as a flow.
     
@@ -40,9 +39,9 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
     Raises:
         ValueError: If description is not provided
     """
-    def wrap(cls):
+    def wrap(cls: C) -> C:
         # Create a get_description method that returns the provided description
-        def get_description(self):
+        def get_description(self: Any) -> str:
             return description
         
         # Add the method to the class
@@ -64,7 +63,7 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
                     del original_dict[key]
             
             # Create the new class with multiple inheritance
-            cls = type(
+            cls = type(  # type: ignore[assignment]
                 original_name,
                 (original_cls, Flow),
                 original_dict
@@ -73,7 +72,7 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
             # Initialize Flow with default parameters
             original_init = cls.__init__
             
-            def new_init(self, *args, **kwargs):
+            def new_init(self: Any, *args: Any, **kwargs: Any) -> None:
                 # Call Flow's __init__ with appropriate parameters
                 flow_name = name or original_name
                 Flow.__init__(
@@ -88,7 +87,7 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
                 self.name = flow_name
                 
                 # Only call original_init if it's different from Flow.__init__
-                if original_init is not Flow.__init__:
+                if original_init is not Flow.__init__:  # type: ignore[comparison-overlap]
                     try:
                         original_cls.__init__(self, *args, **kwargs)
                     except TypeError:
@@ -97,18 +96,18 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
                         except Exception as e:
                             logger.warning(f"Failed to call original __init__: {e}")
             
-            cls.__init__ = new_init
+            cls.__init__ = new_init  # type: ignore[method-assign]
         
         # Set flow metadata
         flow_name = name or cls.__name__
-        cls.__flow_metadata__ = {
+        cls.__flow_metadata__ = {  # type: ignore[attr-defined]
             "name": flow_name,
             "is_infrastructure": is_infrastructure
         }
         
         # Set the name and is_infrastructure as direct attributes for easy access
-        cls.name = flow_name
-        cls.is_infrastructure = is_infrastructure
+        cls.name = flow_name  # type: ignore[attr-defined]
+        cls.is_infrastructure = is_infrastructure  # type: ignore[attr-defined]
         
         # Find pipeline methods first - only scan own class methods, not inherited
         pipeline_methods = []
@@ -130,17 +129,17 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
             raise ValueError(f"Flow class '{flow_name}' has multiple pipeline methods: {', '.join(pipeline_methods)}. Only one is allowed.")
         
         # Store the pipeline method name
-        cls.__pipeline_method__ = pipeline_methods[0]
+        cls.__pipeline_method__ = pipeline_methods[0]  # type: ignore[attr-defined]
         
         # Create a single flow instance to store in the registry
-        flow_instance = None
+        flow_instance: Any = None
         try:
             flow_instance = cls()
             # Set the name attribute directly on the flow instance
             setattr(flow_instance, "name", flow_name)
             
             # Get the pipeline method to extract schemas
-            pipeline_method = getattr(cls, cls.__pipeline_method__)
+            pipeline_method = getattr(cls, cls.__pipeline_method__)  # type: ignore[attr-defined]
             if hasattr(pipeline_method, 'input_model') and pipeline_method.input_model:
                 setattr(flow_instance, "input_schema", pipeline_method.input_model)
                 logger.debug(f"Set input_schema={pipeline_method.input_model.__name__} on flow '{flow_name}'")
@@ -154,9 +153,9 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
             logger.warning(f"Failed to create instance for flow '{flow_name}': {e}")
             
         # Store flow class name and description for easier debugging
-        cls.__flow_name__ = flow_name
-        cls.__flow_description__ = description
-        cls.__is_infrastructure__ = is_infrastructure
+        cls.__flow_name__ = flow_name  # type: ignore[attr-defined]
+        cls.__flow_description__ = description  # type: ignore[attr-defined]
+        cls.__is_infrastructure__ = is_infrastructure  # type: ignore[attr-defined]
         
         # Register the flow in the global registry
         try:
@@ -183,7 +182,7 @@ def flow(cls=None, *, name: str = None, description: str, is_infrastructure: boo
 # Create dedicated flow classes for reusable processing logic
 
 
-def pipeline(func: Optional[Callable] = None, **pipeline_kwargs):
+def pipeline(func: Optional[F] = None, **pipeline_kwargs: Any) -> Callable[..., Any]:
     """Mark a method as a flow pipeline.
     
     This decorator wraps a method to provide pipeline execution capabilities:
@@ -215,9 +214,9 @@ def pipeline(func: Optional[Callable] = None, **pipeline_kwargs):
     if output_model is not None and not (isinstance(output_model, type) and issubclass(output_model, BaseModel)):
         raise ValueError(f"Pipeline output_model must be a Pydantic BaseModel subclass, got {output_model}")
         
-    def decorator(method):
+    def decorator(method: F) -> F:
         @functools.wraps(method)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             """Wrapped pipeline method."""
             # Track execution stats
             start_time = datetime.datetime.now()
@@ -236,19 +235,19 @@ def pipeline(func: Optional[Callable] = None, **pipeline_kwargs):
                     logger.debug(f"Pipeline execution: {flow_class}.{method.__name__} ({execution_time.total_seconds():.3f}s)")
         
         # Set pipeline attributes for flow decorator and test compatibility
-        wrapper.__pipeline__ = True
-        wrapper.input_model = input_model
-        wrapper.output_model = output_model
-        
+        wrapper.__pipeline__ = True  # type: ignore[attr-defined]
+        wrapper.input_model = input_model  # type: ignore[attr-defined]
+        wrapper.output_model = output_model  # type: ignore[attr-defined]
+
         # Set the standard double-underscore attributes used throughout the system
-        wrapper.__input_model__ = input_model
-        wrapper.__output_model__ = output_model
-        
+        wrapper.__input_model__ = input_model  # type: ignore[attr-defined]
+        wrapper.__output_model__ = output_model  # type: ignore[attr-defined]
+
         # Also set the test-expected attributes for backward compatibility
-        wrapper.__pipeline_input_model__ = input_model
-        wrapper.__pipeline_output_model__ = output_model
+        wrapper.__pipeline_input_model__ = input_model  # type: ignore[attr-defined]
+        wrapper.__pipeline_output_model__ = output_model  # type: ignore[attr-defined]
         
-        return wrapper
+        return wrapper  # type: ignore[return-value]
         
     # Support both @pipeline and @pipeline() syntax
     if func is None:

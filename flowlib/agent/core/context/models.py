@@ -59,11 +59,12 @@ class RecoveryStrategy(StrictBaseModel):
 
 class SessionContext(MutableStrictBaseModel):
     """Session-wide persistent context."""
-    
+
     # Session identification
     session_id: str = Field(..., description="Unique session identifier")
-    user_id: Optional[str] = Field(default=None, description="User identifier") 
+    user_id: Optional[str] = Field(default=None, description="User identifier")
     agent_name: str = Field(..., description="Agent name")
+    agent_role: str = Field(default="general_purpose", description="Agent role for tool access control")
     agent_persona: str = Field(..., description="Agent persona")
     working_directory: str = Field(..., description="Current working directory")
     
@@ -72,6 +73,10 @@ class SessionContext(MutableStrictBaseModel):
     conversation_history: List[ConversationMessage] = Field(
         default_factory=list, description="Full conversation history"
     )
+
+    # Shared context for collaboration
+    shared_context: Dict[str, Any] = Field(default_factory=dict, description="Shared context between agents")
+    collaborating_agents: List[str] = Field(default_factory=list, description="List of collaborating agent names")
     conversation_summary: Optional[str] = Field(
         default=None, description="Auto-compacted conversation summary"
     )
@@ -101,7 +106,7 @@ class ComponentContext(StrictBaseModel):
     """Component-specific execution context."""
     
     component_type: Literal[
-        "task_generation", "task_decomposition", "task_execution", "task_debriefing"
+        "task_generation", "task_thinking", "task_decomposition", "task_execution", "task_debriefing"
     ] = Field(..., description="Current component type")
     component_config: Dict[str, Any] = Field(
         default_factory=dict, description="Component-specific configuration"

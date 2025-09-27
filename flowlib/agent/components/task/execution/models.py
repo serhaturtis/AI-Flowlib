@@ -11,11 +11,10 @@ from typing import Any, Dict, List, Optional, Literal
 from pydantic import Field
 from enum import Enum
 
-from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
+from flowlib.core.models import StrictBaseModel
 
-# Import RequestContext from parent task models
-from ..models import RequestContext
-from ..decomposition.models import TodoItem
+# Import from parent task models
+from ..models import RequestContext, TodoItem
 
 
 class ToolStatus(str, Enum):
@@ -25,6 +24,49 @@ class ToolStatus(str, Enum):
     WARNING = "warning"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
+
+
+# Removed SecurityLevel and PermissionLevel enums - using simple string-based system instead
+
+
+# Agent role constants - simple strings for flexibility
+AGENT_ROLES = {
+    "general_purpose": "General purpose agent with basic access",
+    "software_engineer": "Software development and coding tasks",
+    "devops_engineer": "Infrastructure and deployment tasks", 
+    "systems_engineer": "System administration and configuration",
+    "security_analyst": "Security analysis and audit tasks",
+    "data_engineer": "Data processing and analysis tasks",
+    "qa_engineer": "Quality assurance and testing tasks",
+    "admin": "Administrative tasks with full access",
+    "audit": "Read-only access for compliance and auditing"
+}
+
+# Tool categories - simple strings for tool classification
+TOOL_CATEGORIES = {
+    "generic": "Basic tools available to all roles",
+    "software": "Software development tools",
+    "systems": "System administration tools", 
+    "security": "Security analysis tools",
+    "data": "Data processing tools",
+    "testing": "Testing and QA tools",
+    "admin": "Administrative tools"
+}
+
+# Role to tool category mappings - flexible and easy to configure
+ROLE_TOOL_ACCESS = {
+    "general_purpose": ["generic"],
+    "software_engineer": ["generic", "software"],
+    "devops_engineer": ["generic", "software", "systems"],
+    "systems_engineer": ["generic", "systems"],
+    "security_analyst": ["generic", "security"],
+    "data_engineer": ["generic", "data"],
+    "qa_engineer": ["generic", "software", "testing"],
+    "admin": ["generic", "software", "systems", "security", "data", "testing", "admin"],
+    "audit": ["generic"]  # Read-only access
+}
+
+
 
 
 class ToolParameters(StrictBaseModel):
@@ -139,6 +181,7 @@ class ToolExecutionContext(StrictBaseModel):
     # Agent context
     agent_id: str = Field(..., description="ID of the executing agent")
     agent_persona: str = Field(..., description="Agent's persona/personality")
+    agent_role: Optional[str] = Field(default=None, description="Agent's role for permission checking")
     session_id: Optional[str] = Field(default=None, description="Agent session ID")
     task_id: Optional[str] = Field(default=None, description="Current task ID")
     
@@ -165,16 +208,20 @@ class ToolMetadata(StrictBaseModel):
     
     name: str = Field(description="Tool name")
     description: str = Field(description="Tool description for LLM")
-    category: str = Field(default="general", description="Tool category (execution, filesystem, etc.)")
+    tool_category: str = Field(default="generic", description="Tool category (generic, software, systems, etc.)")
     version: str = Field(default="1.0.0", description="Tool version")
     
     # Discovery
     aliases: List[str] = Field(default_factory=list, description="Alternative tool names")
     tags: List[str] = Field(default_factory=list, description="Tool tags for discovery")
     
-    # Capabilities
-    is_safe: bool = Field(default=True, description="Whether tool is safe to execute automatically")
+    # Simple access control
+    allowed_roles: List[str] = Field(default_factory=list, description="Agent roles allowed to use this tool (if empty, uses category-based access)")
+    denied_roles: List[str] = Field(default_factory=list, description="Agent roles explicitly denied access")
+    
+    # Capabilities  
     max_execution_time: Optional[int] = Field(default=None, description="Maximum execution time in seconds")
+    requires_confirmation: bool = Field(default=False, description="Whether tool requires user confirmation before execution")
 
 
 class ToolExecutionError(StrictBaseModel):
@@ -183,7 +230,7 @@ class ToolExecutionError(StrictBaseModel):
     error_type: str = Field(description="Type of error that occurred")
     error_message: str = Field(description="Detailed error message") 
     error_code: Optional[str] = Field(default=None, description="Tool-specific error code")
-    context: ToolErrorContext = Field(default_factory=ToolErrorContext, description="Structured error context")
+    context: ToolErrorContext = Field(default_factory=lambda: ToolErrorContext(operation="unknown"), description="Structured error context")
     recoverable: bool = Field(default=False, description="Whether the error can be recovered from")
 
 
@@ -213,3 +260,5 @@ class TaskExecutionResult(StrictBaseModel):
     success: bool = Field(description="Overall success status")
     execution_time_ms: float = Field(description="Total execution time in milliseconds")
     error_summary: Optional[str] = Field(default=None, description="Summary of any errors encountered")
+
+

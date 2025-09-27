@@ -4,7 +4,7 @@ Base class for embedding providers.
 
 
 import logging
-from typing import List, Union, Any, Generic, TypeVar, Dict
+from typing import List, Union, Generic, TypeVar, Dict
 from pydantic import Field
 
 from flowlib.providers.core.base import Provider, ProviderSettings
@@ -55,7 +55,7 @@ class EmbeddingProvider(Provider[T], Generic[T]):
         """
         raise NotImplementedError("Subclasses must implement 'embed'.")
 
-    async def get_model_config(self, model_name: str) -> Dict[str, Any]:
+    async def get_model_config(self, model_name: str) -> Dict[str, object]:
         """Get configuration for a model from the resource registry.
         
         Args:
@@ -69,16 +69,14 @@ class EmbeddingProvider(Provider[T], Generic[T]):
         """
         try:
             # Use legitimate registry method - this is NOT a fallback pattern
-            model_config = resource_registry.get(model_name)
-            
+            resource = resource_registry.get(model_name)
+
             # Log the model config for debugging
-            logger.info(f"Retrieved embedding model config for '{model_name}': {model_config}")
-            
-            # If model_config is a class (not instance), create an instance
-            if isinstance(model_config, type):
-                logger.info(f"Embedding model '{model_name}' is a class, creating instance")
-                model_config = model_config()
-                
+            logger.info(f"Retrieved embedding model resource for '{model_name}': {resource}")
+
+            # Convert ResourceBase to dict for backward compatibility with existing code
+            model_config = resource.model_dump()
+
             return model_config
         except Exception as e:
             error_context = ErrorContext.create(

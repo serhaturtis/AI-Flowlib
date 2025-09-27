@@ -1,7 +1,6 @@
 """Models for write tool."""
 
 from typing import Optional
-from pathlib import Path
 from pydantic import Field, field_validator
 from flowlib.core.models import StrictBaseModel
 from ...models import ToolResult, ToolStatus
@@ -18,7 +17,7 @@ class WriteParameters(StrictBaseModel):
     
     @field_validator('file_path')
     @classmethod
-    def validate_file_path(cls, v):
+    def validate_file_path(cls, v: str) -> str:
         """Validate file path."""
         if not v or not v.strip():
             raise ValueError("File path cannot be empty")

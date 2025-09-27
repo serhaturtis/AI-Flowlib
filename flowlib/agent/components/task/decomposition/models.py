@@ -8,31 +8,17 @@ This module defines the data models used in planning operations, including:
 - TODO models and management (unified from todo.py and todo_generation/models.py)
 """
 
-import json
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Type
-from enum import Enum
-from uuid import uuid4
-from pydantic import Field, ConfigDict, BeforeValidator, field_validator
-from typing_extensions import Annotated
-from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
+from typing import List
+from pydantic import Field
+from flowlib.core.models import StrictBaseModel
 
 # Import the original FlowMetadata to avoid duplication
-from flowlib.flows.models.metadata import FlowMetadata
 
 # Use FlowRegistry for flow operations
-from flowlib.flows.registry.registry import FlowRegistry
 
 # Import TODO models from single source of truth
-from ..models import (
-    TodoStatus, TodoPriority, TodoStatusSummary, TodoItem, TodoList,
-    validate_todo_status, validate_todo_priority
-)
 
 # --- Imports needed for Plan/PlanStep ---
-import uuid
-from pydantic import Field
-from typing import List, Dict, Any # Added Dict, Any for PlanStep.flow_inputs if we revert
 # ----------------------------------------
 
 # --- Planning-Specific Models ---
@@ -48,7 +34,7 @@ class PlanningExplanation(StrictBaseModel):
     # Inherits strict configuration from StrictBaseModel
     
     explanation: str = Field(..., description="Text explaining the planning decisions")
-    rationale: str = Field(None, description="Rationale for the decisions")
+    rationale: str = Field(default="", description="Rationale for the decisions")
     decision_factors: List[str] = Field(default_factory=list, description="Factors that influenced the decision")
 
 class PlanningResult(StrictBaseModel):

@@ -9,33 +9,44 @@ import inspect
 import json
 import time
 import asyncio
-from typing import Any, Dict, Optional, Type, cast
+from typing import Dict, Optional, Type, cast, Any, TYPE_CHECKING, TypeVar, Callable, Awaitable
 from pydantic import Field
-
-# Attempt to import Google AI library with correct API pattern
-try:
-    from google import genai
-    from google.genai import types
-    GOOGLE_AI_AVAILABLE = True
-except ImportError:
-    GOOGLE_AI_AVAILABLE = False
-    genai = None # type: ignore
-    types = None # type: ignore
-
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
-# Removed ProviderType import - using config-driven provider access
-from flowlib.providers.llm.base import LLMProvider, ModelType
-from flowlib.providers.core.base import ProviderSettings
-from flowlib.core.interfaces import PromptTemplate
-from flowlib.agent.core.resilience import ResilienceManager
+from flowlib.providers.llm.base import LLMProvider, LLMProviderSettings, ModelType
+from flowlib.providers.llm.base import PromptTemplate
+from flowlib.agent.core.resilience import ResilienceManager, RateLimiter
+
+T = TypeVar('T')
+
+# Attempt to import Google AI library with correct API pattern
+if TYPE_CHECKING:
+    from google import genai
+    from google.genai import types
+    GOOGLE_AI_AVAILABLE = True
+else:
+    try:
+        from google import genai
+        from google.genai import types
+        GOOGLE_AI_AVAILABLE = True
+    except ImportError:
+        GOOGLE_AI_AVAILABLE = False
+
+        class _GenAIModule:
+            pass
+
+        class _TypesModule:
+            pass
+
+        genai = _GenAIModule()  # type: ignore
+        types = _TypesModule()  # type: ignore
 
 logger = logging.getLogger(__name__)
 
 
-class GoogleAISettings(ProviderSettings):
+class GoogleAISettings(LLMProviderSettings):
     """Settings for the GoogleAI (Gemini) provider - direct inheritance, only Google AI fields.
     
     Google AI is a cloud API service that requires:
@@ -51,7 +62,7 @@ class GoogleAISettings(ProviderSettings):
     api_base: Optional[str] = Field(default=None, description="Custom API base URL (optional)")
     
     # Google AI safety controls
-    safety_settings: Optional[Dict[Any, Any]] = Field(
+    safety_settings: Optional[Dict[str, object]] = Field(
         default=None, 
         description="Safety settings for content generation filtering"
     )
@@ -71,7 +82,7 @@ class GoogleAISettings(ProviderSettings):
 
 
 @provider(provider_type="llm", name="googleai", settings_class=GoogleAISettings)
-class GoogleAIProvider(LLMProvider):
+class GoogleAIProvider(LLMProvider[GoogleAISettings]):
     """Provider for Google AI (Gemini) models.
     
     This provider supports:
@@ -79,18 +90,18 @@ class GoogleAIProvider(LLMProvider):
     2. Structured output generation using Gemini's tool/function calling.
     """
     
-    def __init__(self, name: str, provider_type: str, settings: Optional[GoogleAISettings] = None, **kwargs: Any):
+    def __init__(self, name: str, provider_type: str, settings: Optional[GoogleAISettings] = None, **kwargs: object):
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         if not isinstance(self.settings, GoogleAISettings):
             raise TypeError(f"settings must be a GoogleAISettings instance, got {type(self.settings)}")
         
-        self._settings = cast(GoogleAISettings, self.settings) # For type hinting
-        self._client = None  # Will store genai.Client instance
-        self._models: Dict[str, Dict[str, Any]] = {} # Stores model configs
-        
+        self._settings = self.settings  # Already type-checked above
+        self._client: Optional[genai.Client] = None  # Will store genai.Client instance
+        self._models: Dict[str, Dict[str, object]] = {} # Stores model configs
+
         # Rate limiting infrastructure
         self._resilience_manager = ResilienceManager()
-        self._rate_limiter = None
+        self._rate_limiter: Optional[RateLimiter] = None
         self._last_request_time: Optional[float] = None
 
         if not GOOGLE_AI_AVAILABLE:
@@ -99,7 +110,7 @@ class GoogleAIProvider(LLMProvider):
                 "Install with: pip install google-genai"
             )
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the Google AI provider by configuring the API key."""
         if not GOOGLE_AI_AVAILABLE:
             error_context = ErrorContext.create(
@@ -181,7 +192,7 @@ class GoogleAIProvider(LLMProvider):
                 cause=e
             )
 
-    async def _initialize(self):
+    async def _initialize(self) -> None:
         """Internal initialization, called by base class if needed.
         Actual initialization is done in `initialize()` which should be called explicitly.
         """
@@ -191,7 +202,7 @@ class GoogleAIProvider(LLMProvider):
             await self.initialize() 
 
 
-    def _get_or_cache_model_config(self, model_name: str, model_config: Dict[str, Any]) -> str:
+    def _get_or_cache_model_config(self, model_name: str, model_config: Dict[str, object]) -> str:
         """Get or cache model configuration and return the model ID."""
         if model_name not in self._models:
             # Model ID must come from model config (no provider default)
@@ -203,7 +214,7 @@ class GoogleAIProvider(LLMProvider):
                 "config": model_config
             }
         
-        return self._models[model_name]["model_id"]
+        return str(self._models[model_name]["model_id"])
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
         """Check if error is a rate limiting error."""
@@ -213,7 +224,7 @@ class GoogleAIProvider(LLMProvider):
             'rate_limit_exceeded', 'quota_exceeded', 'too many requests'
         ])
 
-    async def _handle_rate_limit_retry(self, operation_name: str, operation, original_error: Exception, *args, **kwargs):
+    async def _handle_rate_limit_retry(self, operation_name: str, operation: Callable[..., Awaitable[T]], original_error: Exception, *args: Any, **kwargs: Any) -> T:
         """Handle rate limit errors with exponential backoff."""
         for attempt in range(self._settings.rate_limit_retry_attempts):
             backoff_delay = min(
@@ -245,7 +256,7 @@ class GoogleAIProvider(LLMProvider):
         
         raise original_error
 
-    async def _execute_with_rate_limiting(self, operation_name: str, operation, *args, **kwargs):
+    async def _execute_with_rate_limiting(self, operation_name: str, operation: Any, *args: Any, **kwargs: Any) -> Any:
         """Execute operation with rate limiting and 429-specific retry logic."""
         # Apply rate limiter if enabled
         if self._rate_limiter:
@@ -270,37 +281,52 @@ class GoogleAIProvider(LLMProvider):
                 return await self._handle_rate_limit_retry(operation_name, operation, e, *args, **kwargs)
             raise
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Release model resources (clears cache)."""
         self._models = {}
         self._initialized = False
         logger.info("GoogleAIProvider shutdown, model cache cleared.")
         
-    def _create_generation_config(self, model_config: Dict[str, Any]) -> 'types.GenerateContentConfig':
+    def _create_generation_config(self, model_config: Dict[str, object]) -> 'types.GenerateContentConfig':
         """Create generation config for Google AI from model config."""
-        # All generation parameters must come from model config (no provider defaults)
-        params = {}
-        
-        # Map our config to Google AI API parameters
-        if 'temperature' in model_config:
-            params['temperature'] = model_config['temperature']
-        else:
-            params['temperature'] = 0.7  # Default
-            
-        if 'max_tokens' in model_config:
-            params['max_output_tokens'] = model_config['max_tokens']
-        else:
-            params['max_output_tokens'] = 2048  # Default
-            
-        if 'top_p' in model_config and model_config['top_p'] is not None:
-            params['top_p'] = model_config['top_p']
-            
-        if 'top_k' in model_config and model_config['top_k'] is not None:
-            params['top_k'] = model_config['top_k']
-        
-        return types.GenerateContentConfig(**params)
+        # Build config with proper types - no fallbacks, explicit requirements
+        if 'temperature' not in model_config:
+            raise ValueError("temperature is required in model config")
+        if 'max_tokens' not in model_config:
+            raise ValueError("max_tokens is required in model config")
 
-    def _clean_schema_for_google_ai(self, schema: Dict[str, Any]) -> None:
+        temp_value = model_config['temperature']
+        if not isinstance(temp_value, (int, float)):
+            raise TypeError(f"temperature must be a number, got {type(temp_value)}")
+        temperature = float(temp_value)
+
+        tokens_value = model_config['max_tokens']
+        if not isinstance(tokens_value, int):
+            raise TypeError(f"max_tokens must be an integer, got {type(tokens_value)}")
+        max_output_tokens = int(tokens_value)
+
+        # Create with required parameters
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens
+        )
+
+        # Add optional parameters if present with proper type checking
+        if 'top_p' in model_config and model_config['top_p'] is not None:
+            top_p_value = model_config['top_p']
+            if not isinstance(top_p_value, (int, float)):
+                raise TypeError(f"top_p must be a number, got {type(top_p_value)}")
+            config.top_p = float(top_p_value)
+
+        if 'top_k' in model_config and model_config['top_k'] is not None:
+            top_k_value = model_config['top_k']
+            if not isinstance(top_k_value, int):
+                raise TypeError(f"top_k must be an integer, got {type(top_k_value)}")
+            config.top_k = int(top_k_value)
+
+        return config
+
+    def _clean_schema_for_google_ai(self, schema: Dict[str, object]) -> None:
         """Remove additionalProperties from schema since Google AI API doesn't support it."""
         if isinstance(schema, dict):
             # Remove additionalProperties at this level
@@ -316,7 +342,7 @@ class GoogleAIProvider(LLMProvider):
                         if isinstance(item, dict):
                             self._clean_schema_for_google_ai(item)
 
-    async def generate(self, prompt: PromptTemplate, model_name: str, prompt_variables: Optional[Dict[str, Any]] = None) -> str:
+    async def generate(self, prompt: PromptTemplate, model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> str:
         if not self._initialized or not self._client:
             error_context = ErrorContext.create(
                 flow_name="GoogleAIProvider",
@@ -341,15 +367,17 @@ class GoogleAIProvider(LLMProvider):
 
         # Get model config from resource registry first
         try:
-            model_registry_config = await self.get_model_config(model_name)
-            if hasattr(model_registry_config, 'model_dump'):
-                model_registry_config = model_registry_config.model_dump()
-            elif not isinstance(model_registry_config, dict):
-                model_registry_config = {}
+            model_registry_config_raw = await self.get_model_config(model_name)
+
+            # Extract the nested 'config' field - single source of truth
+            if 'config' not in model_registry_config_raw or not isinstance(model_registry_config_raw['config'], dict):
+                raise ValueError(f"Model config for '{model_name}' has invalid structure - missing 'config' field")
+
+            model_registry_config = model_registry_config_raw['config']
         except Exception as e:
             logger.warning(f"Could not retrieve model config for '{model_name}': {e}. Using defaults.")
             model_registry_config = {}
-        
+
         # Get model ID from config
         gemini_model_id = self._get_or_cache_model_config(model_name, model_registry_config)
         
@@ -376,7 +404,26 @@ class GoogleAIProvider(LLMProvider):
 
         try:
             # Use the correct Google AI API with rate limiting
-            async def _generation_operation():
+            if self._client is None:
+                raise ProviderError(
+                    message="GoogleAI client not initialized",
+                    context=ErrorContext.create(
+                        flow_name="GoogleAIProvider",
+                        error_type="StateError",
+                        error_location="generate",
+                        component=self.name,
+                        operation="generate"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="llm",
+                        operation="generate",
+                        retry_count=0
+                    )
+                )
+
+            async def _generation_operation() -> Any:
+                assert self._client is not None  # Already checked above
                 return self._client.models.generate_content(
                     model=gemini_model_id,
                     contents=final_prompt_content,
@@ -415,7 +462,7 @@ class GoogleAIProvider(LLMProvider):
                  logger.warning(f"No content generated by model '{gemini_model_id}'. Response: {response}")
                  return "" # Or raise error
 
-            return response.text # Simplest way to get text
+            return str(response.text)  # Ensure string return type
         # Note: BlockedPromptException and StopCandidateException are from old API
         # The new API handles these through response objects
         except Exception as e:
@@ -441,7 +488,7 @@ class GoogleAIProvider(LLMProvider):
                 cause=e
             )
             
-    async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, Any]] = None) -> ModelType:
+    async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> ModelType:
         if not self._initialized or not self._client:
             error_context = ErrorContext.create(
                 flow_name="GoogleAIProvider",
@@ -468,15 +515,17 @@ class GoogleAIProvider(LLMProvider):
 
         # Get model config from resource registry first
         try:
-            model_registry_config = await self.get_model_config(model_name)
-            if hasattr(model_registry_config, 'model_dump'):
-                model_registry_config = model_registry_config.model_dump()
-            elif not isinstance(model_registry_config, dict):
-                model_registry_config = {}
+            model_registry_config_raw = await self.get_model_config(model_name)
+
+            # Extract the nested 'config' field - single source of truth
+            if 'config' not in model_registry_config_raw or not isinstance(model_registry_config_raw['config'], dict):
+                raise ValueError(f"Model config for '{model_name}' has invalid structure - missing 'config' field")
+
+            model_registry_config = model_registry_config_raw['config']
         except Exception as e:
             logger.warning(f"Could not retrieve model config for '{model_name}': {e}. Using defaults.")
             model_registry_config = {}
-        
+
         # Get model ID from config
         gemini_model_id = self._get_or_cache_model_config(model_name, model_registry_config)
         
@@ -514,7 +563,8 @@ class GoogleAIProvider(LLMProvider):
 
         try:
             # Use the correct Google AI API for structured output with rate limiting
-            async def _structured_generation_operation():
+            async def _structured_generation_operation() -> Any:
+                assert self._client is not None  # Already checked above
                 return self._client.models.generate_content(
                     model=gemini_model_id,
                     contents=final_prompt_content,
@@ -604,7 +654,7 @@ class GoogleAIProvider(LLMProvider):
 
             try:
                 parsed_data = json.loads(generated_text)
-                return output_type.model_validate(parsed_data)
+                return cast(ModelType, output_type.model_validate(parsed_data))
             except (json.JSONDecodeError, AttributeError, IndexError) as parse_err:
                 logger.error(f"JSON parsing failed for structured output: {parse_err}. Response text: {response.text[:200]}")
                 error_context = ErrorContext.create(

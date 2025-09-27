@@ -6,42 +6,48 @@ from text responses, particularly useful for handling LLM outputs.
 
 import json
 import re
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 
 
-def extract_json(text: str) -> Optional[Union[Dict[str, Any], list]]:
+def extract_json(text: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
     """Extract JSON data from text.
-    
-    This function attempts to find and parse a JSON object or array 
+
+    This function attempts to find and parse a JSON object or array
     within the provided text. It handles both complete JSON responses
     and JSON embedded within other text.
-    
+
     Args:
         text: Text that may contain JSON
-        
+
     Returns:
         Extracted JSON data as a Python dict/list or None if extraction fails
     """
     if not text:
         return None
-        
+
     # Try to find a JSON object using regex
     json_pattern = r'(\{[\s\S]*\}|\[[\s\S]*\])'
     match = re.search(json_pattern, text)
-    
+
     if match:
         json_str = match.group(0)
         try:
-            return json.loads(json_str)
+            result = json.loads(json_str)
+            # Only return dict or list, filter out other JSON types
+            if isinstance(result, (dict, list)):
+                return result
         except json.JSONDecodeError:
             pass
-    
+
     # If no valid JSON found with regex, try the whole text
     try:
-        return json.loads(text)
+        result = json.loads(text)
+        # Only return dict or list, filter out other JSON types
+        if isinstance(result, (dict, list)):
+            return result
     except json.JSONDecodeError:
         pass
-        
+
     return None
 
 
@@ -83,7 +89,7 @@ def extract_json_str(text: str) -> str:
     return ""
 
 
-def format_json(data: Union[Dict[str, Any], list], indent: int = 2) -> str:
+def format_json(data: Union[Dict[str, Any], List[Any]], indent: int = 2) -> str:
     """Format Python data as pretty-printed JSON.
     
     Args:

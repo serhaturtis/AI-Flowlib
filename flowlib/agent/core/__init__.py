@@ -1,9 +1,10 @@
 """Agent core components."""
 
-from flowlib.agent.core.base_agent import BaseAgent
-from flowlib.agent.core.config_manager import AgentConfigManager
-from flowlib.agent.core.state_manager import AgentStateManager
-from flowlib.agent.components.memory.manager import AgentMemoryManager
+# BaseAgent, AgentConfigManager, AgentStateManager, and AgentMemoryManager removed to avoid circular imports
+# Import directly: from flowlib.agent.core.base_agent import BaseAgent
+# Import directly: from flowlib.agent.core.config_manager import AgentConfigManager
+# Import directly: from flowlib.agent.core.state_manager import AgentStateManager
+# Import directly: from flowlib.agent.components.memory.manager import AgentMemoryManager
 from flowlib.agent.core.flow_runner import AgentFlowRunner
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import (
@@ -17,10 +18,6 @@ from flowlib.agent.core.errors import (
 from flowlib.agent.core.interfaces import ComponentInterface
 
 __all__ = [
-    "BaseAgent",
-    "AgentConfigManager",
-    "AgentStateManager", 
-    "AgentMemoryManager",
     "AgentFlowRunner",
     "AgentComponent",
     "ComponentInterface",

@@ -6,8 +6,6 @@ from flowlib.core.models import StrictBaseModel
 
 from flowlib.knowledge.models import (
     DocumentType,
-    KnowledgeExtractionRequest,
-    KnowledgeBaseResult,
     DocumentContent,
     Entity,
     Relationship,
@@ -73,7 +71,7 @@ class OrchestrationProgress(StrictBaseModel):
         return (self.processed_documents / self.total_documents) * 100.0
 
 
-class OrchestrationResult(BaseModel):
+class OrchestrationResult(StrictBaseModel):
     """Result of knowledge orchestration pipeline."""
     
     status: str = Field(..., description="Processing status")

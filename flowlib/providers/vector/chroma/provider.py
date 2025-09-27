@@ -6,38 +6,56 @@ for ChromaDB, an open-source embedding database.
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Collection, Generic, TypeVar, Union
+from typing import Any, Dict, List, Optional, Union, Mapping, Literal, TYPE_CHECKING
 import uuid
-import asyncio
 from pydantic import Field
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.vector.base import VectorDBProvider, SimilaritySearchResult
-from flowlib.providers.core.base import ProviderSettings
+from flowlib.providers.vector.base import VectorDBProvider, VectorDBProviderSettings, SimilaritySearchResult, VectorSearchResult, VectorIndexStats
 from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
-from ..base import Provider # Import Provider base class
-from flowlib.providers.embedding.base import EmbeddingProvider
 # from ..registry import provider_registry
 
 logger = logging.getLogger(__name__)
 
+# Type aliases for Chroma compatibility
+ChromaMetadata = Dict[str, Union[str, int, float, bool, None]]
+ChromaMetadataList = List[ChromaMetadata]
+ChromaMetadataMapping = Mapping[str, Union[str, int, float, bool, None]]
+
 
 # Lazy import chromadb
-try:
+if TYPE_CHECKING:
     import chromadb
     from chromadb.config import Settings as ChromaSettings
-    from chromadb.api import Collection
-    # Removed unused EmbeddingFunction, Embeddings types
-except ImportError:
-    logger.warning("ChromaDB package not found. Install with 'pip install chromadb'")
-    chromadb = None
-    # EmbeddingFunction = None # Removed
+    from chromadb.api.models.Collection import Collection as ChromaCollection
+    CHROMADB_AVAILABLE = True
+else:
+    try:
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+        from chromadb.api.models.Collection import Collection as ChromaCollection
+        CHROMADB_AVAILABLE = True
+    except ImportError:
+        logger.warning("ChromaDB package not found. Install with 'pip install chromadb'")
+
+        # Create placeholder module and classes when not available
+        class _ChromaDBModule:
+            pass
+
+        class ChromaSettings:  # type: ignore
+            pass
+
+        class ChromaCollection:  # type: ignore
+            pass
+
+        chromadb = _ChromaDBModule()  # type: ignore
+        CHROMADB_AVAILABLE = False
 
 # Removed FlowlibChromaEmbeddingFunction wrapper class
 
-class ChromaDBProviderSettings(ProviderSettings):
+class ChromaDBProviderSettings(VectorDBProviderSettings):
     """Settings for ChromaDB provider - direct inheritance, only ChromaDB-specific fields.
     
     ChromaDB can operate in multiple modes:
@@ -69,10 +87,8 @@ class ChromaDBProviderSettings(ProviderSettings):
     
     # ChromaDB-specific vector settings
     collection_name: str = Field(default="default", description="Collection name")
-    index_name: str = Field(default="default", description="Index name (alias for collection_name)")
-    vector_dimension: int = Field(default=384, description="Vector dimension size")
     distance_function: str = Field(
-        default="cosine", 
+        default="cosine",
         description="Distance function: 'cosine', 'l2', or 'ip'"
     )
     
@@ -80,7 +96,7 @@ class ChromaDBProviderSettings(ProviderSettings):
     anonymized_telemetry: bool = Field(default=True, description="Enable anonymized telemetry")
 
 @provider(provider_type="vector_db", name="chroma", settings_class=ChromaDBProviderSettings)
-class ChromaDBProvider(VectorDBProvider):
+class ChromaDBProvider(VectorDBProvider[ChromaDBProviderSettings]):
     """Provider for ChromaDB, an open-source embedding database.
     
     Manages vector storage and retrieval using ChromaDB.
@@ -98,25 +114,16 @@ class ChromaDBProvider(VectorDBProvider):
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         # self.provider_type = provider_type # Removed, base class handles this
         
-        # Check settings type, allowing for mocking in tests but enforcing real type checking
+        # Check settings type - no fallbacks, strict type checking
         if self.settings is not None:
-            try:
-                # Try the isinstance check - this should work in normal cases
-                if not isinstance(self.settings, ChromaDBProviderSettings):
-                    # Check if it's a mock (allow mocks during testing)
-                    if not ('Mock' in str(type(self.settings)) or hasattr(self.settings, '_mock_name')):
-                        raise TypeError(f"settings must be a ChromaDBProviderSettings instance, got {type(self.settings)}")
-            except TypeError as e:
-                # If isinstance itself fails (ChromaDBProviderSettings is mocked), check if settings is a mock
-                if not ('Mock' in str(type(self.settings)) or hasattr(self.settings, '_mock_name')):
-                    # Re-raise the original TypeError if it's not a mock
-                    raise e
+            if not isinstance(self.settings, ChromaDBProviderSettings):
+                raise TypeError(f"settings must be a ChromaDBProviderSettings instance, got {type(self.settings)}")
 
         self._client = None
-        self._collections = {}
+        self._collections: Dict[str, ChromaCollection] = {}
         # Removed _embedding_provider and _embedding_function attributes
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the ChromaDB client and default collection."""
         if self._initialized:
             return
@@ -156,6 +163,10 @@ class ChromaDBProvider(VectorDBProvider):
                     )
                 )
             elif self.settings.client_type == "http":
+                if self.settings.http_host is None:
+                    raise ValueError("http_host is required when client_type is 'http'")
+                if self.settings.http_port is None:
+                    raise ValueError("http_port is required when client_type is 'http'")
                 self._client = chromadb.HttpClient(
                     host=self.settings.http_host,
                     port=self.settings.http_port,
@@ -195,7 +206,7 @@ class ChromaDBProvider(VectorDBProvider):
                 cause=e
             )
             
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Close ChromaDB client and release resources."""
         if not self._initialized:
             return
@@ -271,7 +282,7 @@ class ChromaDBProvider(VectorDBProvider):
         self, 
         index_name: str
         # Removed embedding_function parameter
-    ) -> Collection:
+    ) -> Any:
         """Get or create a ChromaDB collection.
         
         Args:
@@ -313,7 +324,7 @@ class ChromaDBProvider(VectorDBProvider):
             # Note: Simplified without metadata to avoid version compatibility issues
             collection = self._client.get_or_create_collection(name=collection_name)
             logger.debug(f"Got or created collection: {collection_name}")
-                
+
             # Cache and return the collection
             self._collections[collection_name] = collection
             return collection
@@ -337,7 +348,7 @@ class ChromaDBProvider(VectorDBProvider):
                 cause=e
             )
             
-    async def create_index(self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs) -> bool:
+    async def create_index(self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs: Any) -> bool:
         """Create a new vector index/collection.
         
         Args:
@@ -542,17 +553,17 @@ class ChromaDBProvider(VectorDBProvider):
                 raise ValueError(f"Number of vectors ({vector_count}) must match number of ids ({len(ids)})")
                 
             # Clean metadata (ChromaDB doesn't support nested objects)
-            cleaned_metadatas = []
+            cleaned_metadatas: List[ChromaMetadataMapping] = []
             for i in range(vector_count):
                 if metadata and i < len(metadata):
                     cleaned_metadatas.append(self._clean_metadata(metadata[i]))
                 else:
                     cleaned_metadatas.append({})
-            
+
             # Add vectors to collection
             collection.add(
                 embeddings=vectors,
-                metadatas=cleaned_metadatas,
+                metadatas=cleaned_metadatas if cleaned_metadatas else None,
                 ids=ids
             )
             
@@ -582,7 +593,7 @@ class ChromaDBProvider(VectorDBProvider):
                 cause=e
             )
             
-    async def search_vectors(self, index_name: str, query_vector: List[float], top_k: int = 10, filter_conditions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    async def search_vectors(self, index_name: str, query_vector: List[float], top_k: int = 10, filter_conditions: Optional[Dict[str, Any]] = None) -> List[VectorSearchResult]:
         """Search for similar vectors.
         
         Args:
@@ -623,12 +634,15 @@ class ChromaDBProvider(VectorDBProvider):
                     # Convert distance to score (1 - distance for cosine)
                     distance = distances[i] if i < len(distances) else 0.0
                     score = 1.0 - distance if distance <= 1.0 else distance
-                    
-                    result = {
-                        "id": ids[i],
-                        "score": score,
-                        "metadata": metadatas[i] if i < len(metadatas) else {}
-                    }
+
+                    # Convert Chroma metadata to dict[str, Any]
+                    metadata_dict: Dict[str, Any] = dict(metadatas[i]) if i < len(metadatas) and metadatas[i] else {}
+
+                    result = VectorSearchResult(
+                        id=ids[i],
+                        score=score,
+                        metadata=metadata_dict
+                    )
                     results.append(result)
                     
             return results
@@ -702,7 +716,7 @@ class ChromaDBProvider(VectorDBProvider):
                 cause=e
             )
             
-    async def get_index_stats(self, index_name: str) -> Dict[str, Any]:
+    async def get_index_stats(self, index_name: str) -> VectorIndexStats:
         """Get index statistics.
         
         Args:
@@ -732,11 +746,13 @@ class ChromaDBProvider(VectorDBProvider):
             except Exception:
                 pass  # Use default dimension if peek fails
             
-            return {
-                "total_vectors": total_vectors,
-                "dimension": dimension,
-                "distance_function": self.settings.distance_function
-            }
+            return VectorIndexStats(
+                name=index_name,
+                total_vectors=total_vectors,
+                vector_dimension=dimension,
+                index_size_bytes=0,  # ChromaDB doesn't provide this directly
+                metric=self.settings.distance_function
+            )
             
         except ProviderError as e:
             # Re-raise existing provider errors
@@ -858,12 +874,12 @@ class ChromaDBProvider(VectorDBProvider):
                 raise ValueError(f"Number of vectors ({vector_count}) must match number of ids ({len(ids)})")
                 
             # Clean metadata (ChromaDB doesn't support nested objects)
-            cleaned_metadatas = [self._clean_metadata(metadata) for metadata in metadatas]
-            
+            cleaned_metadatas: List[ChromaMetadataMapping] = [self._clean_metadata(metadata) for metadata in metadatas]
+
             # Add vectors to collection
             collection.add(
                 embeddings=vectors,
-                metadatas=cleaned_metadatas,
+                metadatas=cleaned_metadatas if cleaned_metadatas else None,
                 ids=ids
             )
             
@@ -916,23 +932,31 @@ class ChromaDBProvider(VectorDBProvider):
             collection = await self._get_or_create_collection(index_name)
             
             # Get vector by ID
+            include_fields: List[Literal['documents', 'embeddings', 'metadatas', 'distances', 'uris', 'data']] = ['metadatas']
+            if include_vector:
+                include_fields.append('embeddings')
+
             result = collection.get(
                 ids=[id],
-                include_embeddings=include_vector
+                include=include_fields
             )
             
             # Check if any results were returned
-            if not result["ids"]:
+            if not result["ids"] or not result["ids"]:
                 return None
-                
+
+            metadatas = result.get("metadatas")
+            if not metadatas:
+                return None
+
             # Construct response
             response = {
                 "id": result["ids"][0],
-                "metadata": result["metadatas"][0]
+                "metadata": dict(metadatas[0]) if metadatas[0] else {}
             }
-            
+
             # Add vector if requested
-            if include_vector and "embeddings" in result:
+            if include_vector and "embeddings" in result and result["embeddings"]:
                 response["vector"] = result["embeddings"][0]
                 
             return response
@@ -1034,11 +1058,15 @@ class ChromaDBProvider(VectorDBProvider):
             collection = await self._get_or_create_collection(index_name)
             
             # Perform similarity search
+            include_fields: List[Literal['documents', 'embeddings', 'metadatas', 'distances', 'uris', 'data']] = ['metadatas', 'documents', 'distances']
+            if include_vectors:
+                include_fields.append('embeddings')
+
             query_result = collection.query(
                 query_embeddings=[query_vector],
                 n_results=top_k,
                 where=filter,
-                include=['metadatas', 'documents', 'distances'] + (['embeddings'] if include_vectors else [])
+                include=include_fields
             )
             
             # Parse results
@@ -1051,20 +1079,20 @@ class ChromaDBProvider(VectorDBProvider):
                 if "metadatas" not in query_result:
                     raise ValueError("Query result missing required 'metadatas' field")
                 metadatas = query_result["metadatas"][0] if query_result["metadatas"] else []
-                if "embeddings" not in query_result:
-                    embeddings = []
-                else:
-                    embeddings = query_result["embeddings"][0] if query_result["embeddings"] else []
-                if "documents" not in query_result:
-                    documents = []
-                else:
-                    documents = query_result["documents"][0] if query_result["documents"] else []
+                embeddings: List[List[float]] = []
+                if "embeddings" in query_result and query_result["embeddings"] and query_result["embeddings"][0]:
+                    embeddings = query_result["embeddings"][0]
+
+                documents: List[str] = []
+                if "documents" in query_result and query_result["documents"] and query_result["documents"][0]:
+                    documents = query_result["documents"][0]
 
                 for i in range(len(ids)):
+                    metadata_dict: Dict[str, Any] = dict(metadatas[i]) if i < len(metadatas) and metadatas[i] else {}
                     result = SimilaritySearchResult(
                         id=ids[i],
                         score=distances[i] if i < len(distances) else 0.0,
-                        metadata=metadatas[i] if i < len(metadatas) else {},
+                        metadata=metadata_dict,
                         text=documents[i] if i < len(documents) else None
                     )
                     
@@ -1100,7 +1128,7 @@ class ChromaDBProvider(VectorDBProvider):
             )
             
     async def search_by_id(self, id: str, top_k: int = 10, filter: Optional[Dict[str, Any]] = None,
-                         include_vectors: bool = False, index_name: Optional[str] = None) -> List[SimilaritySearchResult]:
+                         include_vectors: bool = False, index_name: Optional[str] = None) -> List[VectorSearchResult]:
         """Search for similar vectors using an existing vector ID.
         
         Args:
@@ -1142,13 +1170,25 @@ class ChromaDBProvider(VectorDBProvider):
                 )
                 
             # Now search using the vector
-            return await self.search(
+            similarity_results = await self.search(
                 query_vector=vector_data["vector"],
                 top_k=top_k,
                 filter=filter,
                 include_vectors=include_vectors,
                 index_name=index_name
             )
+
+            # Convert SimilaritySearchResult to VectorSearchResult
+            search_results = []
+            for result in similarity_results:
+                search_results.append(VectorSearchResult(
+                    id=result.id,
+                    score=result.score,
+                    metadata=result.metadata,
+                    vector=result.vector
+                ))
+
+            return search_results
             
         except ProviderError as e:
             # Re-raise existing provider errors
@@ -1199,7 +1239,8 @@ class ChromaDBProvider(VectorDBProvider):
                 return len(result["ids"]) if "ids" in result else 0
             else:
                 # Get collection info for total count
-                return collection.count()
+                count_result = collection.count()
+                return int(count_result)
                 
         except ProviderError as e:
             # Re-raise existing provider errors
@@ -1235,7 +1276,7 @@ class ChromaDBProvider(VectorDBProvider):
             collection = await self._get_or_create_collection(index_name)
             
             # Use ChromaDB's get method with metadata filter
-            include_fields = ['metadatas', 'documents']
+            include_fields: List[Literal['documents', 'embeddings', 'metadatas', 'distances', 'uris', 'data']] = ['metadatas', 'documents']
             if include_vectors:
                 include_fields.append('embeddings')
             
@@ -1249,20 +1290,21 @@ class ChromaDBProvider(VectorDBProvider):
             results = []
             if result and "ids" in result and result["ids"]:
                 ids = result["ids"]
-                metadatas = result.get("metadatas", [])
-                documents = result.get("documents", [])
-                embeddings = result.get("embeddings", []) if include_vectors else []
-                
+                metadatas = result.get("metadatas") or []
+                documents = result.get("documents") or []
+                embeddings = result.get("embeddings") or [] if include_vectors else []
+
                 for i in range(len(ids)):
+                    metadata_dict: Dict[str, Any] = dict(metadatas[i]) if i < len(metadatas) and metadatas[i] else {}
                     result_item = {
                         "id": ids[i],
-                        "metadata": metadatas[i] if i < len(metadatas) else {},
+                        "metadata": metadata_dict,
                         "document": documents[i] if i < len(documents) else ""
                     }
-                    
+
                     if include_vectors and embeddings and i < len(embeddings):
                         result_item["vector"] = embeddings[i]
-                        
+
                     results.append(result_item)
             
             logger.debug(f"Retrieved {len(results)} items by filter from {index_name}")
@@ -1324,25 +1366,26 @@ class ChromaDBProvider(VectorDBProvider):
                 cause=e
             )
             
-    def _clean_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def _clean_metadata(self, metadata: Dict[str, Any]) -> ChromaMetadata:
         """Clean metadata for ChromaDB compatibility.
-        
+
         ChromaDB only supports simple metadata types (str, int, float, bool).
         This method flattens and converts complex types.
-        
+
         Args:
             metadata: Original metadata
-            
+
         Returns:
             Cleaned metadata
         """
-        cleaned = {}
-        
+        cleaned: ChromaMetadata = {}
+
         for key, value in metadata.items():
             # Skip None values
             if value is None:
+                cleaned[key] = None
                 continue
-                
+
             # Handle lists and dicts by converting to strings
             if isinstance(value, (list, dict)):
                 import json
@@ -1356,7 +1399,7 @@ class ChromaDBProvider(VectorDBProvider):
             # Convert other types to strings
             else:
                 cleaned[key] = str(value)
-                
+
         return cleaned
         
     def _map_distance_function(self, metric: str) -> str:

@@ -8,11 +8,10 @@ provider resolution and configuration management.
 import asyncio
 import logging
 import time
-from typing import TypeVar, Generic, Optional
+from typing import TypeVar, Generic, Optional, Any
 from abc import ABC, abstractmethod
 
-from ...flows.decorators import flow
-from .context import FlowContext, ProcessingOptions, create_flow_context
+from .context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +30,14 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
     - Performance monitoring
     """
     
-    def __init__(self):
-        self.context: Optional[FlowContext] = None
+    def __init__(self) -> None:
+        self.context: Optional[ExecutionContext] = None
         self.start_time: Optional[float] = None
     
     async def execute(
         self, 
         input_data: InputT, 
-        processing_options: Optional[ProcessingOptions] = None
+        processing_options: Optional[dict] = None
     ) -> OutputT:
         """Execute the flow with clean dependency injection.
         
@@ -56,7 +55,34 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
         
         try:
             # Create execution context
-            self.context = await create_flow_context(processing_options)
+            # Use ExecutionContext instead of removed FlowContext
+            from .context.models import ExecutionContext, SessionContext, TaskContext, ComponentContext, LearningContext
+            import os
+
+            session = SessionContext(
+                session_id="flow_session",
+                agent_name="flow_agent",
+                agent_persona="Flow executor",
+                working_directory=os.getcwd(),
+                current_message=""
+            )
+
+            task = TaskContext(
+                description="Flow execution task"
+            )
+
+            component = ComponentContext(
+                component_type="task_execution"
+            )
+
+            learning = LearningContext()
+
+            self.context = ExecutionContext(
+                session=session,
+                task=task,
+                component=component,
+                learning=learning
+            )
             
             # Execute the flow
             logger.info(f"Starting {self.__class__.__name__} execution")
@@ -86,29 +112,24 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
         """
         pass
     
-    async def get_llm(self):
-        """Convenience method to get LLM provider from context."""
-        if not self.context:
-            raise RuntimeError("Flow context not initialized. Call execute() first.")
-        return await self.context.llm()
-    
-    async def get_graph(self):
-        """Convenience method to get graph provider from context.""" 
-        if not self.context:
-            raise RuntimeError("Flow context not initialized. Call execute() first.")
-        return await self.context.graph()
-    
-    async def get_vector(self):
-        """Convenience method to get vector provider from context."""
-        if not self.context:
-            raise RuntimeError("Flow context not initialized. Call execute() first.")
-        return await self.context.vector()
-    
+    async def get_llm(self) -> Any:
+        """Convenience method to get LLM provider from registry."""
+        from flowlib.providers.core.registry import provider_registry
+        return await provider_registry.get_by_config("default-llm")
+
+    async def get_graph(self) -> Any:
+        """Convenience method to get graph provider from registry."""
+        from flowlib.providers.core.registry import provider_registry
+        return await provider_registry.get_by_config("default-graph-db")
+
+    async def get_vector(self) -> Any:
+        """Convenience method to get vector provider from registry."""
+        from flowlib.providers.core.registry import provider_registry
+        return await provider_registry.get_by_config("default-vector-db")
+
     def get_confidence_threshold(self) -> float:
         """Get confidence threshold from context."""
-        if not self.context:
-            return 0.7  # Default fallback
-        return self.context.confidence_threshold
+        return 0.7  # Standard default value
 
 
 class FlowExecutionError(Exception):
@@ -127,7 +148,7 @@ async def execute_flow_with_timeout(
     flow: BaseAgentFlow,
     input_data: InputT,
     timeout_seconds: int = 60,
-    processing_options: Optional[ProcessingOptions] = None
+    processing_options: Optional[dict] = None
 ) -> OutputT:
     """Execute a flow with timeout protection.
     
@@ -155,7 +176,7 @@ async def execute_flow_with_timeout(
 
 
 async def execute_flows_in_parallel(
-    flows_and_inputs: list[tuple[BaseAgentFlow, InputT, Optional[ProcessingOptions]]],
+    flows_and_inputs: list[tuple[BaseAgentFlow, InputT, Optional[dict]]],
     max_concurrent: int = 3
 ) -> list[OutputT]:
     """Execute multiple flows in parallel with concurrency control.
@@ -169,10 +190,11 @@ async def execute_flows_in_parallel(
     """
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def execute_with_semaphore(flow_info):
+    async def execute_with_semaphore(flow_info: tuple[BaseAgentFlow, InputT, Optional[dict]]) -> OutputT:
         flow, input_data, processing_options = flow_info
         async with semaphore:
-            return await flow.execute(input_data, processing_options)
+            result: OutputT = await flow.execute(input_data, processing_options)
+            return result
     
     tasks = [execute_with_semaphore(flow_info) for flow_info in flows_and_inputs]
     return await asyncio.gather(*tasks)

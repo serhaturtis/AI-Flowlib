@@ -1,9 +1,10 @@
 import os
 import sys
 import json
+from typing import Dict, List
 
 
-def replace_in_file(filepath, mapping):
+def replace_in_file(filepath: str, mapping: Dict[str, str]) -> bool:
     changed = False
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -21,7 +22,7 @@ def replace_in_file(filepath, mapping):
             f.writelines(new_lines)
     return changed
 
-def main():
+def main() -> None:
     if len(sys.argv) != 3:
         print("Usage: python replace_imports.py <mapping.json> <target_dir>")
         sys.exit(1)
@@ -29,7 +30,7 @@ def main():
     target_dir = sys.argv[2]
     with open(mapping_file, 'r', encoding='utf-8') as f:
         mapping = json.load(f)
-    changed_files = []
+    changed_files: List[str] = []
     for root, _, files in os.walk(target_dir):
         for file in files:
             if file.endswith('.py'):
@@ -37,8 +38,8 @@ def main():
                 if replace_in_file(path, mapping):
                     changed_files.append(path)
     print(f"Updated {len(changed_files)} files:")
-    for f in changed_files:
-        print(f"  {f}")
+    for filepath in changed_files:
+        print(f"  {filepath}")
 
 if __name__ == "__main__":
     main() 

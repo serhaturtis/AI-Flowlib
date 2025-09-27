@@ -1,7 +1,7 @@
 """Task debriefing component."""
 
 import logging
-from typing import List, Dict, Any
+from typing import List, cast, Optional, Any
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.flows.registry import flow_registry
@@ -25,13 +25,13 @@ class TaskDebrieferComponent(AgentComponent):
     - Provide helpful error explanations when retries are exhausted
     """
     
-    def __init__(self, name: str = "task_debriefer", activity_stream=None):
+    def __init__(self, name: str = "task_debriefer", activity_stream: Optional[Any] = None) -> None:
         super().__init__(name)
         self._activity_stream = activity_stream
-        self._intent_analysis_flow = None
-        self._success_presentation_flow = None
-        self._corrective_task_flow = None
-        self._failure_explanation_flow = None
+        self._intent_analysis_flow: Optional[Any] = None
+        self._success_presentation_flow: Optional[Any] = None
+        self._corrective_task_flow: Optional[Any] = None
+        self._failure_explanation_flow: Optional[Any] = None
     
     async def _initialize_impl(self) -> None:
         """Initialize the task debriefer flows."""
@@ -81,8 +81,9 @@ class TaskDebrieferComponent(AgentComponent):
             working_directory=input_data.working_directory
         )
         
+        assert self._intent_analysis_flow is not None, "Intent analysis flow not initialized"
         result = await self._intent_analysis_flow.run_pipeline(analysis_input)
-        return result.intent_analysis
+        return cast(IntentAnalysisResult, result.intent_analysis)
     
     async def _handle_success(self, input_data: DebriefingInput, analysis: IntentAnalysisResult) -> DebriefingOutput:
         """Generate user-friendly success presentation."""
@@ -93,6 +94,7 @@ class TaskDebrieferComponent(AgentComponent):
             agent_persona=input_data.agent_persona
         )
         
+        assert self._success_presentation_flow is not None, "Success presentation flow not initialized"
         result = await self._success_presentation_flow.run_pipeline(presentation_input)
         
         return DebriefingOutput(
@@ -114,6 +116,7 @@ class TaskDebrieferComponent(AgentComponent):
             working_directory=input_data.working_directory
         )
         
+        assert self._corrective_task_flow is not None, "Corrective task flow not initialized"
         result = await self._corrective_task_flow.run_pipeline(corrective_input)
         
         return DebriefingOutput(
@@ -134,6 +137,7 @@ class TaskDebrieferComponent(AgentComponent):
             agent_persona=input_data.agent_persona
         )
         
+        assert self._failure_explanation_flow is not None, "Failure explanation flow not initialized"
         result = await self._failure_explanation_flow.run_pipeline(failure_input)
         
         return DebriefingOutput(

@@ -2,9 +2,10 @@ import os
 import sys
 import importlib
 import traceback
+from typing import List
 
 
-def find_python_modules(base_dir, base_package):
+def find_python_modules(base_dir: str, base_package: str) -> List[str]:
     """
     Recursively find all Python modules in base_dir, returning their import paths.
     Skips __pycache__ and hidden directories.
@@ -31,7 +32,7 @@ def find_python_modules(base_dir, base_package):
     return modules
 
 
-def main():
+def main() -> None:
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     base_package = "flowlib"
     sys.path.insert(0, os.path.dirname(base_dir))  # Ensure parent dir is in sys.path
@@ -42,7 +43,7 @@ def main():
     for mod in modules:
         try:
             importlib.import_module(mod)
-        except Exception as e:
+        except Exception:
             errors.append((mod, traceback.format_exc()))
             print(f"[IMPORT ERROR] {mod}\n{traceback.format_exc()}\n")
     print("\n==================== SUMMARY ====================")

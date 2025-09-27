@@ -5,6 +5,8 @@ Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
 Modify the settings below for your specific setup.
 """
 
+from typing import Any
+
 from flowlib.resources.decorators.decorators import cache_config
 from flowlib.resources.models.config_resource import CacheConfigResource
 
@@ -61,5 +63,5 @@ class ExampleCacheProviderConfig(CacheConfigResource):
     # default_ttl: int = 3600     # Default TTL in seconds
     # cleanup_interval: int = 300 # Cleanup interval in seconds
     
-    def __init__(self, name: str, type: str, **kwargs):
-        super().__init__(name=name, type=type)
+    def __init__(self, name: str, type: str, **kwargs: Any) -> None:
+        super().__init__(name=name, type=type, provider_type=self.provider_type)

@@ -80,12 +80,17 @@ class AgentConfigManager(AgentComponent):
             raise ConfigurationError(f"Failed to prepare agent configuration: {e}") from e
     
     @property
-    def config(self) -> Optional[AgentConfig]:
+    def config(self) -> AgentConfig:
         """Get the current configuration.
-        
+
         Returns:
             Current AgentConfig instance
+
+        Raises:
+            ConfigurationError: If configuration is not set
         """
+        if self._config is None:
+            raise ConfigurationError("Configuration not set. Call prepare_config() first.")
         return self._config
     
     def update_config(self, config: Union[Dict[str, Any], AgentConfig]) -> AgentConfig:

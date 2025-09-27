@@ -2,12 +2,20 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, cast, Dict, AsyncGenerator
 import hashlib
 from datetime import datetime
+import asyncio
 
 from flowlib.flows.decorators.decorators import flow, pipeline
-import asyncio
+
+# Third-party libraries with missing type stubs
+import ebooklib  # type: ignore[import-untyped]
+from ebooklib import epub
+from bs4 import BeautifulSoup
+import markdown  # type: ignore[import-untyped]
+from langdetect import detect  # type: ignore[import-untyped]
+from docx import Document  # type: ignore[import-not-found]
 from flowlib.knowledge.models import (
     DocumentType,
     DocumentMetadata,
@@ -16,10 +24,7 @@ from flowlib.knowledge.models import (
     ProcessingStatus,
     DocumentExtractionInput,
     DocumentExtractionOutput,
-    ExtractionConfig,
-    ChunkingStrategy,
     KnowledgeExtractionRequest,
-    KnowledgeExtractionResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,7 +33,7 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     """Processes different document types into text."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.supported_processors = {
             DocumentType.TXT: self._process_txt,
             DocumentType.PDF: self._process_pdf,
@@ -272,7 +277,7 @@ class DocumentProcessor:
                         return f.read()
                 except UnicodeDecodeError:
                     continue
-            raise ValueError(f"Could not decode text file with any supported encoding")
+            raise ValueError("Could not decode text file with any supported encoding")
     
     async def _process_pdf(self, path: Path) -> str:
         """Process PDF file."""
@@ -297,9 +302,6 @@ class DocumentProcessor:
     async def _process_epub(self, path: Path) -> str:
         """Process EPUB file."""
         try:
-            import ebooklib
-            from ebooklib import epub
-            from bs4 import BeautifulSoup
             
             book = epub.read_epub(str(path))
             text_content = []
@@ -323,9 +325,7 @@ class DocumentProcessor:
     async def _process_docx(self, path: Path) -> str:
         """Process DOCX file."""
         try:
-            from docx import Document
-            
-            doc = Document(path)
+            doc = Document(str(path))
             text_content = []
             
             for paragraph in doc.paragraphs:
@@ -366,8 +366,6 @@ class DocumentProcessor:
     async def _process_markdown(self, path: Path) -> str:
         """Process Markdown file."""
         try:
-            import markdown
-            
             with open(path, 'r', encoding='utf-8') as file:
                 md_content = file.read()
             
@@ -396,8 +394,7 @@ class DocumentProcessor:
             return None
         
         try:
-            from langdetect import detect
-            return detect(text[:1000])  # Use first 1000 chars for detection
+            return cast(str, detect(text[:1000]))  # Use first 1000 chars for detection
         except ImportError:
             logger.warning("langdetect not installed. Install with: pip install langdetect")
             return None
@@ -413,7 +410,7 @@ class DocumentProcessor:
         return max(1, word_count // 200)
 
 
-@flow(name="document-extraction-flow", description="Extract and process documents into structured content")
+@flow(name="document-extraction-flow", description="Extract and process documents into structured content")  # type: ignore[arg-type]
 class DocumentExtractionFlow:
     """Flow for extracting content from various document types."""
     
@@ -428,7 +425,7 @@ class DocumentExtractionFlow:
         # Process the document
         return await processor.process_single_document(doc_path)
 
-    async def stream_document_processing(self, input_directory: str):
+    async def stream_document_processing(self, input_directory: str) -> AsyncGenerator[DocumentContent, None]:
         """Stream documents one by one for processing (generator)."""
         
         from pathlib import Path
@@ -466,8 +463,8 @@ class DocumentExtractionFlow:
         # Create processor locally
         processor = DocumentProcessor()
         
-        documents = []
-        failed_files = []
+        documents: List[DocumentContent] = []
+        failed_files: List[Dict[str, str]] = []
         
         # Process documents concurrently (in batches to avoid overwhelming system)
         batch_size = 5
@@ -485,12 +482,18 @@ class DocumentExtractionFlow:
                         "file_path": file_path,
                         "error": str(result)
                     })
-                elif result.status == ProcessingStatus.COMPLETED:
+                elif isinstance(result, DocumentContent) and result.status == ProcessingStatus.COMPLETED:
                     documents.append(result)
-                else:
+                elif isinstance(result, DocumentContent):
                     failed_files.append({
                         "file_path": file_path,
                         "error": result.error_message or "Unknown error"
+                    })
+                else:
+                    # Should not reach here due to prior exception handling
+                    failed_files.append({
+                        "file_path": file_path,
+                        "error": "Unexpected result type"
                     })
             
             logger.info(f"Processed batch {i//batch_size + 1}/{(len(input_data.file_paths) + batch_size - 1)//batch_size}")

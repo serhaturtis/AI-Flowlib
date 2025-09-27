@@ -8,14 +8,12 @@ import logging
 from typing import Any, Optional, Type, TypeVar, Generic
 from pydantic import BaseModel, Field
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.base import Provider, ProviderSettings
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=BaseModel)
-S = TypeVar('S')  # For settings type
 
 
 class CacheProviderSettings(ProviderSettings):
@@ -52,7 +50,10 @@ class CacheProviderSettings(ProviderSettings):
     max_retries: int = Field(default=3, description="Maximum retry attempts")
 
 
-class CacheProvider(Provider):
+SettingsT = TypeVar('SettingsT', bound=CacheProviderSettings)
+
+
+class CacheProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for cache providers.
     
     This class provides:
@@ -62,7 +63,7 @@ class CacheProvider(Provider):
     4. Connection management for distributed caches
     """
     
-    def __init__(self, name: str = "cache", settings: Optional[ProviderSettings] = None):
+    def __init__(self, name: str = "cache", settings: Optional[SettingsT] = None):
         """Initialize cache provider.
         
         Args:
@@ -73,7 +74,7 @@ class CacheProvider(Provider):
         super().__init__(name=name, settings=settings, provider_type="cache")
         self._connection = None
         
-    async def _initialize(self):
+    async def _initialize(self) -> None:
         """Initialize the cache provider.
         
         This method should be implemented by subclasses to establish
@@ -81,14 +82,14 @@ class CacheProvider(Provider):
         """
         pass
         
-    async def _shutdown(self):
+    async def _shutdown(self) -> None:
         """Close all connections and release resources.
         
         This method should be implemented by subclasses to properly
         close connections and clean up resources.
         """
-        if self._connection:
-            self._connection = None
+        # Subclasses should override this method to handle their specific connections
+        pass
         
     async def get(self, key: str) -> Optional[Any]:
         """Get a value from the cache.

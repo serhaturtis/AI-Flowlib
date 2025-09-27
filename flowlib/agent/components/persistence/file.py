@@ -8,7 +8,7 @@ interface, storing agent states as JSON files on disk.
 import os
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from flowlib.agent.core.errors import StatePersistenceError
@@ -27,13 +27,13 @@ class FileStatePersisterSettings(ProviderSettings):
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles datetime objects."""
     
-    def default(self, obj):
+    def default(self, obj: Any) -> Any:
         if isinstance(obj, datetime):
             return obj.isoformat()
         return super().default(obj)
 
 
-class FileStatePersister(BaseStatePersister):
+class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
     """File-based implementation of state persistence.
     
     Stores agent states as JSON files in a configurable directory.

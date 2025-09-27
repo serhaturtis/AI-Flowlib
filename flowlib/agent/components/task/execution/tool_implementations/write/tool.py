@@ -1,15 +1,15 @@
 """Write tool implementation."""
 
-import os
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import cast
 from ...models import ToolResult, ToolExecutionContext, ToolStatus
 from ...decorators import tool
 from .models import WriteParameters, WriteResult
+from flowlib.agent.components.task.models import TodoItem
 
 
-@tool(name="write", category="filesystem", description="Write content to files with backup and directory creation options")
+@tool(name="write", tool_category="software", description="Write content to files with backup and directory creation options")
 class WriteTool:
     """Tool for writing content to files."""
     
@@ -23,7 +23,7 @@ class WriteTool:
     
     async def execute(
         self, 
-        todo: Any,  # TodoItem with task description
+        todo: TodoItem,
         context: ToolExecutionContext  # Execution context
     ) -> ToolResult:
         """Execute file write operation."""
@@ -95,13 +95,16 @@ class WriteTool:
                 file_path=params.file_path
             )
     
-    async def _generate_parameters(self, todo: Any, context: ToolExecutionContext) -> WriteParameters:
+    async def _generate_parameters(self, todo: TodoItem, context: ToolExecutionContext) -> WriteParameters:
         """Generate WriteParameters from todo content using flow."""
         from flowlib.flows.registry.registry import flow_registry
-        from .flow import WriteParameterGenerationInput
-        
+        from .flow import WriteParameterGenerationInput, WriteParameterGenerationFlow
+
         # Get the parameter generation flow class
-        flow_instance = flow_registry.get("write-parameter-generation")
+        flow_obj = flow_registry.get("write-parameter-generation")
+        if flow_obj is None:
+            raise RuntimeError("Write parameter generation flow not found in registry")
+        flow_instance = cast(WriteParameterGenerationFlow, flow_obj)
         
         
         # Extract task content from todo
@@ -115,5 +118,5 @@ class WriteTool:
         
         # Execute flow to generate parameters
         result = await flow_instance.run_pipeline(flow_input)
-        
-        return result.parameters
+
+        return cast(WriteParameters, result.parameters)

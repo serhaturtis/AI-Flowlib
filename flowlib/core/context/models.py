@@ -3,8 +3,7 @@
 No fallbacks, no Dict[str, Any] patterns, strict contracts only.
 """
 
-from typing import Any
-from pydantic import Field, ConfigDict
+from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
 

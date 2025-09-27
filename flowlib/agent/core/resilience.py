@@ -3,7 +3,7 @@
 import asyncio
 import time
 import logging
-from typing import Callable, TypeVar, Optional, Tuple, Type, Any, Dict
+from typing import Callable, TypeVar, Optional, Tuple, Type, Any, Dict, List, Awaitable
 from functools import wraps
 from enum import Enum
 
@@ -38,11 +38,11 @@ class RetryableOperation:
         self.retryable_errors = retryable_errors
         self.non_retryable_errors = non_retryable_errors
     
-    def __call__(self, func: Callable[..., T]) -> Callable[..., T]:
+    def __call__(self, func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args: Any, **kwargs: Any) -> T:
             last_error = None
-            
+
             for attempt in range(self.max_retries + 1):  # +1 for initial attempt
                 try:
                     result = await func(*args, **kwargs)
@@ -70,7 +70,14 @@ class RetryableOperation:
                     else:
                         logger.error(f"{func.__name__} failed after {self.max_retries} retries: {e}")
             
-            raise last_error
+            if last_error is not None:
+                raise last_error
+            else:
+                raise ComponentError(
+                    f"Operation {func.__name__} failed without specific error",
+                    component_name="RetryableOperation",
+                    operation=func.__name__
+                )
         
         return wrapper
 
@@ -93,7 +100,7 @@ class CircuitBreaker:
         self.last_failure_time: Optional[float] = None
         self.state = CircuitState.CLOSED
         
-    async def call(self, func: Callable[..., T], *args, **kwargs) -> T:
+    async def call(self, func: Callable[..., Awaitable[T]], *args: Any, **kwargs: Any) -> T:
         """Execute function through circuit breaker."""
         if self.state == CircuitState.OPEN:
             if self._should_attempt_reset():
@@ -114,7 +121,7 @@ class CircuitBreaker:
             await self._on_failure(e)
             raise
     
-    async def _on_success(self):
+    async def _on_success(self) -> None:
         """Handle successful operation."""
         if self.state == CircuitState.HALF_OPEN:
             self.success_count += 1
@@ -125,7 +132,7 @@ class CircuitBreaker:
         else:
             self.failure_count = 0
     
-    async def _on_failure(self, error: Exception):
+    async def _on_failure(self, error: Exception) -> None:
         """Handle failed operation."""
         self.failure_count += 1
         self.last_failure_time = time.time()
@@ -168,9 +175,9 @@ class TimeoutOperation:
     def __init__(self, timeout_seconds: float):
         self.timeout_seconds = timeout_seconds
     
-    def __call__(self, func: Callable[..., T]) -> Callable[..., T]:
+    def __call__(self, func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args: Any, **kwargs: Any) -> T:
             try:
                 return await asyncio.wait_for(
                     func(*args, **kwargs),
@@ -195,7 +202,7 @@ class RateLimiter:
         self.time_window = time_window
         self.calls: List[float] = []
     
-    async def acquire(self):
+    async def acquire(self) -> None:
         """Acquire permission to make a call."""
         now = time.time()
         
@@ -224,7 +231,7 @@ class BulkheadIsolation:
         self.active_operations = 0
         self.queued_operations = 0
     
-    async def execute(self, func: Callable[..., T], *args, **kwargs) -> T:
+    async def execute(self, func: Callable[..., Awaitable[T]], *args: Any, **kwargs: Any) -> T:
         """Execute function with resource isolation."""
         self.queued_operations += 1
         try:
@@ -264,12 +271,12 @@ class ErrorContext:
         self.reraise_as = reraise_as
         self.start_time: Optional[float] = None
     
-    async def __aenter__(self):
+    async def __aenter__(self) -> 'ErrorContext':
         self.start_time = time.time()
         logger.debug(f"Starting {self.operation} in {self.component_name}")
         return self
     
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Any) -> None:
         duration = time.time() - self.start_time if self.start_time else 0
         
         if exc_type is None:
@@ -277,7 +284,7 @@ class ErrorContext:
         else:
             logger.error(
                 f"Failed {self.operation} after {duration:.3f}s: {exc_val}",
-                exc_info=(exc_type, exc_val, exc_tb)
+                exc_info=bool(exc_type)
             )
             
             if self.reraise_as:
@@ -287,7 +294,7 @@ class ErrorContext:
                         message=f"{self.operation} failed",
                         component_name=self.component_name,
                         operation=self.operation,
-                        cause=exc_val
+                        cause=exc_val if isinstance(exc_val, Exception) else None
                     )
                 else:
                     raise self.reraise_as(str(exc_val)) from exc_val
@@ -296,7 +303,7 @@ class ErrorContext:
 class ResilienceManager:
     """Manages resilience patterns for agent components."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.rate_limiters: Dict[str, RateLimiter] = {}
         self.bulkheads: Dict[str, BulkheadIsolation] = {}
@@ -358,7 +365,7 @@ def retryable(
     max_retries: int = 3,
     backoff_factor: float = 2.0,
     retryable_errors: Tuple[Type[Exception], ...] = (Exception,)
-):
+) -> RetryableOperation:
     """Convenience decorator for retryable operations."""
     return RetryableOperation(
         max_retries=max_retries,
@@ -367,7 +374,7 @@ def retryable(
     )
 
 
-def with_timeout(timeout_seconds: float):
+def with_timeout(timeout_seconds: float) -> TimeoutOperation:
     """Convenience decorator for timeout operations."""
     return TimeoutOperation(timeout_seconds)
 
@@ -376,16 +383,16 @@ def with_circuit_breaker(
     name: str,
     failure_threshold: int = 5,
     reset_timeout: float = 60.0
-):
+) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Convenience decorator for circuit breaker protection."""
     manager = ResilienceManager()
     circuit_breaker = manager.get_circuit_breaker(
         name, failure_threshold, reset_timeout
     )
     
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args: Any, **kwargs: Any) -> T:
             return await circuit_breaker.call(func, *args, **kwargs)
         return wrapper
     

@@ -32,11 +32,7 @@ IMPORTANT NOTES:
 - Confidence should be a decimal between 0.0 and 1.0 (not percentage)
 - Focus on USER INTENT, not technical success. A command might succeed technically but fail to fulfill what the user wanted
 
-Examples:
-- User asks for disk space, command fails → Intent NOT fulfilled, IS correctable
-- User asks for disk space, command returns empty result → Intent NOT fulfilled, IS correctable  
-- User asks for disk space, command returns correct info → Intent FULFILLED
-- User asks to delete system files → Intent could be fulfilled but SHOULDN'T be (safety)
+Intent fulfillment means the user got what they actually wanted from their request. For technical requests like checking disk space, this means getting the actual information even if commands initially fail. For conversational interactions like greetings or casual questions, appropriate responses that acknowledge and engage with the user fulfill the intent. Safety considerations may override fulfillment for potentially harmful requests.
 
 Analyze the intent fulfillment thoroughly."""
 
@@ -58,6 +54,7 @@ WHAT WAS ACCOMPLISHED: {{execution_summary}}
 TASK: Create a clear, helpful response that presents the results to the user in a conversational way.
 
 GUIDELINES:
+- Return the actual response from "CONVERSATION" results directly
 - Be conversational and friendly, matching the agent persona
 - Present the key information the user wanted
 - Make technical results easy to understand
@@ -95,17 +92,25 @@ TASK: Generate an improved task description that will better fulfill the user's 
 
 GUIDELINES:
 - Learn from the failure and avoid repeating the same mistake
+- Analyze the EXECUTION RESULTS above to understand specific tool failures, error messages, and output
+- Include information about why the previous attempt failed based on actual tool results
+- Add specific details to prevent the same error from occurring again
+- If tool results show specific error messages (e.g., "file not found", "permission denied", "command not found"), address these directly
 - Be more specific and accurate in the task description
 - Consider simpler, more reliable approaches
 - Focus on what the user actually wants, not just technical execution
-- IMPORTANT: For listing files, use bash commands like 'ls -la' not 'read' tool
-- IMPORTANT: The 'read' tool is for reading FILE CONTENTS, not directories
+- Use appropriate tools based on the task requirements
+- Be more explicit about the desired outcome rather than specific tool usage
 
-Example Corrections:
-- Bad: "Check disk space with complex df command" 
-- Good: "Check available disk space using simple 'df -h .' command"
-- Bad: "List files in directory" (vague, wrong tool might be selected)
-- Good: "Use 'ls -la' bash command to list all files with details in the working directory"
+Example Corrections Based on Tool Results:
+- Bad: "Check disk space" (execution results showed: "bash: df: command not found")
+- Good: "Check available disk space using alternative command since 'df' is not available - try 'du -sh .' to show directory size"
+- Bad: "Read config file" (execution results showed: "Permission denied: /etc/config")
+- Good: "Read the accessible config file in the user directory instead of system config - use '~/.config/app.conf' since previous attempt failed with permission denied on /etc/config"
+- Bad: "List files" (execution results showed: "No such file or directory")
+- Good: "List files in the current working directory using full path - previous attempt failed because target directory doesn't exist, ensure we're listing the correct location"
+- Bad: "Process data file" (execution results showed: "FileNotFoundError: data.csv")
+- Good: "First verify the data file exists, then process it - previous execution failed because 'data.csv' was not found, include file existence check or use correct file path"
 
 Generate a corrected task description."""
 

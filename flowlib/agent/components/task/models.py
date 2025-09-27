@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Type, Literal
+from typing import Dict, List, Optional, Any, Literal, Union
 from enum import Enum
 from uuid import uuid4
-from pydantic import Field, ConfigDict, BeforeValidator, field_validator
+from pydantic import Field, BeforeValidator
 from typing_extensions import Annotated
 
 from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
@@ -21,10 +21,11 @@ from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
 
 class RequestContext(StrictBaseModel):
     """Context for task decomposition and execution requests."""
-    
+
     session_id: Optional[str] = Field(default=None, description="Agent session ID")
     user_id: Optional[str] = Field(default=None, description="User identifier")
     agent_name: Optional[str] = Field(default=None, description="Agent name")
+    agent_role: Optional[str] = Field(default=None, description="Agent's role for tool access control")
     previous_messages: List[Any] = Field(default_factory=list, description="Previous conversation messages")
     working_directory: str = Field(default=".", description="Working directory")
     agent_persona: Optional[str] = Field(default=None, description="Agent's persona/personality")
@@ -51,7 +52,7 @@ class TodoPriority(Enum):
     URGENT = "urgent"
 
 
-def validate_todo_status(value) -> TodoStatus:
+def validate_todo_status(value: Union[TodoStatus, str, object]) -> TodoStatus:
     """Convert string to TodoStatus enum."""
     if isinstance(value, TodoStatus):
         return value
@@ -63,7 +64,7 @@ def validate_todo_status(value) -> TodoStatus:
     return TodoStatus.PENDING
 
 
-def validate_todo_priority(value) -> TodoPriority:
+def validate_todo_priority(value: Union[TodoPriority, str, object]) -> TodoPriority:
     """Convert string to TodoPriority enum."""
     if isinstance(value, TodoPriority):
         return value
@@ -281,7 +282,7 @@ class TodoItem(StrictBaseModel):
                 # Convert ISO 8601 duration back to seconds
                 # For simplicity, handle common patterns like PT5M, PT30S, PT1H30M
                 duration_str = data[field]
-                seconds = 0
+                seconds = 0.0
                 
                 if 'H' in duration_str:
                     hours = int(duration_str.split('H')[0].split('T')[1])
@@ -408,7 +409,7 @@ class TodoExecutionReasoning(StrictBaseModel):
     """Human-readable explanation of TODO execution decisions."""
     
     explanation: str = Field(..., description="Text explaining the TODO execution decisions")
-    rationale: str = Field(None, description="Rationale for the decisions")
+    rationale: str = Field(default="", description="Rationale for the decisions")
     decision_factors: List[str] = Field(default_factory=list, description="Factors that influenced the decision")
 
 

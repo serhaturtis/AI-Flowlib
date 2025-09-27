@@ -28,21 +28,24 @@ from .models import (
     AgentTaskRequest,
     TaskExecutionResult,
 )
-from .interfaces import ToolInterface, ToolFactory
+from .interfaces import ToolInterface, ToolFactory, AgentToolInterface, AgentToolFactory
 from .registry import ToolRegistry, tool_registry
 from .decorators import tool
 
 # Tool orchestration
 from .orchestration import ToolOrchestrator, tool_orchestrator, ToolExecutionRequest, ToolExecutionResponse
 
-# Import tool implementations to trigger registration
-from .tool_implementations import *
-
 # Import clean execution flows and coordinators
 from .execution_flow import TaskExecutionFlow
 from .component import TaskExecutionComponent
 
+# Import tool implementations to trigger registration
+from . import tool_implementations
+
 __all__ = [
+    # Tool implementations (imported for registration)
+    "tool_implementations",
+
     # Core models
     "ToolParameters",
     "ToolResult", 
@@ -53,9 +56,11 @@ __all__ = [
     "AgentTaskRequest",
     "TaskExecutionResult",
     
-    # Core interfaces  
+    # Core interfaces
     "ToolInterface",
     "ToolFactory",
+    "AgentToolInterface",
+    "AgentToolFactory",
     
     # Registry system
     "ToolRegistry", 

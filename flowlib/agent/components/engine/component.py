@@ -6,6 +6,18 @@ import time
 from typing import Dict, Any, Optional
 
 from flowlib.agent.core.base import AgentComponent
+from flowlib.agent.components.memory.component import MemoryComponent
+from flowlib.agent.components.knowledge.component import KnowledgeComponent
+from flowlib.agent.components.task.generation.component import TaskGeneratorComponent
+from flowlib.agent.components.task.thinking.component import TaskThinkingComponent
+from flowlib.agent.components.task.decomposition.component import TaskDecompositionComponent
+from flowlib.agent.components.task.execution.component import TaskExecutionComponent
+from flowlib.agent.components.task.debriefing.component import TaskDebrieferComponent
+from flowlib.agent.core.activity_stream import ActivityStream
+from flowlib.agent.core.context.manager import AgentContextManager
+from flowlib.agent.components.task.thinking.models import TaskThought
+from flowlib.agent.components.task.execution.models import TaskExecutionResult
+from flowlib.agent.components.task.decomposition.manager import ActivityStreamProtocol
 from flowlib.agent.core.errors import ExecutionError
 from flowlib.agent.models.state import AgentState, ExecutionResult
 from flowlib.agent.components.task.decomposition import TodoManager
@@ -18,10 +30,11 @@ class EngineComponent(AgentComponent):
     """Engine that orchestrates TaskGeneration → TaskDecomposition → TaskExecution → TaskDebriefing."""
     
     def __init__(self, agent_name: str, agent_persona: str, max_iterations: int = 10,
-                 memory=None, knowledge=None, task_generator=None,
-                 task_decomposer=None, task_executor=None, task_debriefer=None,
-                 activity_stream=None, context_manager=None,
-                 name: str = "agent_engine"):
+                 memory: Optional[MemoryComponent] = None, knowledge: Optional[KnowledgeComponent] = None,
+                 task_generator: Optional[TaskGeneratorComponent] = None, task_thinking: Optional[TaskThinkingComponent] = None,
+                 task_decomposer: Optional[TaskDecompositionComponent] = None, task_executor: Optional[TaskExecutionComponent] = None,
+                 task_debriefer: Optional[TaskDebrieferComponent] = None, activity_stream: Optional[ActivityStream] = None,
+                 context_manager: Optional[AgentContextManager] = None, name: str = "agent_engine"):
         """Initialize the agent engine.
         
         Args:
@@ -31,6 +44,7 @@ class EngineComponent(AgentComponent):
             memory: Memory component
             knowledge: Knowledge component
             task_generator: Task generator component
+            task_thinking: Task thinking component
             task_decomposer: Task decomposer component
             task_executor: Task executor component
             task_debriefer: Task debriefer component
@@ -50,12 +64,17 @@ class EngineComponent(AgentComponent):
         self._memory = memory
         self._knowledge = knowledge
         self._task_generator = task_generator
+        self._task_thinking = task_thinking
         self._task_decomposer = task_decomposer
         self._task_executor = task_executor
         self._task_debriefer = task_debriefer
         self._activity_stream = activity_stream
         self._context_manager = context_manager
-        self._todo_manager = TodoManager("EngineToDoManager", activity_stream=activity_stream)
+        # Cast ActivityStream to protocol for TodoManager
+        activity_stream_protocol: Optional[ActivityStreamProtocol] = None
+        if activity_stream:
+            activity_stream_protocol = activity_stream  # type: ignore[assignment]
+        self._todo_manager = TodoManager("EngineToDoManager", activity_stream=activity_stream_protocol)
         self._iteration = 0
             
     async def _initialize_impl(self) -> None:
@@ -64,6 +83,8 @@ class EngineComponent(AgentComponent):
             raise ExecutionError("Memory component is required")
         if not self._task_generator:
             raise ExecutionError("Task generator component is required")
+        if not self._task_thinking:
+            raise ExecutionError("Task thinking component is required")
         if not self._task_decomposer:
             raise ExecutionError("Task decomposer component is required")
         if not self._task_executor:
@@ -78,7 +99,7 @@ class EngineComponent(AgentComponent):
         """Shutdown the engine."""
         logger.info("Engine shutdown")
     
-    async def execute(self, task_description: str, conversation_history=None):
+    async def execute(self, task_description: str, conversation_history: Optional[Any] = None) -> ExecutionResult:
         """Execute a task by orchestrating components."""
         self._check_initialized()
         
@@ -108,6 +129,21 @@ class EngineComponent(AgentComponent):
             # completion_reason must be set when task completes
             output = state.completion_reason
             
+            # Convert ExecutionHistoryEntry to ExecutionHistoryStep
+            from flowlib.agent.models.state import ExecutionHistoryStep
+            execution_steps = []
+            for entry in state.execution_history:
+                step = ExecutionHistoryStep(
+                    step_id=f"step_{entry.cycle}_{entry.flow_name}",
+                    step_type="flow_execution",
+                    flow_name=entry.flow_name,
+                    started_at=entry.timestamp,
+                    completed_at=entry.timestamp,
+                    success=entry.success,
+                    error_message="" if entry.success else f"Flow {entry.flow_name} failed"
+                )
+                execution_steps.append(step)
+
             # Prepare result as Pydantic model
             result = ExecutionResult(
                 output=output,
@@ -116,7 +152,7 @@ class EngineComponent(AgentComponent):
                 progress=state.progress,
                 is_complete=state.is_complete,
                 errors=state.errors,
-                execution_history=state.execution_history,
+                execution_history=execution_steps,
                 stats={
                     "cycles_executed": state.cycles,
                     "flows_executed": len(state.execution_history),
@@ -130,7 +166,7 @@ class EngineComponent(AgentComponent):
             logger.error(f"Error during task execution: {e}", exc_info=True)
             raise
     
-    async def execute_cycle(self, state, conversation_history=None, memory_context: str = "agent", no_flow_is_error: bool = False) -> bool:
+    async def execute_cycle(self, state: AgentState, conversation_history: Optional[Any] = None, memory_context: str = "agent", no_flow_is_error: bool = False) -> bool:
         """Execute a single execution cycle with clean context management.
         
         Orchestrates: TaskGenerator → TaskDecomposer → TaskExecution using unified context.
@@ -154,6 +190,9 @@ class EngineComponent(AgentComponent):
                 component_type="task_generation"
             )
             
+            if not self._task_generator:
+                raise ExecutionError("Task generator is required but not initialized")
+
             task_generation_result = await self._task_generator.convert_message_to_task(
                 context=task_gen_context
             )
@@ -171,14 +210,51 @@ class EngineComponent(AgentComponent):
             
             generated_task = task_generation_result.generated_task
             logger.info(f"Generated task: {generated_task.task_description}")
-            
-            # 2. Task Decomposition with managed context
-            decomp_context = await self._context_manager.create_execution_context(
-                component_type="task_decomposition",
+
+            # 2. Task Thinking (Strategic Analysis) - use task_generation context for now
+            thinking_context = await self._context_manager.create_execution_context(
+                component_type="task_generation",
                 task_description=generated_task.task_description
             )
+
+            if not self._task_thinking:
+                raise ExecutionError("Task thinking component is required but not initialized")
+
+            thinking_result = await self._task_thinking.analyze_task_strategically(
+                context=thinking_context,
+                generated_task=generated_task
+            )
+
+            await self._context_manager.update_from_execution(
+                component_type="task_generation",
+                execution_result=thinking_result,
+                success=thinking_result.success
+            )
+
+            if not thinking_result.success:
+                logger.error("Task thinking failed")
+                state.set_complete("Task strategic analysis failed")
+                return False
+
+            enhanced_task_description = thinking_result.enhanced_task_description
+            logger.info(f"Strategic analysis complete: {thinking_result.thinking_result.approach.primary_strategy}")
+
+            # 3. Task Decomposition with managed context and thinking insights
+            decomp_context = await self._context_manager.create_execution_context(
+                component_type="task_decomposition",
+                task_description=enhanced_task_description
+            )
             
-            todos = await self._task_decomposer.decompose_task(context=decomp_context)
+            # Format thinking insights for decomposition
+            thinking_insights = self._format_thinking_insights(thinking_result.thinking_result)
+
+            if not self._task_decomposer:
+                raise ExecutionError("Task decomposer component is required but not initialized")
+
+            todos = await self._task_decomposer.decompose_task(
+                context=decomp_context,
+                thinking_insights=thinking_insights
+            )
             
             await self._context_manager.update_from_execution(
                 component_type="task_decomposition", 
@@ -186,13 +262,13 @@ class EngineComponent(AgentComponent):
                 success=len(todos) > 0
             )
             
-            # 3. Check if we got TODOs
+            # 4. Check if we got TODOs
             if not todos:
                 logger.info("No TODOs generated - task may be complete")
                 state.set_complete("No actionable items generated")
                 return False
             
-            # 4. Task Execution with managed context  
+            # 5. Task Execution with managed context  
             exec_context = await self._context_manager.create_execution_context(
                 component_type="task_execution",
                 todos=todos
@@ -200,6 +276,9 @@ class EngineComponent(AgentComponent):
             
             # Execute the TODOs
             try:
+                if not self._task_executor:
+                    raise ExecutionError("Task executor component is required but not initialized")
+
                 execution_result = await self._task_executor.execute_todos(context=exec_context)
                 
                 await self._context_manager.update_from_execution(
@@ -227,7 +306,9 @@ class EngineComponent(AgentComponent):
                             execution_time_ms=0
                         )
                     ],
-                    final_response=f"Task execution failed: {str(e)}"
+                    final_response=f"Task execution failed: {str(e)}",
+                    success=False,
+                    execution_time_ms=0.0
                 )
             
             # 5. Extract knowledge if component is available
@@ -261,32 +342,38 @@ class EngineComponent(AgentComponent):
                 max_cycles=self._max_iterations
             )
             
+            if not self._task_debriefer:
+                raise ExecutionError("Task debriefer component is required but not initialized")
+
             debriefing_result = await self._task_debriefer.analyze_and_decide(debriefing_input)
             
             # Act based on debriefing decision
-            if debriefing_result.decision.value == "present_success":
+            if debriefing_result.decision == "present_success":
                 # Add assistant response to conversation history
-                await self._context_manager.add_assistant_response(debriefing_result.user_response)
-                
-                state.progress = 100
-                state.set_complete(debriefing_result.user_response)
+                response = debriefing_result.user_response or "Task completed successfully"
+                await self._context_manager.add_assistant_response(response)
+
+                state.set_progress(100)
+                state.set_complete(response)
                 logger.info(f"Task completed successfully: {debriefing_result.reasoning}")
                 return False
-            elif debriefing_result.decision.value == "retry_with_correction":
+            elif debriefing_result.decision == "retry_with_correction":
                 # Add assistant response to conversation history
                 response_content = self._format_execution_response(execution_result)
                 await self._context_manager.add_assistant_response(response_content)
-                
+
                 # Update task description for next cycle
-                state.task_description = debriefing_result.corrective_task
-                state.progress = 30  # Some progress made
+                corrective_task = debriefing_result.corrective_task or state.task_description
+                state.set_task_description(corrective_task)
+                state.set_progress(30)  # Some progress made
                 logger.info(f"Retrying with correction: {debriefing_result.reasoning}")
                 return True
             else:  # present_failure
                 # Add assistant response to conversation history
-                await self._context_manager.add_assistant_response(debriefing_result.user_response)
-                
-                state.set_complete(debriefing_result.user_response)
+                response = debriefing_result.user_response or "Task failed"
+                await self._context_manager.add_assistant_response(response)
+
+                state.set_complete(response)
                 logger.info(f"Task failed after analysis: {debriefing_result.reasoning}")
                 return False
             
@@ -305,7 +392,7 @@ class EngineComponent(AgentComponent):
             
             return False
     
-    def _format_execution_response(self, execution_result) -> str:
+    def _format_execution_response(self, execution_result: TaskExecutionResult) -> str:
         """Format execution result for user response.
         
         Args:
@@ -343,7 +430,7 @@ class EngineComponent(AgentComponent):
             
         return " ".join(response_parts)
     
-    def _format_execution_for_learning(self, execution_result) -> str:
+    def _format_execution_for_learning(self, execution_result: TaskExecutionResult) -> str:
         """Format execution results for knowledge extraction.
         
         Args:
@@ -375,7 +462,7 @@ class EngineComponent(AgentComponent):
             
         return " ".join(content_parts)
     
-    def _is_task_complete(self, execution_result) -> bool:
+    def _is_task_complete(self, execution_result: TaskExecutionResult) -> bool:
         """Check if the task is complete based on execution results.
         
         Args:
@@ -436,3 +523,16 @@ class EngineComponent(AgentComponent):
     def get_todo_manager(self) -> Optional[TodoManager]:
         """Get the TODO manager instance."""
         return self._todo_manager
+
+    def _format_thinking_insights(self, thought: TaskThought) -> str:
+        """Format thinking insights for decomposition component."""
+        insights = []
+        insights.append(f"Complexity: {thought.complexity.level}")
+        insights.append(f"Strategy: {thought.approach.primary_strategy}")
+        insights.append(f"Success Probability: {thought.success_probability:.1f}")
+        if thought.key_success_factors:
+            insights.append(f"Key Success Factors: {', '.join(thought.key_success_factors)}")
+        if thought.potential_challenges:
+            challenges = [c.description for c in thought.potential_challenges]
+            insights.append(f"Challenges: {', '.join(challenges)}")
+        return "Strategic Analysis: " + " | ".join(insights)

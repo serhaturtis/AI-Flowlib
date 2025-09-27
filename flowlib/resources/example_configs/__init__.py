@@ -13,16 +13,29 @@ Usage:
 4. Restart flowlib applications to load changes
 """
 
-# Mapping for copying example files to user directory
-# Target names use descriptive config names, not role names
+# Mapping for copying example files to project structure
+# Configs go to configs/, agents to agents/, profiles to profiles/
 EXAMPLE_TO_TARGET = {
+    # Provider configs to configs/
     "example_default_llm.py": "example_llamacpp_provider.py",
     "example_default_embedding.py": "example_llamacpp_embedding_provider.py",
-    "example_default_vector_db.py": "example_vector_db_provider.py", 
+    "example_default_vector_db.py": "example_vector_db_provider.py",
     "example_default_graph_db.py": "example_graph_db_provider.py",
     "example_default_database.py": "example_database_provider.py",
     "example_default_cache.py": "example_cache_provider.py",
     "example_model_config.py": "example_model_config.py",
     "example_embedding_model_config.py": "example_embedding_model_config.py",
+
+    # Agent profiles to profiles/
+    "example_agent_profiles.py": "../profiles/agent_profiles.py",
+
+    # Agent configs to agents/
+    "example_default_agent_config.py": "../agents/default_agent_config.py",
+    "example_creative_agent.py": "../agents/creative_agent_config.py",
+    "example_precise_agent.py": "../agents/precise_agent_config.py",
+    "example_devops_agent.py": "../agents/devops_agent_config.py",
+    "example_custom_agent_template.py": "../agents/custom_agent_template.py",
+
+    # Role assignments to roles/
     "example_role_assignments.py": "../roles/assignments.py"
 }

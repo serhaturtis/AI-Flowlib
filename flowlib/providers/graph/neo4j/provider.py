@@ -13,25 +13,21 @@ under high concurrent load. The synchronous driver is battle-tested and stable.
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Generic, TypeVar, Union
-from datetime import datetime
-from abc import abstractmethod
+from typing import Dict, List, Optional, Any, cast, Union, Literal
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
-from flowlib.providers.graph.base import GraphDBProvider
-from flowlib.providers.core.base import Provider
+from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
 from flowlib.providers.graph.models import (
-    Entity, EntityAttribute, EntityRelationship, EntitySearchResult, 
-    GraphStoreResult, GraphQueryResult, RelationshipSearchResult, 
-    GraphDeleteResult, Neo4jQueryParams, GraphQueryParams, TraversalParams, GraphStats
+    Entity, EntityAttribute, EntityRelationship, EntitySearchResult,
+    RelationshipSearchResult, GraphStoreResult, GraphQueryResult, GraphQueryParams,
+    GraphDeleteResult, Neo4jQueryParams
 )
 from flowlib.providers.graph.neo4j.models import Neo4jAttributeData
-from flowlib.providers.graph.neo4j.models import Neo4jNodeData, Neo4jRelationshipData, Neo4jQueryResult
+from flowlib.providers.graph.neo4j.models import Neo4jNodeData
 
 # Import necessary types for Provider inheritance  
-from flowlib.providers.core.base import ProviderSettings
 from pydantic import Field
 
 logger = logging.getLogger(__name__)
@@ -39,23 +35,19 @@ logger = logging.getLogger(__name__)
 # Define dummy models for type annotations when neo4j is not installed
 try:
     from neo4j import GraphDatabase, Driver, Session, Transaction, Result
-    from neo4j.exceptions import ServiceUnavailable, AuthError, ClientError
+    from neo4j.exceptions import ServiceUnavailable, AuthError
     NEO4J_AVAILABLE = True
 except ImportError:
     logger.warning("neo4j-python-driver package not found. Install with 'pip install neo4j'")
     NEO4J_AVAILABLE = False
-    # Define dummy classes for type annotations
-    class Driver:
-        pass
-    class Session:
-        pass
-    class Transaction:
-        pass
-    class Result:
-        pass
+    # Define dummy types for type annotations
+    Driver = Any  # type: ignore
+    Session = Any  # type: ignore
+    Transaction = Any  # type: ignore
+    Result = Any  # type: ignore
 
 
-class Neo4jProviderSettings(ProviderSettings):
+class Neo4jProviderSettings(GraphDBProviderSettings):
     """Neo4j provider settings - direct inheritance, only Neo4j-specific fields.
     
     Neo4j requires:
@@ -73,7 +65,7 @@ class Neo4jProviderSettings(ProviderSettings):
     
     # Neo4j security settings
     encryption: bool = Field(default=False, description="Whether to use encrypted connection")
-    trust: str = Field(default="TRUST_SYSTEM_CA_SIGNED_CERTIFICATES", description="Trust level for certificates")
+    trust: Literal["TRUST_ALL_CERTIFICATES", "TRUST_SYSTEM_CA_SIGNED_CERTIFICATES"] = Field(default="TRUST_SYSTEM_CA_SIGNED_CERTIFICATES", description="Trust level for certificates")
     
     # Neo4j connection pool settings
     connection_timeout: int = Field(default=30, description="Connection timeout in seconds")
@@ -92,7 +84,7 @@ class Neo4jProvider(GraphDBProvider):
     mapping entities and relationships to Neo4j's property graph model.
     """
     
-    def __init__(self, name: str = "neo4j", provider_type: str = "graph_db", settings: Optional[Neo4jProviderSettings] = None):
+    def __init__(self, name: str = "neo4j", provider_type: str = "graph_db", settings: Union[Neo4jProviderSettings, Dict[str, Any], None] = None):
         """Initialize Neo4j graph database provider.
         
         Args:
@@ -212,15 +204,16 @@ class Neo4jProvider(GraphDBProvider):
         
         try:
             # Create the Neo4j driver with settings
+            settings = cast(Neo4jProviderSettings, self.settings)
             self._driver = GraphDatabase.driver(
-                self.settings.uri,
-                auth=(self.settings.username, self.settings.password),
-                encrypted=self.settings.encryption,
-                trust=self.settings.trust,
-                connection_timeout=self.settings.connection_timeout,
-                connection_acquisition_timeout=self.settings.connection_acquisition_timeout,
-                max_connection_lifetime=self.settings.max_connection_lifetime,
-                max_connection_pool_size=self.settings.max_connection_pool_size
+                settings.uri,
+                auth=(settings.username, settings.password),
+                encrypted=settings.encryption,
+                trust=settings.trust,
+                connection_timeout=settings.connection_timeout,
+                connection_acquisition_timeout=settings.connection_acquisition_timeout,
+                max_connection_lifetime=settings.max_connection_lifetime,
+                max_connection_pool_size=settings.max_connection_pool_size
             )
             
             # Verify connection
@@ -348,9 +341,9 @@ class Neo4jProvider(GraphDBProvider):
             )
         
         try:
-            settings = self.settings
+            settings = cast(Neo4jProviderSettings, self.settings)
             parameters = parameters or {}
-            
+
             # Use async with statement when proper async driver is available
             # For now, we're using the synchronous driver methods
             with self._driver.session(database=settings.database) as session:
@@ -430,11 +423,7 @@ class Neo4jProvider(GraphDBProvider):
                     entity.id,
                     rel.target_entity,
                     rel.relation_type,
-                    {
-                        "confidence": rel.confidence,
-                        "source": rel.source,
-                        "timestamp": rel.timestamp
-                    }
+                    rel  # rel is already an EntityRelationship object
                 )
             
             return GraphStoreResult(
@@ -489,7 +478,7 @@ class Neo4jProvider(GraphDBProvider):
             )
         
         # Relationships are not handled by this helper
-        relationships = []
+        relationships: List[EntityRelationship] = []
         
         entity = Entity(
             id=neo4j_node.id,
@@ -499,6 +488,7 @@ class Neo4jProvider(GraphDBProvider):
             tags=neo4j_node.tags,
             source=neo4j_node.source,
             importance=neo4j_node.importance,
+            vector_id=None,
             last_updated=neo4j_node.updated_at
         )
         return entity
@@ -581,7 +571,12 @@ class Neo4jProvider(GraphDBProvider):
                         timestamp=attr_data["timestamp"]
                     )
                 else:
-                    attributes[attr_name] = EntityAttribute(name=attr_name, value=str(attr_data))
+                    attributes[attr_name] = EntityAttribute(
+                        name=attr_name,
+                        value=str(attr_data),
+                        confidence=0.9,
+                        source="neo4j_import"
+                    )
             
             # Deserialize relationships
             relationships = []
@@ -594,13 +589,13 @@ class Neo4jProvider(GraphDBProvider):
                     if isinstance(rel_data, dict) and "target_id" in rel_data and rel_data["target_id"]:
                         # Validate all required relationship fields
                         if "relation_type" not in rel_data:
-                            raise ValueError(f"Relationship missing required 'relation_type' field")
+                            raise ValueError("Relationship missing required 'relation_type' field")
                         if "confidence" not in rel_data:
-                            raise ValueError(f"Relationship missing required 'confidence' field")
+                            raise ValueError("Relationship missing required 'confidence' field")
                         if "source" not in rel_data:
-                            raise ValueError(f"Relationship missing required 'source' field")
+                            raise ValueError("Relationship missing required 'source' field")
                         if "timestamp" not in rel_data:
-                            raise ValueError(f"Relationship missing required 'timestamp' field")
+                            raise ValueError("Relationship missing required 'timestamp' field")
                             
                         relationships.append(
                             EntityRelationship(
@@ -616,7 +611,7 @@ class Neo4jProvider(GraphDBProvider):
             # Create and return entity
             # Validate all required entity fields
             if "id" not in record:
-                raise ValueError(f"Entity query result missing required 'id' field")
+                raise ValueError("Entity query result missing required 'id' field")
             if "type" not in record:
                 raise ValueError(f"Entity '{entity_id}' missing required 'type' field")
             if "tags" not in record:
@@ -636,6 +631,7 @@ class Neo4jProvider(GraphDBProvider):
                 tags=record["tags"],
                 source=record["source"],
                 importance=record["importance"],
+                vector_id=None,
                 last_updated=record["last_updated"]
             )
             
@@ -735,7 +731,7 @@ class Neo4jProvider(GraphDBProvider):
         entity_id: str, 
         relation_type: Optional[str] = None, 
         direction: str = "outgoing"
-    ) -> EntitySearchResult:
+    ) -> RelationshipSearchResult:
         """Query relationships for an entity.
         Args:
             entity_id: ID of the entity
@@ -797,11 +793,12 @@ class Neo4jProvider(GraphDBProvider):
                     source=r["source"],
                     timestamp=r["timestamp"]
                 ))
-            return EntitySearchResult(
+            return RelationshipSearchResult(
                 success=True,
-                entities=[],
+                relationships=relationships,
                 total_count=len(relationships),
-                search_query=entity_id,
+                source_entity=entity_id if direction == "outgoing" else None,
+                target_entity=entity_id if direction == "incoming" else None,
                 execution_time_ms=None,
                 metadata={"direction": direction, "relation_type": relation_type},
             )
@@ -904,7 +901,7 @@ class Neo4jProvider(GraphDBProvider):
     async def query(
         self, 
         query: str, 
-        params: Optional[Neo4jQueryParams] = None
+        params: Optional[GraphQueryParams] = None
     ) -> GraphQueryResult:
         """Execute a native Cypher query in Neo4j.
         
@@ -945,7 +942,7 @@ class Neo4jProvider(GraphDBProvider):
                     if params.offset is not None:
                         query_params['offset'] = params.offset
                     if params.timeout_ms is not None:
-                        query_params['timeout'] = params.timeout_ms / 1000  # Convert to seconds
+                        query_params['timeout'] = int(params.timeout_ms / 1000)  # Convert to seconds
                     
                     # Add extra params
                     query_params.update(params.extra_params)
@@ -954,12 +951,12 @@ class Neo4jProvider(GraphDBProvider):
                     # - params.database: handled when creating session
                     # - params.access_mode: handled when creating transaction
                     # - params.bookmarks: handled for causal consistency
-                else:
-                    # Handle legacy params or other types
-                    if hasattr(params, 'entity_type'):
-                        query_params['entity_type'] = params.entity_type
-                    if isinstance(params, dict):
-                        query_params.update(params)
+                elif isinstance(params, GraphQueryParams):
+                    # Handle base GraphQueryParams
+                    if hasattr(params, 'limit') and params.limit is not None:
+                        query_params['limit'] = params.limit
+                    if hasattr(params, 'offset') and params.offset is not None:
+                        query_params['offset'] = params.offset
             
             # Execute the query
             results = await self._execute_query(query, query_params)
@@ -1016,19 +1013,6 @@ class Neo4jProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-            
-    async def _find_entities_by_type(self, entity_type: str) -> List[Dict[str, Any]]:
-        """Find entities by type in Neo4j."""
-        results = await self._execute_query(
-            """
-            MATCH (e:Entity)
-            WHERE e.type = $type
-            RETURN e.id as id, e as entity
-            """,
-            {"type": entity_type}
-        )
-        
-        return [{"id": r["id"], "entity": r["entity"]} for r in results]
         
     async def _find_entities_by_name(self, name: str) -> List[Dict[str, Any]]:
         """Find entities by name in Neo4j."""
@@ -1096,7 +1080,7 @@ class Neo4jProvider(GraphDBProvider):
             } for r in results
         ]
     
-    async def delete_entity(self, entity_id: str) -> bool:
+    async def delete_entity(self, entity_id: str) -> GraphDeleteResult:
         """Delete an entity and its relationships from Neo4j.
         
         Args:
@@ -1112,7 +1096,11 @@ class Neo4jProvider(GraphDBProvider):
             # Check if entity exists
             entity_exists = await self._entity_exists(entity_id)
             if not entity_exists:
-                return False
+                return GraphDeleteResult(
+                    success=False,
+                    not_found_entities=[entity_id],
+                    execution_time_ms=None
+                )
             
             # Delete entity and all relationships
             result = await self._execute_query(
@@ -1123,11 +1111,19 @@ class Neo4jProvider(GraphDBProvider):
                 """,
                 {"id": entity_id}
             )
-            
+
             if result and result[0]["deleted"] > 0:
-                return True
-            
-            return False
+                return GraphDeleteResult(
+                    success=True,
+                    deleted_entities=[entity_id],
+                    execution_time_ms=None
+                )
+
+            return GraphDeleteResult(
+                success=False,
+                not_found_entities=[entity_id],
+                execution_time_ms=None
+            )
             
         except Exception as e:
             raise ProviderError(
@@ -1334,9 +1330,9 @@ class Neo4jProvider(GraphDBProvider):
             ProviderError: If the search operation fails.
         """
         try:
-            cypher_parts = []
-            params = {}
-            where_clauses = []
+            cypher_parts: List[str] = []
+            params: Dict[str, Any] = {}
+            where_clauses: List[str] = []
 
             cypher_parts.append("MATCH (e:Entity)")
 
@@ -1350,8 +1346,6 @@ class Neo4jProvider(GraphDBProvider):
                 params['type'] = entity_type
 
             if tags:
-                if isinstance(tags, str):
-                    tags = [tags]
                 where_clauses.append("ANY(tag IN e.tags WHERE tag IN $tags)")
                 params['tags'] = tags
 
@@ -1418,71 +1412,5 @@ class Neo4jProvider(GraphDBProvider):
             """,
             {"type": entity_type}
         )
-        
-        return [{"id": r["id"], "entity": r["entity"]} for r in results]
-        
-    async def _find_entities_by_name(self, name: str) -> List[Dict[str, Any]]:
-        """Find entities by name in Neo4j."""
-        results = await self._execute_query(
-            """
-            MATCH (e:Entity)
-            WHERE e.attributes.name.value CONTAINS $name
-            RETURN e.id as id, e as entity
-            """,
-            {"name": name}
-        )
-        
-        return [{"id": r["id"], "entity": r["entity"]} for r in results]
-        
-    async def _find_neighbors(self, entity_id: str, relation_type: Optional[str]) -> List[Dict[str, Any]]:
-        """Find neighboring entities in Neo4j."""
-        query = """
-        MATCH (e:Entity {id: $id})-[r:RELATES_TO]->(neighbor:Entity)
-        WHERE $relation_type IS NULL OR r.relation_type = $relation_type
-        RETURN 
-            neighbor.id as id, 
-            r.relation_type as relation, 
-            neighbor as entity
-        """
-        
-        results = await self._execute_query(
-            query,
-            {
-                "id": entity_id,
-                "relation_type": relation_type
-            }
-        )
-        
-        return [
-            {
-                "id": r["id"],
-                "relation": r["relation"],
-                "entity": r["entity"]
-            } for r in results
-        ]
-        
-    async def _find_path(self, from_id: str, to_id: str, max_depth: int) -> List[Dict[str, Any]]:
-        """Find path between entities in Neo4j."""
-        query = f"""
-        MATCH path = shortestPath((source:Entity {{id: $from_id}})-[r:RELATES_TO*1..{max_depth}]->(target:Entity {{id: $to_id}}))
-        UNWIND nodes(path) as node
-        WITH node, index(nodes(path), node) as position
-        RETURN position, node.id as id, node as entity
-        ORDER BY position
-        """
-        
-        results = await self._execute_query(
-            query,
-            {
-                "from_id": from_id,
-                "to_id": to_id
-            }
-        )
-        
-        return [
-            {
-                "position": r["position"],
-                "id": r["id"],
-                "entity": r["entity"]
-            } for r in results
-        ] 
+
+        return [{"id": r["id"], "entity": r["entity"]} for r in results] 

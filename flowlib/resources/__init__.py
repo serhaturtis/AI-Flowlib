@@ -7,7 +7,7 @@ from flowlib.resources.decorators.decorators import (
     resource, model_config, prompt, config,
     llm_config, database_config, vector_db_config,
     cache_config, storage_config, embedding_config,
-    graph_db_config, message_queue_config
+    graph_db_config, message_queue_config, agent_profile_config
 )
 from flowlib.resources.models.model_resource import ModelResource
 from flowlib.resources.models.template_resource import TemplateResource, TemplateVariableConfig
@@ -31,6 +31,7 @@ __all__ = [
     'embedding_config',
     'graph_db_config',
     'message_queue_config',
+    'agent_profile_config',
     'ModelResource',
     'TemplateResource',
     'TemplateVariableConfig',

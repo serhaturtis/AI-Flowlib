@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Run the Flowlib Agent REPL - an interactive development environment."""
 
+import argparse
 import asyncio
-import sys
-import os
-import subprocess
-import time
-import signal
 import atexit
+import logging
+import os
+import signal
 import socket
+import subprocess
+import sys
+import time
 import urllib.request
+from typing import Any, Optional, cast
 
 # Add the project to the Python path (accounting for apps/ directory)
 apps_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,32 +20,18 @@ flowlib_root = os.path.dirname(apps_dir)  # Go up from apps/ to flowlib/
 project_root = os.path.dirname(flowlib_root)  # Go up to AI-Flowlib/
 sys.path.insert(0, project_root)
 
-from flowlib.agent.runners.repl import start_agent_repl
-from flowlib.agent.core import BaseAgent
-from flowlib.agent.models.config import AgentConfig
-from flowlib.resources.models.base import ResourceBase
-from flowlib.resources.decorators.decorators import model_config, embedding_config
-from flowlib.resources.models.config_resource import EmbeddingConfigResource
-from flowlib.resources.registry.registry import resource_registry
-# ResourceType no longer needed - using single-argument registry access
-from flowlib.providers import provider_registry
-# Providers are now loaded via auto-discovery from ~/.flowlib/configs/
-import logging
-from flowlib.resources.auto_discovery import discover_configurations
-from flowlib.agent.models.config import StatePersistenceConfig
-from flowlib.agent.components.memory.component import AgentMemoryConfig
-from flowlib.agent.components.memory.vector import VectorMemoryConfig
-from flowlib.agent.components.memory.knowledge import KnowledgeMemoryConfig
-from flowlib.agent.components.memory.working import WorkingMemoryConfig
-import argparse
+from flowlib.agent.components.memory.component import AgentMemoryConfig  # noqa: E402
+from flowlib.agent.components.memory.knowledge import KnowledgeMemoryConfig  # noqa: E402
+from flowlib.agent.components.memory.vector import VectorMemoryConfig  # noqa: E402
+from flowlib.agent.components.memory.working import WorkingMemoryConfig  # noqa: E402
+from flowlib.agent.models.config import AgentConfig, StatePersistenceConfig  # noqa: E402
+from flowlib.agent.runners.repl import start_agent_repl  # noqa: E402
+from flowlib.core.project import Project  # noqa: E402
+from flowlib.resources.registry.registry import resource_registry  # noqa: E402
+from flowlib.resources.models.agent_config_resource import AgentConfigResource  # noqa: E402
 
 # Import flows to ensure they get registered with the flow system
-# Note: Tool calling flow moved to tools package
-try:
-    from flowlib.agent.components.task_execution.calling import AgentToolCallingFlow
-except ImportError:
-    # Tool calling flow is being refactored - continue without it for now
-    pass
+# Note: Tool calling flow moved to tools package - removed unused import
 
 logger = logging.getLogger(__name__)
 
@@ -146,14 +135,14 @@ def manage_docker_services(action: str = "start", reset: bool = False) -> bool:
                     # Also verify Bolt protocol is ready
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(1)
-                    result = sock.connect_ex(('localhost', 7687))
+                    connection_result = sock.connect_ex(('localhost', 7687))
                     sock.close()
-                    if result == 0:
+                    if connection_result == 0:
                         print("  ✓ Neo4j is ready")
                         # Give Neo4j a bit more time to fully initialize
                         time.sleep(3)
                         break
-                except:
+                except (urllib.error.URLError, socket.error, OSError, ConnectionRefusedError):
                     pass
                 
                 if i == max_retries - 1:
@@ -170,7 +159,7 @@ def manage_docker_services(action: str = "start", reset: bool = False) -> bool:
                     if response.getcode() == 200:
                         print("  ✓ ChromaDB is ready")
                         break
-                except:
+                except (urllib.error.URLError, socket.error, OSError, ConnectionRefusedError):
                     pass
                 
                 if i == 59:
@@ -225,7 +214,11 @@ def manage_docker_services(action: str = "start", reset: bool = False) -> bool:
                 logger.warning("Failed to stop services")
                 
             return stop_success
-            
+
+        else:
+            logger.error(f"Invalid action: {action}. Must be 'start' or 'stop'")
+            return False
+
     except subprocess.CalledProcessError as e:
         logger.error(f"Docker command failed: {e}")
         if e.stderr:
@@ -237,7 +230,7 @@ def manage_docker_services(action: str = "start", reset: bool = False) -> bool:
 
 
 # Configure flowlib logging to reduce noise in REPL
-def configure_flowlib_logging(quiet_mode: bool = True):
+def configure_flowlib_logging(quiet_mode: bool = True) -> None:
     """Configure logging levels for clean REPL output.
     
     Args:
@@ -296,21 +289,29 @@ logger = logging.getLogger(__name__)
 # No hardcoded configurations in the code!
 
 
-async def setup_providers():
-    """Trigger auto-discovery to load providers from ~/.flowlib/configs/
-    
+async def setup_providers(project_path: Optional[str] = None) -> None:
+    """Load project configurations and providers.
+
     This replaces manual provider setup with the proper configuration system.
     Providers are configured via:
-    1. Configuration files in ~/.flowlib/configs/
-    2. Role assignments in ~/.flowlib/roles/assignments.py
+    1. Configuration files in project's .flowlib/configs/
+    2. Role assignments in project's .flowlib/roles/assignments.py
+
+    Args:
+        project_path: Optional project path. If None, uses ~/.flowlib/
     """
-    # Trigger auto-discovery to load all configurations and role assignments
-    discover_configurations()
-    
-    logger.info("Provider setup complete - configurations loaded from ~/.flowlib/")
+    # Initialize and load project
+    project = Project(project_path)
+    project.initialize()  # Create dirs, copy templates if needed
+    project.load_configurations()  # Load all configs into registries
+
+    if project_path:
+        logger.info(f"Provider setup complete - configurations loaded from {project_path}/.flowlib/")
+    else:
+        logger.info("Provider setup complete - configurations loaded from ~/.flowlib/")
 
 
-async def setup_model_resources():
+async def setup_model_resources() -> None:
     """Set up model resources for the agent."""
     # The @model decorators automatically register the resources
     # We just need to ensure they're available
@@ -330,8 +331,16 @@ async def setup_model_resources():
         logger.warning(f"Embedding model not found: {e}")
 
 
-async def main(persona=None):
-    """Run the Flowlib Agent REPL."""
+async def main(agent_config_name: str = "default-agent-config",
+               custom_persona: Optional[str] = None,
+               project_path: Optional[str] = None) -> int:
+    """Run the Flowlib Agent REPL.
+
+    Args:
+        agent_config_name: Name of the agent configuration to use (from resource registry)
+        custom_persona: Optional custom persona to override the config's persona
+        project_path: Optional project path. If None, uses ~/.flowlib/
+    """
     print("🤖 Flowlib Agent - Interactive REPL")
     print("=" * 60)
     print()
@@ -355,19 +364,71 @@ async def main(persona=None):
     print()
     print("Type 'exit' or 'quit' to leave the REPL.")
     print("=" * 60)
-    
-    # Set up providers manually and model resources
-    await setup_providers()
+
+    # Set up providers and model resources
+    await setup_providers(project_path)
     await setup_model_resources()
-    
-    # Auto-discovery will load role assignments that map model names to providers
-    # No need to manually ensure models exist - the system will fail cleanly if they don't
-    
-    # Use provided persona directly
-    agent_persona = persona
+
+    # Get agent configuration from resource registry
+    try:
+        from flowlib.config.role_manager import role_manager
+        # Try to resolve through role assignment first
+        try:
+            actual_config_name = role_manager.get_role_assignment(agent_config_name)
+            if actual_config_name:
+                agent_config_resource = resource_registry.get(actual_config_name)
+                logger.info(f"Loaded agent config '{agent_config_name}' -> '{actual_config_name}'")
+            else:
+                # No role assignment, try direct lookup
+                agent_config_resource = resource_registry.get(agent_config_name)
+                logger.info(f"Loaded agent config '{agent_config_name}' directly")
+        except Exception:
+            # Direct lookup failed, try again
+            agent_config_resource = resource_registry.get(agent_config_name)
+            logger.info(f"Loaded agent config '{agent_config_name}' directly")
+    except Exception as e:
+        logger.error(f"Could not load agent configuration '{agent_config_name}': {e}")
+
+        # Show available agent configs for debugging
+        try:
+            available_configs = [name for name in resource_registry.list() if 'agent-config' in name.lower()]
+            logger.info(f"Available agent configs: {available_configs}")
+        except Exception:
+            logger.debug("Could not list available agent configs")
+
+        logger.info("Using minimal default configuration instead")
+        # Create a minimal default configuration
+        agent_config_resource = None
+
+    # Extract configuration values from the resource
+    if agent_config_resource:
+        # Cast to AgentConfigResource for proper type checking
+        config_resource = cast(AgentConfigResource, agent_config_resource)
+        agent_persona = custom_persona or config_resource.persona
+        profile_name = config_resource.profile_name
+        model_name = config_resource.model_name
+        llm_name = config_resource.llm_name
+        temperature = config_resource.temperature
+        max_iterations = config_resource.max_iterations
+        enable_memory = config_resource.enable_memory
+        enable_learning = config_resource.enable_learning
+    else:
+        # Fallback defaults
+        agent_persona = custom_persona or "A helpful assistant"
+        profile_name = "default-agent-profile"
+        model_name = "default-model"
+        llm_name = "default-llm"
+        temperature = 0.7
+        max_iterations = 10
+        enable_memory = True
+        enable_learning = True
+
+    logger.info(f"Using agent configuration: {agent_config_name}")
+    logger.info(f"Agent profile: {profile_name}")
+
+    logger.info(f"Persona: {agent_persona[:100]}..." if len(agent_persona) > 100 else f"Persona: {agent_persona}")
     
     # Configure state persistence for REPL
-    
     state_config = StatePersistenceConfig(
         persistence_type="file",
         base_path="./repl_states",
@@ -376,34 +437,47 @@ async def main(persona=None):
         save_frequency="cycle",  # Save after each planning-execution cycle
         max_states=10  # Keep last 10 states per task
     )
-    
-    
-    memory_config = AgentMemoryConfig(
-        working_memory=WorkingMemoryConfig(default_ttl_seconds=3600),
-        vector_memory=VectorMemoryConfig(
-            vector_provider_config="default-vector-db",
-            embedding_provider_config="default-embedding"
-        ),
-        knowledge_memory=KnowledgeMemoryConfig(
-            graph_provider_config="default-graph-db"
-        ),
-        fusion_llm_config="default-llm",
-        store_execution_history=True
-    )
-    
-    # Create agent configuration with consolidated parameters
+
+    # Configure memory based on agent config
+    if enable_memory:
+        memory_config = AgentMemoryConfig(
+            working_memory=WorkingMemoryConfig(default_ttl_seconds=3600),
+            vector_memory=VectorMemoryConfig(
+                vector_provider_config="default-vector-db",
+                embedding_provider_config="default-embedding"
+            ),
+            knowledge_memory=KnowledgeMemoryConfig(
+                graph_provider_config="default-graph-db"
+            ),
+            fusion_llm_config=llm_name,
+            store_execution_history=True
+        )
+    else:
+        memory_config = AgentMemoryConfig(
+            working_memory=WorkingMemoryConfig(default_ttl_seconds=3600),
+            vector_memory=VectorMemoryConfig(),
+            knowledge_memory=KnowledgeMemoryConfig(),
+            fusion_llm_config="default-llm",
+            store_execution_history=False
+        )
+
+    # Create agent configuration with values from agent config resource
     config = AgentConfig(
         name="FlowlibAgent",
-        provider_name="default-llm",
+        provider_name=llm_name,
         persona=agent_persona,
+        profile_name=profile_name,  # Agent profile for tool access
         task_description="Interactive REPL development assistant",
-        # Task decomposer settings (consolidated from PlannerConfig)
-        model_name="default-model",
+        model_name=model_name,
         task_decomposer_max_tokens=1024,
         task_decomposer_temperature=0.2,
-        # Memory configuration (required)
+        temperature=temperature,
+        max_iterations=max_iterations,
+        enable_memory=enable_memory,
+        enable_learning=enable_learning,
+        # Memory configuration
         memory=memory_config,
-        # Other configs
+        # State configuration
         state_config=state_config
     )
     
@@ -414,6 +488,8 @@ async def main(persona=None):
         history_file=".flowlib_repl_history.txt"
     )
 
+    return 0
+
 
 if __name__ == "__main__":
     
@@ -422,11 +498,15 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_repl.py                    # Start the interactive REPL (quiet mode)
-  python run_repl.py --verbose          # Start with verbose logging
-  python run_repl.py --debug            # Start with debug logging (most verbose)
-  python run_repl.py --simple           # Start with minimal configuration
-  python run_repl.py --history my.txt   # Use custom history file
+  python run_repl.py                                        # Use default agent config
+  python run_repl.py --agent-config creative-agent         # Use creative agent
+  python run_repl.py --project /path/to/project             # Use project-specific configs
+  python run_repl.py --project . --agent-config musician   # Use current dir project
+  python run_repl.py --verbose                              # Start with verbose logging
+  python run_repl.py --debug                                # Start with debug logging
+  python run_repl.py --simple                               # Start with minimal configuration
+  python run_repl.py --history my.txt                       # Use custom history file
+  python run_repl.py --persona "Custom persona override"   # Override agent's persona
 
 The REPL provides an interactive environment for:
   - Exploring and understanding the Flowlib framework
@@ -439,14 +519,15 @@ Logging modes:
   - --verbose: Shows flowlib INFO messages and above
   - --debug: Shows all flowlib DEBUG messages (very verbose)
 
-Note: Configure your models and providers in ~/.flowlib directory.
+Note: Configure your models, providers, and agents in ~/.flowlib/ or project's .flowlib/ directory.
+Available agent configs depend on your project configuration.
 """
     )
     
     parser.add_argument(
         "--simple",
         action="store_true",
-        help="Start with minimal configuration (no pre-loaded TODOs or custom persona)"
+        help="Start with minimal configuration (no pre-loaded TODOs)"
     )
     
     parser.add_argument(
@@ -457,10 +538,22 @@ Note: Configure your models and providers in ~/.flowlib directory.
     )
     
     parser.add_argument(
+        "--agent-config",
+        type=str,
+        default="default-agent-config",
+        help="Agent configuration to use (default: default-agent-config)"
+    )
+
+    parser.add_argument(
         "--persona",
         type=str,
-        required=True,
-        help="Persona for the agent (required)"
+        help="Override the agent config's persona (optional - only use if you need to customize)"
+    )
+
+    parser.add_argument(
+        "--project",
+        type=str,
+        help="Project path containing .flowlib/ directory (default: uses ~/.flowlib/)"
     )
     
     parser.add_argument(
@@ -497,13 +590,13 @@ Note: Configure your models and providers in ~/.flowlib directory.
             print("You may need to check Docker installation or ports.")
     
     # Register cleanup handler
-    def cleanup():
+    def cleanup() -> None:
         manage_docker_services("stop")
     
     atexit.register(cleanup)
     
     # Handle Ctrl+C gracefully
-    def signal_handler(sig, frame):
+    def signal_handler(sig: int, frame: Optional[Any]) -> None:
         print("\nReceived interrupt signal, shutting down...")
         cleanup()
         sys.exit(0)
@@ -527,7 +620,11 @@ Note: Configure your models and providers in ~/.flowlib directory.
             ))
         else:
             # Full mode with custom configuration
-            asyncio.run(main(persona=args.persona))
+            asyncio.run(main(
+                agent_config_name=args.agent_config,
+                custom_persona=args.persona,
+                project_path=args.project
+            ))
     finally:
         # Ensure cleanup happens even on exceptions
         cleanup()

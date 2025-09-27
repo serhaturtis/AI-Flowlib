@@ -6,14 +6,10 @@ environment switching without restart.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
-from pathlib import Path
+from typing import Any, Dict, List, Optional, cast
+from flowlib.resources.models.base import ResourceBase
 
-from flowlib.core.registry.registry import BaseRegistry
 from flowlib.resources.registry.registry import resource_registry
-from flowlib.providers.core.registry import provider_registry
-from flowlib.flows.registry.registry import flow_registry
-from flowlib.agent.registry import agent_registry
 from flowlib.resources.models.constants import ResourceType
 from flowlib.resources.models.config_resource import (
     LLMConfigResource, DatabaseConfigResource, VectorDBConfigResource,
@@ -33,7 +29,7 @@ class RegistryBridge:
     runtime environment switching and configuration management.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the registry bridge."""
         # Track environment resources for cleanup
         self._environment_resources: Dict[str, List[tuple]] = {}
@@ -186,7 +182,15 @@ class RegistryBridge:
                 name=canonical_name,
                 type=config_type,
                 provider_type=provider_type,
-                settings=final_settings  # Unified: always pass as settings dict
+                settings=final_settings,  # Unified: always pass as settings dict
+                n_threads=final_settings.get('n_threads'),
+                n_batch=final_settings.get('n_batch'),
+                use_gpu=final_settings.get('use_gpu'),
+                n_gpu_layers=final_settings.get('n_gpu_layers'),
+                chat_format=final_settings.get('chat_format'),
+                verbose=final_settings.get('verbose'),
+                timeout=final_settings.get('timeout'),
+                max_concurrent_models=final_settings.get('max_concurrent_models')
             )
         elif config_type == "model_config":
             # Model configuration - dynamically determine the correct model class
@@ -203,27 +207,42 @@ class RegistryBridge:
                     model_instance = model_class(**model_settings)
                     # Register as ResourceBase
                     resource_registry.register(
-                        name=name,
-                        resource_type=ResourceType.MODEL,
-                        resource_class=type(model_instance),
-                        settings=model_instance.model_dump()
+                        name=canonical_name,
+                        obj=model_instance,
+                        resource_type=ResourceType.MODEL
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to create model instance for {name}: {e}")
+                    logger.warning(f"Failed to create model instance for {canonical_name}: {e}")
                     # Fallback to ModelResource wrapper
+                    fallback_model = ModelResource(
+                        name=canonical_name,
+                        type=ResourceType.MODEL,
+                        provider_type=provider_type,
+                        model_path=model_settings.get('model_path'),
+                        model_name=model_settings.get('model_name', canonical_name),
+                        model_type=model_settings.get('model_type'),
+                        config=model_settings
+                    )
                     resource_registry.register(
-                        name=name,
-                        resource_type=ResourceType.MODEL,
-                        resource_class=ModelResource,
-                        settings={"provider_type": provider_type, "config": model_settings}
+                        name=canonical_name,
+                        obj=fallback_model,
+                        resource_type=ResourceType.MODEL
                     )
             else:
                 # Unknown provider type - use generic ModelResource wrapper
+                generic_model = ModelResource(
+                    name=canonical_name,
+                    type=ResourceType.MODEL,
+                    provider_type=provider_type,
+                    model_path=model_settings.get('model_path'),
+                    model_name=model_settings.get('model_name', canonical_name),
+                    model_type=model_settings.get('model_type'),
+                    config=model_settings
+                )
                 resource_registry.register(
-                    name=name,
-                    resource_type=ResourceType.MODEL,
-                    resource_class=ModelResource,
-                    settings={"provider_type": provider_type, "config": model_settings}
+                    name=canonical_name,
+                    obj=generic_model,
+                    resource_type=ResourceType.MODEL
                 )
         elif config_type == "database_config":
             return DatabaseConfigResource(
@@ -277,7 +296,7 @@ class RegistryBridge:
         else:
             raise ValueError(f"Unsupported configuration type: {config_type}")
     
-    def _get_model_class_for_provider(self, provider_type: str):
+    def _get_model_class_for_provider(self, provider_type: str) -> Optional[type]:
         """Get the appropriate model class for a provider type.
         
         Args:
@@ -301,7 +320,8 @@ class RegistryBridge:
             # Dynamically import the model class
             module_path, class_name = class_path.rsplit('.', 1)
             module = __import__(module_path, fromlist=[class_name])
-            return getattr(module, class_name)
+            result = getattr(module, class_name)
+            return cast(Optional[type], result)
         except (ImportError, AttributeError) as e:
             logger.warning(f"Failed to import model class for provider '{provider_type}': {e}")
             return None
@@ -317,7 +337,6 @@ class RegistryBridge:
             Dictionary of extracted settings
         """
         import ast
-        import re
         
         settings = {}
         
@@ -509,7 +528,9 @@ class RegistryBridge:
             if config_type == "model_config":
                 await self._validate_model_config_registration(config_id, config_data, environment)
             
-            self._register_config_from_data(environment, config_id, config_data)
+            # Use config_type as role_name and config_id as canonical_name
+            role_name = config_type.replace('_', '-')
+            self._register_config_from_data(environment, role_name, config_id, config_data)
             logger.info(f"Registered {config_type} configuration {config_id} for environment {environment}")
             
         except Exception as e:
@@ -546,7 +567,7 @@ class RegistryBridge:
         Returns:
             Dictionary mapping config names to their data, categorized by provider and model configs
         """
-        configurations = {}
+        configurations: Dict[str, Dict[str, Any]] = {}
         
         if environment not in self._environment_resources:
             return configurations
@@ -581,7 +602,7 @@ class RegistryBridge:
         
         return configurations
     
-    def _extract_settings_from_resource(self, resource: Any) -> Dict[str, Any]:
+    def _extract_settings_from_resource(self, resource: ResourceBase) -> Dict[str, Any]:
         """Extract settings from a resource object.
         
         Args:
@@ -662,7 +683,7 @@ class RegistryBridge:
         Returns:
             Dictionary mapping role names to config IDs
         """
-        assignments = {}
+        assignments: dict[str, str] = {}
         
         if environment not in self._environment_resources:
             return assignments
@@ -683,9 +704,6 @@ class RegistryBridge:
             True if data is valid, False otherwise
         """
         try:
-            if not isinstance(repository_data, dict):
-                return False
-            
             if "role_assignments" not in repository_data or "configurations" not in repository_data:
                 return False
             

@@ -4,20 +4,21 @@ Following flowlib patterns from flows and resources decorators.
 """
 
 import logging
-from typing import Type, Optional, Dict, Any, List, Callable
+from typing import Type, Optional, List, Callable, cast
 from .models import ToolMetadata, ToolExecutionContext
-from .interfaces import ToolInterface, ToolFactory
+from .interfaces import ToolInterface, AgentToolInterface, AgentToolFactory
+from .registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
 
-def _get_tool_registry():
+def _get_tool_registry() -> 'ToolRegistry':
     """Lazy import of tool registry to avoid circular dependencies."""
     from .registry import tool_registry
     return tool_registry
 
 
-class SimpleToolFactory(ToolFactory):
+class SimpleToolFactory(AgentToolFactory):
     """Simple factory for decorator-registered tools.
     
     Creates a factory wrapper around tool classes registered via @tool.
@@ -33,19 +34,25 @@ class SimpleToolFactory(ToolFactory):
         self.tool_class = tool_class
         self.metadata = metadata
         
-    def create_tool(self, context: Optional[ToolExecutionContext] = None) -> ToolInterface:
+    def __call__(self) -> AgentToolInterface:
+        """Create tool instance (AgentToolFactory protocol method)."""
+        return cast(AgentToolInterface, self.tool_class())
+
+    def create_tool(self, context: Optional[ToolExecutionContext] = None) -> AgentToolInterface:
         """Create tool instance."""
-        return self.tool_class()
-        
+        return cast(AgentToolInterface, self.tool_class())
+
     def get_description(self) -> str:
         """Get tool description."""
         return self.metadata.description
 
 
-def tool(name: str = None, category: str = "general", description: str = None, 
+def tool(name: Optional[str] = None, tool_category: str = "generic", description: Optional[str] = None,
          aliases: Optional[List[str]] = None, tags: Optional[List[str]] = None,
          version: str = "1.0.0", max_execution_time: Optional[int] = None,
-         is_safe: bool = True):
+         allowed_roles: Optional[List[str]] = None,
+         denied_roles: Optional[List[str]] = None,
+         requires_confirmation: bool = False) -> Callable[[type], type]:
     """Register a class as a tool.
     
     This decorator automatically registers tool classes with the global
@@ -74,7 +81,7 @@ def tool(name: str = None, category: str = "general", description: str = None,
         TypeError: If class doesn't inherit from Tool
         RuntimeError: If registry not initialized
     """
-    def decorator(cls):
+    def decorator(cls: type) -> type:
         # Validate tool class implements interface
         if not hasattr(cls, 'execute') or not hasattr(cls, 'get_name') or not hasattr(cls, 'get_description'):
             raise TypeError(f"Tool '{cls.__name__}' must implement ToolInterface protocol")
@@ -99,18 +106,20 @@ def tool(name: str = None, category: str = "general", description: str = None,
         tool_metadata = ToolMetadata(
             name=tool_name,
             description=tool_description,
-            category=category,
+            tool_category=tool_category,
             aliases=aliases or [],
             tags=tags or [],
             version=version,
             max_execution_time=max_execution_time,
-            is_safe=is_safe
+            allowed_roles=allowed_roles or [],
+            denied_roles=denied_roles or [],
+            requires_confirmation=requires_confirmation
         )
         
         # Store metadata on class
-        cls.__tool_name__ = tool_name
-        cls.__tool_category__ = category
-        cls.__tool_metadata__ = tool_metadata
+        cls.__tool_name__ = tool_name  # type: ignore[attr-defined]
+        cls.__tool_category__ = tool_category  # type: ignore[attr-defined]
+        cls.__tool_metadata__ = tool_metadata  # type: ignore[attr-defined]
         
         # Create factory for this tool
         factory = SimpleToolFactory(cls, tool_metadata)
@@ -122,7 +131,7 @@ def tool(name: str = None, category: str = "general", description: str = None,
             metadata=tool_metadata
         )
         
-        logger.info(f"Registered tool '{tool_name}' via decorator (category: {category})")
+        logger.info(f"Registered tool '{tool_name}' via decorator (category: {tool_category})")
         
         # Return class unchanged
         return cls

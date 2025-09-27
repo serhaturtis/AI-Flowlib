@@ -1,7 +1,7 @@
 """Agent registry for tracking and accessing agent classes."""
 
 import logging
-from typing import Type, Optional, List, Dict, Any
+from typing import Type, Optional, List, Dict, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 from flowlib.core.registry.registry import BaseRegistry
@@ -13,23 +13,23 @@ class AgentInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
     
     agent_class: Type = Field(..., description="The agent class")
-    metadata: dict = Field(default_factory=dict, description="Agent metadata")
+    metadata: Dict[str, Union[str, int, bool]] = Field(default_factory=dict, description="Agent metadata")
 
 
 class AgentRegistry(BaseRegistry[Type]):
     """Registry for agent classes."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the agent registry."""
-        self._agents: dict[str, AgentInfo] = {}
+        self._agents: Dict[str, AgentInfo] = {}
 
-    def register(self, name: str, agent_class: Type, metadata: Optional[dict] = None) -> None:
+    def register(self, name: str, obj: Type, **metadata: Union[str, int, bool]) -> None:
         """Register an agent class.
 
         Args:
             name: The unique name for the agent.
-            agent_class: The agent class (or wrapper class) to register.
-            metadata: Optional dictionary of metadata associated with the agent.
+            obj: The agent class (or wrapper class) to register.
+            **metadata: Metadata associated with the agent.
 
         Raises:
             ValueError: If an agent with the same name is already registered.
@@ -41,10 +41,10 @@ class AgentRegistry(BaseRegistry[Type]):
             # raise ValueError(f"Agent '{name}' is already registered.")
 
         self._agents[name] = AgentInfo(
-            agent_class=agent_class,
-            metadata=metadata or {}
+            agent_class=obj,
+            metadata=metadata
         )
-        class_name = getattr(agent_class, '__name__', str(agent_class))
+        class_name = getattr(obj, '__name__', str(obj))
         logger.debug(f"Registered agent: {name} (Class: {class_name})")
     
     # BaseRegistry interface implementation
@@ -82,7 +82,7 @@ class AgentRegistry(BaseRegistry[Type]):
         """
         return name in self._agents
     
-    def list(self, filter_criteria: Optional[Dict[str, Any]] = None) -> List[str]:
+    def list(self, filter_criteria: Optional[Dict[str, Union[str, int, bool]]] = None) -> List[str]:
         """List registered agents matching criteria (BaseRegistry interface).
         
         Args:
@@ -104,7 +104,7 @@ class AgentRegistry(BaseRegistry[Type]):
         
         return filtered_agents
     
-    def _matches_criteria(self, agent_name: str, criteria: Dict[str, Any]) -> bool:
+    def _matches_criteria(self, agent_name: str, criteria: Dict[str, Union[str, int, bool]]) -> bool:
         """Check if an agent matches the given criteria.
         
         Args:
@@ -137,7 +137,7 @@ class AgentRegistry(BaseRegistry[Type]):
         agent_info = self._agents.get(name)
         return agent_info.agent_class if agent_info else None
 
-    def get_agent_metadata(self, name: str) -> Optional[dict]:
+    def get_agent_metadata(self, name: str) -> Optional[Dict[str, Union[str, int, bool]]]:
         """Get the metadata for a registered agent.
 
         Args:
@@ -189,7 +189,7 @@ class AgentRegistry(BaseRegistry[Type]):
         
         return False
     
-    def update(self, name: str, obj: Type, **metadata) -> bool:
+    def update(self, name: str, obj: Type, **metadata: Union[str, int, bool]) -> bool:
         """Update or replace an existing agent registration.
         
         Args:
@@ -207,12 +207,12 @@ class AgentRegistry(BaseRegistry[Type]):
             self.remove(name)
             
             # Re-register
-            self.register(name, obj, metadata)
+            self.register(name, obj, **metadata)
             logger.debug(f"Updated existing agent '{name}' in registry")
             return True
         else:
             # New registration
-            self.register(name, obj, metadata)
+            self.register(name, obj, **metadata)
             logger.debug(f"Registered new agent '{name}' in registry")
             return False
 

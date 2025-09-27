@@ -2,7 +2,7 @@
 Configuration loading utilities for remote agent components.
 """
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 import logging
 import os
 from typing import Optional

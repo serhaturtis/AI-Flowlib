@@ -1,21 +1,24 @@
 """Agent module for autonomous AI agents with memory, planning, and learning capabilities."""
 
-from flowlib.agent.core.base_agent import BaseAgent
+# BaseAgent removed from init to avoid circular imports
+# Import BaseAgent directly: from flowlib.agent.core.base_agent import BaseAgent
 
 # Import debriefing components to trigger decorator registration
 from flowlib.agent.components.task.debriefing import flows, prompts
 
+
 # Create utils alias for test compatibility
 try:
-    from flowlib.utils.agent import model_config
+    from flowlib.utils.agent.config import initialize_resources_from_config
     class AgentUtils:
         """Utility namespace for agent utilities."""
-        model_config = model_config
+        initialize_resources_from_config = initialize_resources_from_config
     utils = AgentUtils()
 except ImportError:
-    utils = None
+    raise RuntimeError("AgentUtils not available - required agent utilities missing")
 
 __all__ = [
-    "BaseAgent",
     "utils",
+    "flows",
+    "prompts",
 ]

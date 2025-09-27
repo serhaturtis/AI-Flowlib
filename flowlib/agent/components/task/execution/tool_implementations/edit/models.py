@@ -24,15 +24,15 @@ class EditParameters(StrictBaseModel):
     
     @field_validator('file_path')
     @classmethod
-    def validate_file_path(cls, v):
+    def validate_file_path(cls, v: str) -> str:
         """Validate file path."""
         if not v or not v.strip():
             raise ValueError("File path cannot be empty")
         return v.strip()
-    
+
     @field_validator('operations')
     @classmethod
-    def validate_operations(cls, v):
+    def validate_operations(cls, v: List[EditOperation]) -> List[EditOperation]:
         """Validate edit operations."""
         if not v:
             raise ValueError("At least one edit operation required")

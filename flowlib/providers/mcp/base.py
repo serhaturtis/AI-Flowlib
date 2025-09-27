@@ -1,9 +1,7 @@
 """Base classes and models for MCP integration."""
 
-import json
-import asyncio
 import logging
-from typing import Dict, Any, Optional, List, Union, Protocol
+from typing import Dict, Any, Optional, List, Protocol, Type, Callable
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 from flowlib.providers.core.base import Provider, ProviderSettings
@@ -41,7 +39,7 @@ class MCPToolInputSchema(BaseModel):
     required: List[str] = Field(default_factory=list)
     
     @classmethod
-    def from_pydantic_model(cls, model_class) -> 'MCPToolInputSchema':
+    def from_pydantic_model(cls, model_class: Type[BaseModel]) -> 'MCPToolInputSchema':
         """Create schema from Pydantic model."""
         schema_raw = model_class.model_json_schema()
         # Filter schema to only include fields expected by PydanticSchemaData
@@ -212,7 +210,7 @@ class MCPConnection(Protocol):
 class MCPError(Exception):
     """Base MCP error."""
     
-    def __init__(self, message: str, code: int = -1, data: Optional[Dict] = None):
+    def __init__(self, message: str, code: int = -1, data: Optional[Dict[str, Any]] = None):
         super().__init__(message)
         self.message = message
         self.code = code
@@ -290,10 +288,11 @@ class BaseMCPClient:
                 }
             }
         )
-        
+
+        assert self.connection is not None, "MCP connection not established"
         await self.connection.send(request)
         response = await self.connection.receive()
-        
+
         if response.error:
             raise MCPError(f"Handshake failed: {response.error}")
             
@@ -350,7 +349,7 @@ class BaseMCPClient:
             
         return response.result
     
-    async def _send_request(self, method: str, params: Optional[Dict] = None) -> MCPMessage:
+    async def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> MCPMessage:
         """Send request and wait for response."""
         if not self.connection:
             raise MCPConnectionError("Not connected")
@@ -399,16 +398,16 @@ class BaseMCPServer:
         )
         self._tools: Dict[str, MCPTool] = {}
         self._resources: Dict[str, MCPResource] = {}
-        self._tool_handlers: Dict[str, callable] = {}
-        self._resource_handlers: Dict[str, callable] = {}
-        
-    def register_tool(self, tool: MCPTool, handler: callable) -> None:
+        self._tool_handlers: Dict[str, Callable[..., Any]] = {}
+        self._resource_handlers: Dict[str, Callable[..., Any]] = {}
+
+    def register_tool(self, tool: MCPTool, handler: Callable[..., Any]) -> None:
         """Register a tool with its handler."""
         self._tools[tool.name] = tool
         self._tool_handlers[tool.name] = handler
         logger.debug(f"Registered MCP tool: {tool.name}")
     
-    def register_resource(self, resource: MCPResource, handler: callable) -> None:
+    def register_resource(self, resource: MCPResource, handler: Callable[..., Any]) -> None:
         """Register a resource with its handler."""
         self._resources[resource.uri] = resource
         self._resource_handlers[resource.uri] = handler
@@ -543,7 +542,7 @@ class BaseMCPServer:
         logger.info(f"MCP server '{self.name}' stopped")
 
 
-class MCPProviderSettings(BaseModel):
+class MCPProviderSettings(ProviderSettings):
     """Settings for MCP provider."""
     model_config = ConfigDict(frozen=True, extra="forbid")
     
@@ -564,7 +563,7 @@ class MCPProviderSettings(BaseModel):
     auth_token: Optional[str] = None
 
 
-class MCPProvider(Provider):
+class MCPProvider(Provider[MCPProviderSettings]):
     """Base MCP provider class."""
     
     def __init__(self, name: str = "mcp", provider_type: str = "mcp", settings: Optional[MCPProviderSettings] = None):

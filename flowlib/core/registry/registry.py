@@ -17,7 +17,7 @@ class BaseRegistry(ABC, Generic[T]):
     """
     
     @abstractmethod
-    def register(self, name: str, obj: T, **metadata) -> None:
+    def register(self, name: str, obj: T, **metadata: Any) -> None:
         """Register an object with the registry.
         
         Args:
@@ -28,7 +28,7 @@ class BaseRegistry(ABC, Generic[T]):
         pass
         
     @abstractmethod
-    def get(self, name: str, expected_type: Optional[Type] = None) -> T:
+    def get(self, name: str, expected_type: Optional[Type[Any]] = None) -> T:
         """Get an object by name with optional type checking.
         
         Args:
@@ -89,7 +89,7 @@ class BaseRegistry(ABC, Generic[T]):
         pass
     
     @abstractmethod
-    def update(self, name: str, obj: T, **metadata) -> bool:
+    def update(self, name: str, obj: T, **metadata: Any) -> bool:
         """Update or replace an existing registration.
         
         Args:
@@ -103,7 +103,7 @@ class BaseRegistry(ABC, Generic[T]):
         pass
     
     # Alias support methods (optional implementation)
-    def register_with_aliases(self, canonical_name: str, obj: T, aliases: Optional[List[str]] = None, **metadata) -> None:
+    def register_with_aliases(self, canonical_name: str, obj: T, aliases: Optional[List[str]] = None, **metadata: Any) -> None:
         """Register an object with canonical name and optional aliases.
         
         Args:

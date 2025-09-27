@@ -3,7 +3,8 @@
 import asyncio
 import time
 import logging
-from typing import Any, Dict, Optional, List, Callable, TypeVar, Tuple
+from typing import Any, Dict, Optional, List, Callable, TypeVar, Tuple, Generic, cast, Awaitable
+import types
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 from functools import wraps
@@ -14,7 +15,8 @@ from pydantic import BaseModel, Field, ConfigDict
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar('T')  # Input item type
+R = TypeVar('R')  # Result type
 
 
 class CacheStats(BaseModel):
@@ -91,7 +93,7 @@ class CacheEntry:
             return False
         return time.time() - self.created_at > self.ttl
     
-    def touch(self):
+    def touch(self) -> None:
         """Update access statistics."""
         self.last_accessed = time.time()
         self.access_count += 1
@@ -200,22 +202,22 @@ class LRUCache:
 
 class MemoryAnalytics:
     """Track memory access patterns and performance."""
-    
-    def __init__(self):
-        self.access_patterns = defaultdict(int)
-        self.retrieval_times = []
-        self.operation_counts = defaultdict(int)
-        self.error_counts = defaultdict(int)
+
+    def __init__(self) -> None:
+        self.access_patterns: Dict[str, int] = defaultdict(int)
+        self.retrieval_times: List[float] = []
+        self.operation_counts: Dict[str, int] = defaultdict(int)
+        self.error_counts: Dict[str, int] = defaultdict(int)
         self.start_time = time.time()
     
     def record_access(
-        self, 
-        operation: str, 
-        key: str, 
+        self,
+        operation: str,
+        key: str,
         duration: float,
         success: bool = True,
-        error_type: Optional[str] = None
-    ):
+        error_type: str = ""
+    ) -> None:
         """Record a memory access operation."""
         self.access_patterns[key] += 1
         self.retrieval_times.append(duration)
@@ -269,16 +271,21 @@ class FlowMetadataCache:
     
     def __init__(self, max_size: int = 500):
         self.cache = LRUCache(max_size=max_size, default_ttl=3600)  # 1 hour TTL
-        self._metadata_computer: Optional[Callable] = None
+        self._metadata_computer: Optional[Callable[..., Dict[str, Any]]] = None
     
-    def set_metadata_computer(self, computer: Callable):
+    def set_metadata_computer(self, computer: Callable[..., Dict[str, Any]]) -> None:
         """Set the function to compute metadata for flows."""
         self._metadata_computer = computer
     
-    def get_flow_metadata(self, flow_name: str, flow_obj: Any = None) -> Optional[FlowMetadata]:
+    def get_flow_metadata(self, flow_name: str, flow_obj: object = None) -> Optional[FlowMetadata]:
         """Get flow metadata with caching."""
-        metadata = self.cache.get(flow_name)
-        
+        cached_metadata = self.cache.get(flow_name)
+
+        # Ensure cached value is correct type
+        metadata: Optional[FlowMetadata] = None
+        if cached_metadata is not None and isinstance(cached_metadata, FlowMetadata):
+            metadata = cached_metadata
+
         if metadata is None and flow_obj and self._metadata_computer:
             # Compute and cache metadata
             raw_metadata = self._metadata_computer(flow_obj)
@@ -297,24 +304,24 @@ class FlowMetadataCache:
         
         return metadata
     
-    def invalidate_flow(self, flow_name: str):
+    def invalidate_flow(self, flow_name: str) -> None:
         """Invalidate cached metadata for a flow."""
         self.cache.invalidate(flow_name)
 
 
-class BatchProcessor:
+class BatchProcessor(Generic[T, R]):
     """Batch processor for efficient bulk operations."""
-    
+
     def __init__(self, batch_size: int = 50, max_wait_time: float = 1.0):
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
-        self._pending_items: List[Tuple[Any, asyncio.Future]] = []
-        self._processor_task: Optional[asyncio.Task] = None
+        self._pending_items: List[Tuple[T, asyncio.Future[R], Callable[[List[T]], Awaitable[List[R]]]]] = []
+        self._processor_task: Optional[asyncio.Task[None]] = None
         self._last_flush = time.time()
-    
-    async def add_item(self, item: Any, processor: Callable) -> Any:
+
+    async def add_item(self, item: T, processor: Callable[[List[T]], Awaitable[List[R]]]) -> R:
         """Add item to batch and return result when processed."""
-        future = asyncio.Future()
+        future: asyncio.Future[R] = asyncio.Future()
         self._pending_items.append((item, future, processor))
         
         # Start processor if not running
@@ -323,11 +330,11 @@ class BatchProcessor:
         
         return await future
     
-    async def _process_batches(self):
+    async def _process_batches(self) -> None:
         """Process items in batches."""
         while True:
             # Wait for items or timeout
-            start_wait = time.time()
+            time.time()
             while (
                 len(self._pending_items) < self.batch_size and
                 time.time() - self._last_flush < self.max_wait_time
@@ -344,7 +351,7 @@ class BatchProcessor:
             await self._process_batch(batch)
             self._last_flush = time.time()
     
-    async def _process_batch(self, batch: List[Tuple[Any, asyncio.Future, Callable]]):
+    async def _process_batch(self, batch: List[Tuple[T, asyncio.Future[R], Callable[[List[T]], Awaitable[List[R]]]]]) -> None:
         """Process a single batch."""
         try:
             # Group by processor function
@@ -380,17 +387,18 @@ class BatchProcessor:
 class PerformanceMonitor:
     """Monitor performance of agent operations."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.operation_times: Dict[str, List[float]] = defaultdict(list)
         self.operation_counts: Dict[str, int] = defaultdict(int)
         self.error_counts: Dict[str, int] = defaultdict(int)
         self.memory_analytics = MemoryAnalytics()
+        self.start_time = time.time()
         
-    def time_operation(self, operation_name: str):
+    def time_operation(self, operation_name: str) -> 'OperationTimer':
         """Context manager for timing operations."""
         return OperationTimer(self, operation_name)
     
-    def record_operation(self, operation_name: str, duration: float, success: bool = True):
+    def record_operation(self, operation_name: str, duration: float, success: bool = True) -> None:
         """Record an operation's performance."""
         self.operation_times[operation_name].append(duration)
         self.operation_counts[operation_name] += 1
@@ -407,7 +415,7 @@ class PerformanceMonitor:
         if not times:
             raise ValueError(f"No timing data available for operation: {operation_name}")
         
-        times_sorted = sorted(times)
+        sorted(times)
         count = self.operation_counts[operation_name]
         errors = self.error_counts[operation_name]
         
@@ -459,21 +467,21 @@ class OperationTimer:
         self.start_time: Optional[float] = None
         self.success = True
     
-    def __enter__(self):
+    def __enter__(self) -> 'OperationTimer':
         self.start_time = time.time()
         return self
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[types.TracebackType]) -> None:
         if self.start_time:
             duration = time.time() - self.start_time
             success = exc_type is None
             self.monitor.record_operation(self.operation_name, duration, success)
     
-    async def __aenter__(self):
+    async def __aenter__(self) -> 'OperationTimer':
         self.start_time = time.time()
         return self
     
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[types.TracebackType]) -> None:
         if self.start_time:
             duration = time.time() - self.start_time
             success = exc_type is None
@@ -482,13 +490,13 @@ class OperationTimer:
 
 def cached(
     cache: LRUCache,
-    key_func: Optional[Callable] = None,
+    key_func: Optional[Callable[..., str]] = None,
     ttl: Optional[float] = None
-):
+) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Decorator for caching function results."""
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args: Any, **kwargs: Any) -> T:
             # Generate cache key
             if key_func:
                 cache_key = key_func(*args, **kwargs)
@@ -506,7 +514,7 @@ def cached(
             # Try cache first
             cached_result = cache.get(cache_key)
             if cached_result is not None:
-                return cached_result
+                return cast(T, cached_result)
             
             # Compute and cache result
             result = await func(*args, **kwargs)
@@ -526,12 +534,12 @@ class ParallelExecutor:
     
     async def execute_parallel(
         self,
-        operations: List[Callable],
-        *args,
-        **kwargs
+        operations: List[Callable[..., Any]],
+        *args: Any,
+        **kwargs: Any
     ) -> List[Any]:
         """Execute operations in parallel."""
-        async def bounded_operation(op):
+        async def bounded_operation(op: Callable[..., Any]) -> Any:
             async with self.semaphore:
                 self.active_tasks += 1
                 try:

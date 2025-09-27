@@ -5,7 +5,7 @@ based on the provider_type specified in the configuration.
 """
 
 import logging
-from typing import Dict, Type, Any, Optional
+from typing import Dict, Type, Optional, cast, Any
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Registry of provider specific implementations
 # This is separate from the provider_registry and helps with factory creation
-PROVIDER_IMPLEMENTATIONS: Dict[str, Dict[str, Type[Provider]]] = {
+PROVIDER_IMPLEMENTATIONS: Dict[str, Dict[str, Optional[Type[Provider[Any]]]]] = {
     "llm": {
         "llamacpp": None,  # Will be populated on import
         "llama": None,     # Will be populated on import
@@ -76,8 +76,8 @@ def create_provider(
     name: str,
     implementation: Optional[str] = None,
     register: bool = True,
-    **kwargs
-) -> Provider:
+    **kwargs: Any
+) -> Provider[Any]:
     """Create a provider based on the provider_type and optional implementation.
     
     Args:
@@ -113,7 +113,7 @@ def create_provider(
                 impl_registry[implementation.lower()] = provider_class
         
         if provider_class is None:
-            supported_implementations = list(impl_registry.keys())
+            list(impl_registry.keys())
             raise ProviderError(
                 message=f"Unsupported implementation {implementation} for provider type {provider_type}",
                 context=ErrorContext.create(
@@ -179,7 +179,7 @@ def create_provider(
         
         # Some providers handle provider_type internally
         if issubclass(provider_class, (GraphDBProvider, DBProvider)):
-            provider = provider_class(name=name, settings=final_settings_arg, **kwargs)
+            provider = cast(Provider[Any], provider_class(name=name, settings=final_settings_arg, **kwargs))
         else:
             provider = provider_class(name=name, settings=final_settings_arg, provider_type=provider_type, **kwargs)
         # Register if requested
@@ -211,8 +211,8 @@ async def create_and_initialize_provider(
     name: str,
     implementation: Optional[str] = None,
     register: bool = True,
-    **kwargs
-) -> Provider:
+    **kwargs: Any
+) -> Provider[Any]:
     """Create and initialize a provider.
     
     This is a convenience function that combines create_provider with initialization.
@@ -264,7 +264,7 @@ async def create_and_initialize_provider(
             cause=e
         )
 
-def _import_provider_class(provider_type: str, implementation: str) -> Type[Provider]:
+def _import_provider_class(provider_type: str, implementation: str) -> Type[Provider[Any]]:
     """Import a provider class by type and implementation.
     
     Args:
@@ -327,11 +327,9 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
     if provider_type not in provider_map or implementation not in provider_map[provider_type]:
         # Special handling for file persister as it might be in a different file
         if provider_type == "state_persister" and implementation == "file":
-            module_path = "flowlib.agent.persistence.file"
-            class_name = "FileStatePersister"
             try:
-                from ..agent.persistence.file import FileStatePersister
-                return FileStatePersister
+                from flowlib.agent.components.persistence.file import FileStatePersister
+                return cast(Type[Provider[Any]], FileStatePersister)
             except ImportError as e:
                 logger.error(f"Failed to import provider class for {provider_type}/{implementation}: {str(e)}")
                 raise
@@ -341,66 +339,65 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
     # Get the module path and class name
     # Handle potential special case for file persister path
     if provider_type == "state_persister" and implementation == "file":
-         module_path = "flowlib.agent.persistence.file"
-         class_name = "FileStatePersister"
+         pass
     else:
-         module_path = module_map[provider_type]
-         class_name = provider_map[provider_type][implementation]
+         module_map[provider_type]
+         provider_map[provider_type][implementation]
     
     try:
         # Use direct imports for each provider type/implementation
         if provider_type == "llm":
             if implementation == "llamacpp":
                 from ..llm.llama_cpp.provider import LlamaCppProvider
-                return LlamaCppProvider
+                return cast(Type[Provider[Any]], LlamaCppProvider)
         elif provider_type == "database":
             if implementation == "postgresql":
                 from ..db.postgres.provider import PostgreSQLProvider
-                return PostgreSQLProvider
+                return cast(Type[Provider[Any]], PostgreSQLProvider)
             elif implementation == "mongodb":
                 from ..db.mongodb.provider import MongoDBProvider
-                return MongoDBProvider
+                return cast(Type[Provider[Any]], MongoDBProvider)
             elif implementation == "sqlite":
                 from ..db.sqlite.provider import SQLiteDBProvider
-                return SQLiteDBProvider
+                return cast(Type[Provider[Any]], SQLiteDBProvider)
         elif provider_type == "vector_db":
             if implementation == "chromadb":
                 from ..vector.chroma.provider import ChromaDBProvider
-                return ChromaDBProvider
+                return cast(Type[Provider[Any]], ChromaDBProvider)
             elif implementation == "pinecone":
                 from ..vector.pinecone.provider import PineconeProvider
-                return PineconeProvider
+                return cast(Type[Provider[Any]], PineconeProvider)
             elif implementation == "qdrant":
                 from ..vector.qdrant.provider import QdrantProvider
-                return QdrantProvider
+                return cast(Type[Provider[Any]], QdrantProvider)
         elif provider_type == "embedding":
             if implementation == "llamacpp":
                 from ..embedding.llama_cpp.provider import LlamaCppEmbeddingProvider
-                return LlamaCppEmbeddingProvider
+                return cast(Type[Provider[Any]], LlamaCppEmbeddingProvider)
             elif implementation == "llamacpp_embedding":
                 from ..embedding.llama_cpp.provider import LlamaCppEmbeddingProvider
-                return LlamaCppEmbeddingProvider
+                return cast(Type[Provider[Any]], LlamaCppEmbeddingProvider)
         elif provider_type == "graph_db":
             if implementation == "neo4j":
                 from ..graph.neo4j.provider import Neo4jProvider
-                return Neo4jProvider
+                return cast(Type[Provider[Any]], Neo4jProvider)
         elif provider_type == "message_queue":
             if implementation == "rabbitmq":
                 from ..mq.rabbitmq.provider import RabbitMQProvider
                 return RabbitMQProvider
         elif provider_type == "state_persister":
              if implementation == "redis":
-                 from ..agent.persistence.adapters import RedisStatePersister
-                 return RedisStatePersister
+                 from flowlib.agent.components.persistence.adapters import RedisStatePersister
+                 return cast(Type[Provider[Any]], RedisStatePersister)
              elif implementation == "mongodb":
-                 from ..agent.persistence.adapters import MongoStatePersister
-                 return MongoStatePersister
+                 from flowlib.agent.components.persistence.adapters import MongoStatePersister
+                 return cast(Type[Provider[Any]], MongoStatePersister)
              elif implementation == "postgres":
-                 from ..agent.persistence.adapters import PostgresStatePersister
-                 return PostgresStatePersister
+                 from flowlib.agent.components.persistence.adapters import PostgresStatePersister
+                 return cast(Type[Provider[Any]], PostgresStatePersister)
              elif implementation == "file": # Import handled earlier
-                 from ..agent.persistence.file import FileStatePersister
-                 return FileStatePersister
+                 from flowlib.agent.components.persistence.file import FileStatePersister
+                 return cast(Type[Provider[Any]], FileStatePersister)
         
         # If we get here, something went wrong with our mappings
         raise ImportError(f"Provider import failed for {provider_type}/{implementation}")
@@ -408,7 +405,7 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
         logger.error(f"Failed to import provider class for {provider_type}/{implementation}: {str(e)}")
         raise
 
-def _import_provider_type(provider_type: str) -> Type[Provider]:
+def _import_provider_type(provider_type: str) -> Type[Provider[Any]]:
     """Dynamically import a base provider class by type.
     
     Args:
@@ -437,9 +434,9 @@ def _import_provider_type(provider_type: str) -> Type[Provider]:
         import_statement = import_map[provider_type]
         try:
             # Execute import statement
-            local_vars = {}
+            local_vars: Dict[str, Any] = {}
             exec(import_statement, globals(), local_vars)
-            return local_vars["return"]
+            return cast(Type[Provider[Any]], local_vars["return"])
         except ImportError as e:
             logger.error(f"Failed to import provider class for {provider_type}: {str(e)}")
             raise

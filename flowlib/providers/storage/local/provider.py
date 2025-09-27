@@ -42,7 +42,7 @@ class LocalStorageProviderSettings(ProviderSettings):
     permissions: Optional[int] = Field(default=None, description="Default file permissions (Unix style, e.g. 0o644)")
     
     @field_validator('base_path')
-    def validate_base_path(cls, v):
+    def validate_base_path(cls, v: str) -> str:
         """Validate that base_path is absolute and normalized."""
         base_path = os.path.abspath(os.path.normpath(v))
         # Ensure base path ends with a trailing slash
@@ -51,7 +51,6 @@ class LocalStorageProviderSettings(ProviderSettings):
         return base_path
 
 
-from flowlib.providers.storage.base import StorageProvider
 
 @provider(provider_type="storage", name="local-storage", settings_class=LocalStorageProviderSettings)
 class LocalStorageProvider(StorageProvider):
@@ -76,7 +75,7 @@ class LocalStorageProvider(StorageProvider):
         self,
         message: str,
         operation: str,
-        cause: Exception = None
+        cause: Optional[Exception] = None
     ) -> ProviderError:
         """Create a provider error with strict context.
         
@@ -110,7 +109,7 @@ class LocalStorageProvider(StorageProvider):
             cause=cause
         )
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the local file storage provider."""
         if self._initialized:
             return
@@ -142,7 +141,7 @@ class LocalStorageProvider(StorageProvider):
                 cause=e
             )
             
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Shut down local file storage provider."""
         self._initialized = False
         logger.debug(f"{self.name} provider shut down successfully")

@@ -8,28 +8,26 @@ import logging
 import asyncio
 import json
 from typing import Any, Dict, Optional, Union, Callable
+from asyncio import Task
 from datetime import datetime
 
 from pydantic import Field
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.mq.base import MQProvider, MessageMetadata
-from flowlib.providers.core.base import ProviderSettings
+from flowlib.providers.mq.base import MQProvider, MQProviderSettings, MessageMetadata
 from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
 
 logger = logging.getLogger(__name__)
 
 try:
-    import aiokafka
-    from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
-    from aiokafka.errors import KafkaError
+    from aiokafka import AIOKafkaProducer, AIOKafkaConsumer  # type: ignore[import-not-found]
 except ImportError:
     logger.warning("aiokafka package not found. Install with 'pip install aiokafka'")
 
 
-class KafkaProviderSettings(ProviderSettings):
+class KafkaProviderSettings(MQProviderSettings):
     """Kafka provider settings - direct inheritance, only Kafka-specific fields.
     
     Kafka requires:
@@ -44,9 +42,7 @@ class KafkaProviderSettings(ProviderSettings):
     port: int = Field(default=9092, description="Kafka broker port")
     bootstrap_servers: Optional[str] = Field(default=None, description="Comma-separated Kafka bootstrap servers (overrides host/port)")
     
-    # Authentication (optional)
-    username: Optional[str] = Field(default=None, description="SASL username")
-    password: Optional[str] = Field(default=None, description="SASL password")
+    # Authentication - inherited from MQProviderSettings as Optional[str]
     
     # Kafka client settings
     client_id: Optional[str] = Field(default=None, description="Kafka client ID")
@@ -72,7 +68,7 @@ class KafkaProviderSettings(ProviderSettings):
 
 
 @provider(provider_type="message_queue", name="kafka", settings_class=KafkaProviderSettings)
-class KafkaMQProvider(MQProvider):
+class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
     """Kafka implementation of the MQProvider.
     
     This provider implements message queue operations using aiokafka,
@@ -96,9 +92,9 @@ class KafkaMQProvider(MQProvider):
         super().__init__(name=name, settings=settings)
         if not isinstance(self.settings, KafkaProviderSettings):
             raise TypeError(f"settings must be a KafkaProviderSettings instance, got {type(self.settings)}")
-        self._producer = None
-        self._consumers = {}
-        self._consumer_tasks = {}
+        self._producer: Optional[AIOKafkaProducer] = None
+        self._consumers: Dict[str, Any] = {}
+        self._consumer_tasks: Dict[str, Task[None]] = {}
         
     async def _initialize(self) -> None:
         """Initialize Kafka connection.
@@ -139,7 +135,7 @@ class KafkaMQProvider(MQProvider):
             
             # Create producer
             self._producer = AIOKafkaProducer(**producer_config)
-            
+
             # Start producer
             await self._producer.start()
             
@@ -192,19 +188,22 @@ class KafkaMQProvider(MQProvider):
         except Exception as e:
             logger.error(f"Error during Kafka shutdown: {str(e)}")
     
-    async def publish(self, 
-                     topic: str, 
-                     message: Any, 
-                     metadata: Optional[MessageMetadata] = None, 
-                     key: Optional[str] = None) -> None:
+    async def publish(self,
+                     exchange: str,
+                     routing_key: str,
+                     message: Any,
+                     metadata: Optional[MessageMetadata] = None) -> bool:
         """Publish a message to Kafka.
-        
+
         Args:
-            topic: Kafka topic
+            exchange: Kafka topic (using exchange parameter for interface compatibility)
+            routing_key: Message key (optional)
             message: Message to publish
             metadata: Optional message metadata
-            key: Optional message key
-            
+
+        Returns:
+            True if successful
+
         Raises:
             ProviderError: If publish fails
         """
@@ -222,11 +221,12 @@ class KafkaMQProvider(MQProvider):
             else:
                 value = str(message).encode()
             
-            # Prepare key
-            if key is None and metadata and metadata.message_id:
-                key = metadata.message_id.encode()
-            elif key is not None and isinstance(key, str):
-                key = key.encode()
+            # Prepare key (using routing_key as the Kafka key)
+            encoded_key: Optional[bytes] = None
+            if routing_key:
+                encoded_key = routing_key.encode()
+            elif metadata and metadata.message_id:
+                encoded_key = metadata.message_id.encode()
             
             # Prepare headers
             headers = []
@@ -242,15 +242,18 @@ class KafkaMQProvider(MQProvider):
             headers.append(("timestamp", str(timestamp).encode()))
             
             # Publish message
+            if self._producer is None:
+                raise RuntimeError("Producer not initialized")
             await self._producer.send_and_wait(
-                topic=topic,
+                topic=exchange,
                 value=value,
-                key=key,
+                key=encoded_key,
                 headers=headers
             )
             
-            logger.debug(f"Published message to topic {topic}")
-            
+            logger.debug(f"Published message to topic {exchange}")
+            return True
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to publish message: {str(e)}",
@@ -351,7 +354,7 @@ class KafkaMQProvider(MQProvider):
             self._consumers[topic] = consumer
             
             # Define consumer task
-            async def consume_task():
+            async def consume_task() -> None:
                 try:
                     await consumer.start()
                     logger.info(f"Started consuming from topic {topic} with group ID {consumer_group_id}")
@@ -534,7 +537,6 @@ class KafkaMQProvider(MQProvider):
             # Import kafka-python for admin operations
             try:
                 from kafka.admin import KafkaAdminClient, NewTopic
-                from kafka.errors import TopicAlreadyExistsError
             except ImportError:
                 raise ProviderError(
                     message="kafka-python package not found. Install with 'pip install kafka-python'",
@@ -635,7 +637,6 @@ class KafkaMQProvider(MQProvider):
             # Import kafka-python for admin operations
             try:
                 from kafka.admin import KafkaAdminClient
-                from kafka.errors import UnknownTopicOrPartitionError
             except ImportError:
                 raise ProviderError(
                     message="kafka-python package not found. Install with 'pip install kafka-python'",

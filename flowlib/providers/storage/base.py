@@ -7,8 +7,7 @@ files and binary data in object storage systems.
 
 import logging
 import os
-import io
-from typing import Dict, List, Optional, TypeVar, Union, BinaryIO, Tuple
+from typing import Dict, List, Optional, TypeVar, Union, BinaryIO, Tuple, Generic
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -18,6 +17,7 @@ from flowlib.providers.core.base import Provider
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=BaseModel)
+SettingsT = TypeVar('SettingsT', bound='StorageProviderSettings')
 
 
 class StorageProviderSettings(ProviderSettings):
@@ -75,7 +75,7 @@ class FileMetadata(BaseModel):
     metadata: Dict[str, str] = Field(default_factory=dict)
 
 
-class StorageProvider(Provider):
+class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for storage providers.
     
     This class provides:
@@ -85,7 +85,7 @@ class StorageProvider(Provider):
     4. Presigned URL generation
     """
     
-    def __init__(self, name: str = "storage", settings: Optional[StorageProviderSettings] = None):
+    def __init__(self, name: str = "storage", settings: Optional[SettingsT] = None):
         """Initialize storage provider.
         
         Args:
@@ -103,7 +103,7 @@ class StorageProvider(Provider):
         """Return whether provider has been initialized."""
         return self._initialized
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the storage provider.
         
         This method should be implemented by subclasses to establish
@@ -112,7 +112,7 @@ class StorageProvider(Provider):
         """
         self._initialized = True
         
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Close all connections and release resources.
         
         This method should be implemented by subclasses to properly

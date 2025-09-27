@@ -6,29 +6,31 @@ This module shows how to create and use flows following the new rules:
 """
 
 import asyncio
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 from typing import Dict, Any
 
 from flowlib.core.context.context import Context
+from flowlib.core.models import StrictBaseModel
 from flowlib.flows.decorators import flow, pipeline
+from flowlib.flows.base.base import Flow
 
 
-class TextInput(BaseModel):
+class TextInput(StrictBaseModel):
     """Input model for text processing."""
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     text: str
     options: Dict[str, Any] = {}
 
-class TextOutput(BaseModel):
+class TextOutput(StrictBaseModel):
     """Output model for text processing."""
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     result: str
     metadata: Dict[str, Any] = {}
 
-@flow(description="A flow with input and output type validation")
-class ATypedFlow:
+@flow(description="A flow with input and output type validation")  # type: ignore[arg-type]
+class ATypedFlow(Flow):
     """A flow with input and output type validation."""
     
     async def process(self, data: TextInput) -> Dict[str, Any]:
@@ -51,8 +53,8 @@ class ATypedFlow:
         processed = await self.process(data)
         return await self.format_output(processed)
     
-@flow(description="Another flow with input and output type validation")
-class AnotherTypedFlow:
+@flow(description="Another flow with input and output type validation")  # type: ignore[arg-type]
+class AnotherTypedFlow(Flow):
     """Another flow with input and output type validation."""
     
     async def process(self, data: TextInput) -> Dict[str, Any]:
@@ -77,13 +79,13 @@ class AnotherTypedFlow:
 
 
 # Example 3: Combined Flow (using subflow composition)
-@flow(description="A flow that combines multiple flows")
-class CombinedFlow:
+@flow(description="A flow that combines multiple flows")  # type: ignore[arg-type]
+class CombinedFlow(Flow):
     """A flow that combines multiple flows using subflow composition."""
     
-    def __init__(self):
-        self.simple_flow = ATypedFlow()
-        self.typed_flow = AnotherTypedFlow()
+    def __init__(self) -> None:
+        self.simple_flow = ATypedFlow("simple_flow")
+        self.typed_flow = AnotherTypedFlow("typed_flow")
     
     @pipeline
     async def run_all(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,15 +110,15 @@ class CombinedFlow:
 
 
 # Example usage
-async def run_examples():
+async def run_examples() -> None:
     """Run the example flows."""
     # Example 1
-    a_flow = ATypedFlow()
+    a_flow = ATypedFlow("example_flow_1")
     a_result = await a_flow.execute(Context(data={"text": "hello world"}))
     print(f"A Flow Result: {a_result.data}")
-    
+
     # Example 2
-    another_flow = AnotherTypedFlow()
+    another_flow = AnotherTypedFlow("example_flow_2")
     an_input = TextInput(text="an input", options={"process": True})
     another_result = await another_flow.execute(Context(data=an_input))
     print(f"Another Flow Result: {another_result.data}")
@@ -129,7 +131,7 @@ async def run_examples():
     # Try to access a private method directly (should fail)
     try:
         # This should raise an AttributeError
-        await a_flow.process_text({"validated_text": "test"})
+        await a_flow.process_text({"validated_text": "test"})  # type: ignore[attr-defined]
         print("ERROR: Private method was accessible!")
     except AttributeError:
         print("SUCCESS: Private method access prevented as expected")

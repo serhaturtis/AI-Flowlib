@@ -5,7 +5,7 @@ This module provides utilities for working with Pydantic models and their JSON s
 particularly handling recursive conversion and formatting of nested models.
 """
 
-from typing import Any, Dict, List, Optional, Type, Union, get_type_hints, get_origin, get_args
+from typing import Dict, List, Type, Union, get_type_hints, get_origin, get_args, Any
 from pydantic import BaseModel
 import inspect
 import json
@@ -161,7 +161,7 @@ def clean_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
             
             # If property has a $ref, remove redundant fields that duplicate info from the referenced definition
             if "$ref" in prop_value:
-                ref_key = prop_value["$ref"].split("/")[-1]
+                prop_value["$ref"].split("/")[-1]
                 # Keep only $ref, title, and description
                 keys_to_keep = ["$ref", "title", "description"]
                 for key in list(prop_value.keys()):
@@ -360,7 +360,7 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         A highly simplified schema dictionary with flat structure (no $defs)
     """
-    result = {
+    result: Dict[str, Any] = {
         "title": schema["title"] if "title" in schema else "",
         "description": (schema["description"] if "description" in schema else "").split("\n")[0]
     }
@@ -409,6 +409,8 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                     description = definitions[ref_name]["description"].split("\n")[0]
             
             # Create simplified property info
+            if "properties" not in result:
+                result["properties"] = {}
             result["properties"][prop_name] = f"{prop_type}: {description}"
     
     # Add required fields

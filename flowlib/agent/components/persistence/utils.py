@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 async def list_saved_states_metadata(
     persister_type: str,
-    **kwargs
+    **kwargs: str
 ) -> List[Dict[str, str]]:
     """Lists metadata for available saved agent states using the specified persister.
 
@@ -34,6 +34,8 @@ async def list_saved_states_metadata(
     try:
         # Create and initialize the persister
         persister = create_state_persister(persister_type=persister_type, **kwargs)
+        if persister is None:
+            raise RuntimeError(f"Failed to create persister of type '{persister_type}'")
         await persister.initialize()
         
         # List states using the persister's implementation

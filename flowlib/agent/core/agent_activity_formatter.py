@@ -1,7 +1,6 @@
 """Formatter for displaying agent activity in REPL."""
 
 from typing import Dict, Any, List
-from datetime import datetime
 
 
 class AgentActivityFormatter:
@@ -59,7 +58,7 @@ class AgentActivityFormatter:
                         elif hasattr(data, 'response'):
                             lines.append(f"     Response: \"{data.response}\"")
                         else:
-                            lines.append(f"     Response: (no response found)")
+                            lines.append("     Response: (no response found)")
                 else:
                     # For other flows, show inputs
                     if isinstance(inputs, dict):

@@ -9,15 +9,14 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, Type, Optional, ClassVar
+from typing import Any, Dict, Type, Optional, ClassVar, Coroutine
 from uuid import uuid4
 
 from flowlib.core.models import StrictBaseModel
 from .models import (
-    ToolParameters, ToolResult, ToolExecutionContext, ToolMetadata, 
+    ToolResult, ToolExecutionContext, ToolMetadata, 
     ToolStatus, ToolExecutionError, ToolErrorContext
 )
-from .interfaces import ToolInterface, AgentToolInterface, ParameterFactoryInterface
 
 logger = logging.getLogger(__name__)
 
@@ -240,31 +239,22 @@ class Tool(ABC):
         return ToolMetadata(
             name=self.TOOL_NAME or self.__class__.__name__.lower().replace('tool', ''),
             description=self.TOOL_DESCRIPTION or f"Tool: {self.__class__.__name__}",
-            category=self.TOOL_CATEGORY
+            tool_category=self.TOOL_CATEGORY
         )
     
-    def _create_error_result(self, result_model: Type[StrictBaseModel], message: str, 
+    def _create_error_result(self, result_model: Type[StrictBaseModel], message: str,
                            status: ToolStatus, start_time: datetime,
-                           error_info: Optional[ToolExecutionError] = None) -> StrictBaseModel:
-        """Create an error result using the tool's result model."""
+                           error_info: Optional[ToolExecutionError] = None) -> ToolResult:
+        """Create an error result using ToolResult model."""
         execution_time = (datetime.now() - start_time).total_seconds() * 1000
-        
-        # Try to create error result with common fields
-        try:
-            return result_model(
-                status=status,
-                message=message,
-                execution_time_ms=execution_time,
-                timestamp=datetime.now()
-            )
-        except Exception:
-            # Fallback: create basic ToolResult if result model doesn't support common fields
-            return ToolResult(
-                status=status,
-                message=message,
-                execution_time_ms=execution_time,
-                timestamp=datetime.now()
-            )
+
+        # Always return ToolResult for error cases - no fallbacks
+        return ToolResult(
+            status=status,
+            message=message,
+            execution_time_ms=execution_time,
+            timestamp=datetime.now()
+        )
 
 
 class AgentTool(Tool):
@@ -274,7 +264,7 @@ class AgentTool(Tool):
     agent-specific capabilities during execution.
     """
     
-    async def execute_with_agent(self, parameters: StrictBaseModel, agent_context: 'AgentExecutionContext') -> StrictBaseModel:
+    async def execute_with_agent(self, parameters: StrictBaseModel, agent_context: ToolExecutionContext) -> StrictBaseModel:
         """Execute tool with agent context access.
         
         Default implementation creates ToolExecutionContext from agent context
@@ -292,7 +282,8 @@ class AgentTool(Tool):
         tool_context = ToolExecutionContext(
             working_directory=".",
             execution_id=self.execution_id,
-            agent_id=getattr(agent_context, 'agent_id', None),
+            agent_id=getattr(agent_context, 'agent_id', 'unknown'),
+            agent_persona=getattr(agent_context, 'agent_persona', 'general'),
             session_id=getattr(agent_context, 'session_id', None)
         )
         
@@ -310,7 +301,7 @@ class AsyncTool(Tool):
         super().__init__(metadata)
         self._background_tasks: list = []
     
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Cleanup any background tasks or resources."""
         for task in self._background_tasks:
             if not task.done():
@@ -321,8 +312,8 @@ class AsyncTool(Tool):
         
         self._background_tasks.clear()
     
-    def add_background_task(self, coro):
+    def add_background_task(self, coro: Coroutine[Any, Any, Any]) -> 'asyncio.Task[Any]':
         """Add a background task to be managed by the tool."""
-        task = asyncio.create_task(coro)
+        task: asyncio.Task[Any] = asyncio.create_task(coro)
         self._background_tasks.append(task)
         return task

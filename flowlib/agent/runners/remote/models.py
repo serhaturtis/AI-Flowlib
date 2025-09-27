@@ -2,10 +2,11 @@
 Pydantic models for messages used in the remote agent execution architecture.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import Field, ConfigDict
+from flowlib.core.models import StrictBaseModel
 from typing import Optional, Dict, Any
 
-class AgentTaskMessage(BaseModel):
+class AgentTaskMessage(StrictBaseModel):
     """Message published to the task queue to initiate an agent run."""
     model_config = ConfigDict(frozen=True, extra="allow")
     
@@ -18,7 +19,7 @@ class AgentTaskMessage(BaseModel):
     correlation_id: Optional[str] = Field(None, description="Optional ID to correlate requests and responses.")
 
 
-class AgentResultMessage(BaseModel):
+class AgentResultMessage(StrictBaseModel):
     """Message published to the results queue upon completion or failure of an agent task."""
     model_config = ConfigDict(frozen=True, extra="allow")
     

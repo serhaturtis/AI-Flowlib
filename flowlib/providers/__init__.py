@@ -20,25 +20,22 @@ from .core import factory
 try:
     from .llm import LLMProvider
 except ImportError:
-    LLMProvider = None
+    pass
 
 try:
     from .db import DBProvider, DBProviderSettings
 except ImportError:
-    DBProvider = None
-    DBProviderSettings = None
+    pass
 
 try:
     from .cache import CacheProvider, CacheProviderSettings
 except ImportError:
-    CacheProvider = None
-    CacheProviderSettings = None
+    pass
 
 try:
     from .vector import VectorDBProvider, VectorDBProviderSettings
 except ImportError:
-    VectorDBProvider = None
-    VectorDBProviderSettings = None
+    pass
 
 __all__ = [
     "Provider",

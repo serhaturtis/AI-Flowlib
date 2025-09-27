@@ -2,10 +2,9 @@
 Utilities for loading and validating agent configurations.
 """
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 import os
 import logging
-from typing import Optional
 
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.core.errors import ConfigurationError
@@ -37,7 +36,7 @@ def initialize_resources_from_config(config: AgentConfig) -> None:
     if not resource_config:
         logger.warning("No resource configuration found in agent config")
         return
-    for resource_type, resources in resource_config.items():
+    for resource_type, resources in resource_config.model_dump().items():
         logger.info(f"Initializing resources of type '{resource_type}' from configuration")
         for resource_name, resource_info in resources.items():
             if not isinstance(resource_info, dict):
@@ -67,7 +66,15 @@ def initialize_resources_from_config(config: AgentConfig) -> None:
                 continue
             resource_registry.register(
                 name=resource_name,
-                obj=ModelResource(name=resource_name, provider_type=provider, config=config_section),
+                obj=ModelResource(
+                    name=resource_name,
+                    type="model",
+                    provider_type=provider,
+                    config=config_section,
+                    model_path=None,
+                    model_name=resource_name,
+                    model_type=None
+                ),
                 resource_type=resource_type
             )
             logger.info(f"Initialized resource '{resource_name}' of type '{resource_type}'")
@@ -137,7 +144,7 @@ async def initialize_providers_from_config(config: AgentConfig) -> None:
         logger.warning("No provider configuration found in agent config")
         return
 
-    for provider_type, providers in provider_config.items():
+    for provider_type, providers in provider_config.model_dump().items():
         logger.info(f"Initializing providers of type '{provider_type}' from configuration")
         for provider_name, provider_info in providers.items():
             # Each provider must have implementation and settings
@@ -169,6 +176,11 @@ async def initialize_providers_from_config(config: AgentConfig) -> None:
             if not settings_class:
                 raise ConfigurationError(
                     message=f"No registered settings class for provider '{provider_name}' of type '{provider_type}' (implementation '{implementation}').",
+                    config_key=f"provider_config.{provider_type}.{provider_name}.settings"
+                )
+            if not callable(settings_class):
+                raise ConfigurationError(
+                    message=f"Settings class for provider '{provider_name}' is not callable: {type(settings_class)}",
                     config_key=f"provider_config.{provider_type}.{provider_name}.settings"
                 )
             try:

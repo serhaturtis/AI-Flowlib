@@ -11,19 +11,17 @@ All data is lost when the process terminates.
 import asyncio
 import logging
 import copy
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-from pydantic import ValidationError
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
 from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
 from flowlib.providers.graph.models import (
-    Entity, EntityAttribute, EntityRelationship, EntitySearchResult, 
-    GraphStoreResult, GraphQueryParams, GraphQueryResult,
-    RelationshipSearchResult, GraphDeleteResult, GraphStats, TraversalParams)
+    Entity, EntityRelationship, GraphStoreResult, GraphQueryParams, GraphQueryResult,
+    RelationshipSearchResult, GraphDeleteResult, EntitySearchResult)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,7 @@ class InMemoryGraphDatabase:
     WARNING: All data is volatile and lost when the process terminates.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._entities: Dict[str, Entity] = {}
         self._relationships: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
@@ -137,7 +135,7 @@ class InMemoryGraphDatabase:
                             tags: Optional[List[str]] = None, limit: int = 10) -> List[Entity]:
         """Search entities by criteria."""
         async with self._lock:
-            results = []
+            results: List[Entity] = []
             
             for entity in self._entities.values():
                 if len(results) >= limit:
@@ -288,7 +286,8 @@ class MemoryGraphProvider(GraphDBProvider):
                 stored_relationships=stored_relationships,
                 failed_entities=[],
                 failed_relationships=[],
-                error_details={}
+                error_details={},
+                execution_time_ms=None
             )
         except Exception as e:
             raise ProviderError(
@@ -381,7 +380,8 @@ class MemoryGraphProvider(GraphDBProvider):
                     deleted_relationships=[],  # Relationships are deleted internally
                     not_found_entities=[],
                     not_found_relationships=[],
-                    error_details={}
+                    error_details={},
+                    execution_time_ms=None
                 )
             else:
                 return GraphDeleteResult(
@@ -390,7 +390,8 @@ class MemoryGraphProvider(GraphDBProvider):
                     deleted_relationships=[],
                     not_found_entities=[entity_id],
                     not_found_relationships=[],
-                    error_details={"reason": "Entity not found"}
+                    error_details={"reason": "Entity not found"},
+                    execution_time_ms=None
                 )
         except Exception as e:
             raise ProviderError(
@@ -734,8 +735,8 @@ class MemoryGraphProvider(GraphDBProvider):
                 cause=e
             )
     
-    async def search_entities(self, query: Optional[str] = None, entity_type: Optional[str] = None, 
-                            tags: Optional[List[str]] = None, limit: int = 10) -> List[Entity]:
+    async def search_entities(self, query: Optional[str] = None, entity_type: Optional[str] = None,
+                            tags: Optional[List[str]] = None, limit: int = 10) -> EntitySearchResult:
         """Search for entities based on criteria."""
         if not self._initialized or not self._database:
             raise ProviderError(
@@ -757,7 +758,14 @@ class MemoryGraphProvider(GraphDBProvider):
             )
         
         try:
-            return await self._database.search_entities(query, entity_type, tags, limit)
+            entities = await self._database.search_entities(query, entity_type, tags, limit)
+            return EntitySearchResult(
+                success=True,
+                entities=entities,
+                total_count=len(entities),
+                search_query=query if query is not None else "",
+                execution_time_ms=None
+            )
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to search entities: {str(e)}",

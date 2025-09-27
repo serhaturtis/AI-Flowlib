@@ -3,7 +3,7 @@
 No fallbacks, no defaults, no optional fields unless explicitly required.
 """
 
-from pydantic import Field, ConfigDict
+from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 from typing import Dict, Any, Optional
 

@@ -5,6 +5,8 @@ Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
 Modify the settings below for your specific setup.
 """
 
+from typing import Any
+
 from flowlib.resources.decorators.decorators import graph_db_config
 from flowlib.resources.models.config_resource import GraphDBConfigResource
 
@@ -56,7 +58,7 @@ class ExampleGraphDBProviderConfig(GraphDBConfigResource):
     # use_iam: bool = True
     # region: str = "us-east-1"
     
-    def __init__(self, name: str, type: str, **kwargs):
+    def __init__(self, name: str, type: str, **kwargs: Any) -> None:
         super().__init__(
             name=name, 
             type=type,

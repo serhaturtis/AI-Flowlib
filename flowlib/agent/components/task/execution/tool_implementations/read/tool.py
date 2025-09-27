@@ -2,14 +2,13 @@
 
 import os
 from pathlib import Path
-from typing import Any
-
-from ...models import ToolResult, ToolExecutionContext, ToolStatus
+from typing import cast
+from ...models import ToolResult, ToolExecutionContext, ToolStatus, TodoItem
 from ...decorators import tool
 from .models import ReadParameters, ReadResult
 
 
-@tool(name="read", category="filesystem", description="Read contents of a file with optional line range selection")
+@tool(name="read", tool_category="software", description="Read contents of a file with optional line range selection")
 class ReadTool:
     """Tool for reading file contents with optional line range selection."""
     
@@ -23,7 +22,7 @@ class ReadTool:
     
     async def execute(
         self, 
-        todo: Any,  # TodoItem with task description
+        todo: TodoItem,  # TodoItem with task description
         context: ToolExecutionContext  # Execution context
     ) -> ToolResult:
         """Execute file read operation."""
@@ -73,7 +72,7 @@ class ReadTool:
             
             # Read file content with optional line range
             with open(file_path, 'r', encoding=params.encoding) as f:
-                if params.start_line is None and params.line_count is None:
+                if params.start_line == 1 and params.line_count == -1:
                     # Read entire file
                     content = f.read()
                     lines_read = content.count('\n') + 1 if content else 0
@@ -123,7 +122,7 @@ class ReadTool:
                 file_path=params.file_path
             )
     
-    async def _generate_parameters(self, todo: Any, context: ToolExecutionContext) -> ReadParameters:
+    async def _generate_parameters(self, todo: TodoItem, context: ToolExecutionContext) -> ReadParameters:
         """Generate ReadParameters from todo content using flow.
         
         Args:
@@ -134,10 +133,13 @@ class ReadTool:
             ReadParameters for tool execution
         """
         from flowlib.flows.registry.registry import flow_registry
-        from .flow import ReadParameterGenerationInput
-        
+        from .flow import ReadParameterGenerationInput, ReadParameterGenerationFlow
+
         # Get the parameter generation flow class
-        flow_instance = flow_registry.get("read-parameter-generation")
+        flow_obj = flow_registry.get("read-parameter-generation")
+        if flow_obj is None:
+            raise RuntimeError("Read parameter generation flow not found in registry")
+        flow_instance = cast(ReadParameterGenerationFlow, flow_obj)
         
         
         # Extract task content from todo
@@ -151,5 +153,5 @@ class ReadTool:
         
         # Execute flow to generate parameters
         result = await flow_instance.run_pipeline(flow_input)
-        
-        return result.parameters
+
+        return cast(ReadParameters, result.parameters)

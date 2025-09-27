@@ -3,8 +3,9 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Dict, List
-from abc import ABC, abstractmethod
+from typing import Optional, Dict, List, Union, Any
+
+import aiohttp
 
 from .base import MCPConnection, MCPMessage, MCPTransport, MCPConnectionError
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class StdioTransport(MCPConnection):
     """STDIO transport for MCP."""
     
-    def __init__(self, server_command: str, server_args: List[str] = None):
+    def __init__(self, server_command: str, server_args: Optional[List[str]] = None):
         self.server_command = server_command
         self.server_args = server_args or []
         self.process: Optional[asyncio.subprocess.Process] = None
@@ -114,16 +115,14 @@ class SSETransport(MCPConnection):
         self.server_url = server_url
         self.auth_token = auth_token
         self.headers = headers or {}
-        self._session = None
+        self._session: Optional[aiohttp.ClientSession] = None
         self._event_source = None
-        self._message_queue = asyncio.Queue()
+        self._message_queue: asyncio.Queue[Union[MCPMessage, Exception]] = asyncio.Queue()
         self._closed = False
     
     async def connect(self) -> None:
         """Connect to SSE endpoint."""
         try:
-            import aiohttp
-            
             # Setup headers
             headers = self.headers.copy()
             if self.auth_token:
@@ -146,16 +145,19 @@ class SSETransport(MCPConnection):
     
     async def _listen_for_events(self, headers: Dict[str, str]) -> None:
         """Listen for SSE events."""
+        if not self._session:
+            raise RuntimeError("Session not initialized. Call connect() first.")
+
         try:
             async with self._session.get(
                 f"{self.server_url}/events",
                 headers=headers
             ) as response:
-                async for line in response.content:
+                async for line_bytes in response.content:
                     if self._closed:
                         break
-                    
-                    line = line.decode().strip()
+
+                    line = line_bytes.decode().strip()
                     if line.startswith("data: "):
                         data = line[6:]  # Remove "data: " prefix
                         try:
@@ -234,7 +236,7 @@ class WebSocketTransport(MCPConnection):
         self.server_url = server_url
         self.auth_token = auth_token
         self.headers = headers or {}
-        self._websocket = None
+        self._websocket: Optional[Any] = None
         self._closed = False
     
     async def connect(self) -> None:

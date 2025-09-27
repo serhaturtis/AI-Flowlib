@@ -5,8 +5,7 @@ attribute-based access, snapshot capabilities, and clean validation.
 """
 
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, TypeVar, Generic, Type, cast
-from pydantic import Field
+from typing import Any, Dict, List, Optional, TypeVar, Generic, Type, Union
 from flowlib.core.models import StrictBaseModel
 
 T = TypeVar('T', bound=StrictBaseModel)
@@ -24,7 +23,7 @@ class Context(Generic[T]):
     def __init__(
         self,
         # Accept an optional StrictBaseModel instance or dict for backward compatibility
-        data: Optional[T] = None,
+        data: Optional[Union[T, Dict[str, Any]]] = None,
         # Model type can be inferred from data, or passed if data is None initially
         model_type: Optional[Type[T]] = None 
     ):
@@ -39,28 +38,32 @@ class Context(Generic[T]):
             ValueError: If data fails validation against its own model type.
         """
         self._snapshots: List[Dict[str, Any]] = []
-        
+
+        # Initialize attributes with proper types
+        self._data: Dict[str, Any]
+        self._model_type: Optional[Type[T]]
+
         if data is not None:
             if isinstance(data, StrictBaseModel):
                 try:
                     # Validate the input model instance itself (Pydantic does this on init, but explicit check is good)
                     # Also sets the internal dictionary representation
-                    self._data: Dict[str, Any] = data.model_dump()
+                    self._data = data.model_dump()
                     # Infer model type from the provided instance
-                    self._model_type: Optional[Type[T]] = type(data)
+                    self._model_type = type(data)
                 except Exception as e: # Catch Pydantic validation errors if any during model_dump
-                    raise ValueError(f"Provided data model failed validation: {str(e)}")
+                    raise ValueError(f"Provided data model failed validation: {str(e)}") from e
             elif isinstance(data, dict):
                 # Backward compatibility: accept dict
-                self._data: Dict[str, Any] = data.copy()
-                self._model_type: Optional[Type[T]] = model_type
+                self._data = data.copy()
+                self._model_type = model_type
             else:
                 raise TypeError(f"Context data must be a Pydantic StrictBaseModel instance or dict, got {type(data).__name__}")
         else:
             # No data provided, initialize empty
-            self._data: Dict[str, Any] = {}
+            self._data = {}
             # Use provided model_type if given, otherwise None
-            self._model_type: Optional[Type[T]] = model_type 
+            self._model_type = model_type 
 
         # Initial validation using _validate method is redundant if data is validated above
         # if self._model_type and self._data:
@@ -121,7 +124,7 @@ class Context(Generic[T]):
     # Let's go with OPTION 2 for stricter adherence to the user's request for rigidity.
     
     # @deprecated("Directly setting arbitrary keys bypasses model validation. Modify the underlying model and re-create Context if needed.")
-    def set(self, key: str, value: Any) -> 'Context':
+    def set(self, key: str, value: Any) -> 'Context[T]':
         """(DEPRECATED) Set a value in the internal context dictionary. Bypasses model validation."""
         # raise NotImplementedError("Directly setting keys is disallowed. Mutate the model and re-create context.")
         # OR keep it but log warning / add validation if possible?
@@ -131,7 +134,7 @@ class Context(Generic[T]):
         return self
 
     # @deprecated("Directly updating with a dictionary bypasses model validation. Modify the underlying model and re-create Context if needed.")
-    def update(self, data: Dict[str, Any]) -> 'Context':
+    def update(self, data: Dict[str, Any]) -> 'Context[T]':
         """(DEPRECATED) Update internal context data with dictionary. Bypasses model validation."""
         # raise NotImplementedError("Directly updating with dict is disallowed. Mutate the model and re-create context.")
         # OR keep it but log warning / add validation if possible?
@@ -149,7 +152,7 @@ class Context(Generic[T]):
         self._snapshots.append(deepcopy(self._data))
         return len(self._snapshots) - 1
 
-    def rollback(self, snapshot_id: Optional[int] = None) -> 'Context':
+    def rollback(self, snapshot_id: Optional[int] = None) -> 'Context[T]':
         if not self._snapshots:
             raise ValueError("No snapshots available for rollback")
         target_id = snapshot_id if snapshot_id is not None else len(self._snapshots) - 1
@@ -159,11 +162,11 @@ class Context(Generic[T]):
         self._snapshots = self._snapshots[:target_id]
         return self
 
-    def clear_snapshots(self) -> 'Context':
+    def clear_snapshots(self) -> 'Context[T]':
         self._snapshots = []
         return self
 
-    def copy(self) -> 'Context':
+    def copy(self) -> 'Context[T]':
         """Create a deep copy of the context.
         
         Reconstructs the model instance from the internal dictionary if possible,
@@ -173,7 +176,7 @@ class Context(Generic[T]):
         if self._model_type:
             try:
                  # Try to create a new model instance from the current data dict
-                 new_data_instance = cast(T, self._model_type(**self._data))
+                 new_data_instance = self._model_type(**self._data)
             except Exception as e:
                  # Log warning? If data dict became invalid, copy might fail later.
                  print(f"Warning: Failed to reconstruct model during copy: {e}")
@@ -189,7 +192,7 @@ class Context(Generic[T]):
              # This state is less type-safe but preserves the dict data.
              # NOTE: This breaks the strict typing goal if reconstruction fails. Consider raising error instead?
              # For now, preserving dict state.
-             new_ctx = Context(data=None, model_type=None)
+             new_ctx: Context[T] = Context(data=None, model_type=None)
              new_ctx._data = deepcopy(self._data)
              return new_ctx
 
@@ -199,7 +202,7 @@ class Context(Generic[T]):
             return None
         try:
             # Re-create the model instance from the current internal dictionary state
-            return cast(T, self._model_type(**self._data))
+            return self._model_type(**self._data)
         except Exception as e:
             # This indicates the internal _data dictionary has become invalid 
             # with respect to the _model_type, likely due to using set/update.
@@ -213,7 +216,7 @@ class Context(Generic[T]):
     def __contains__(self, key: str) -> bool:
         return key in self._data 
     
-    def merge(self, other: 'Context') -> 'Context':
+    def merge(self, other: 'Context[T]') -> 'Context[T]':
         """Merge this context with another context, returning a new context.
         
         Args:
@@ -226,5 +229,5 @@ class Context(Generic[T]):
         merged_data = self._data.copy()
         merged_data.update(other._data)
         
-        # Create new context with merged data
-        return Context(data=merged_data)
+        # Create new context with merged data, preserving model type
+        return Context(data=merged_data, model_type=self._model_type)

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from pydantic import Field, ConfigDict
+from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
 class EntityAttribute(StrictBaseModel):

@@ -5,13 +5,13 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
-from ...models import ToolResult, ToolExecutionContext, ToolStatus
+from typing import cast
+from ...models import ToolResult, ToolExecutionContext, ToolStatus, TodoItem
 from ...decorators import tool
 from .models import BashParameters, BashResult
 
 
-@tool(name="bash", category="execution", description="Execute shell commands with timeout and output capture")
+@tool(name="bash", tool_category="systems", description="Execute shell commands with timeout and output capture")
 class BashTool:
     """Tool for executing shell commands."""
     
@@ -25,7 +25,7 @@ class BashTool:
     
     async def execute(
         self, 
-        todo: Any,  # TodoItem with task description
+        todo: TodoItem,  # TodoItem with task description
         context: ToolExecutionContext  # Execution context
     ) -> ToolResult:
         """Execute shell command."""
@@ -61,7 +61,6 @@ class BashTool:
             env.update(params.env_vars)
         
         start_time = time.time()
-        timed_out = False
         
         try:
             # Execute command
@@ -81,7 +80,6 @@ class BashTool:
                     timeout=timeout_value
                 )
             except asyncio.TimeoutError:
-                timed_out = True
                 try:
                     process.terminate()
                     await asyncio.wait_for(process.wait(), timeout=5)
@@ -108,7 +106,7 @@ class BashTool:
             # Determine status based on exit code
             if process.returncode == 0:
                 status = ToolStatus.SUCCESS
-                message = f"Command executed successfully"
+                message = "Command executed successfully"
             else:
                 status = ToolStatus.ERROR
                 message = f"Command failed with exit code {process.returncode}"
@@ -152,13 +150,16 @@ class BashTool:
                 working_directory=working_dir
             )
     
-    async def _generate_parameters(self, todo: Any, context: ToolExecutionContext) -> BashParameters:
+    async def _generate_parameters(self, todo: TodoItem, context: ToolExecutionContext) -> BashParameters:
         """Generate BashParameters from todo content using flow."""
         from flowlib.flows.registry.registry import flow_registry
-        from .flow import BashParameterGenerationInput
-        
+        from .flow import BashParameterGenerationInput, BashParameterGenerationFlow
+
         # Get the parameter generation flow class
-        flow_instance = flow_registry.get("bash-parameter-generation")
+        flow_obj = flow_registry.get("bash-parameter-generation")
+        if flow_obj is None:
+            raise RuntimeError("Bash parameter generation flow not found in registry")
+        flow_instance = cast(BashParameterGenerationFlow, flow_obj)
         
         
         # Extract task content from todo
@@ -173,4 +174,4 @@ class BashTool:
         # Execute flow to generate parameters
         result = await flow_instance.run_pipeline(flow_input)
         
-        return result.parameters
+        return cast(BashParameters, result.parameters)

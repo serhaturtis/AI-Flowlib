@@ -46,7 +46,7 @@ class KnowledgeProvider(ABC):
     domains: List[str] = []
     
     @abstractmethod
-    async def initialize(self, config: Dict[str, Any]):
+    async def initialize(self, config: Dict[str, Any]) -> None:
         """Initialize the knowledge provider.
         
         Args:
@@ -76,8 +76,8 @@ class KnowledgeProvider(ABC):
             QueryError: If the query fails
         """
         pass
-    
-    async def shutdown(self):
+
+    async def shutdown(self) -> None:
         """Clean up resources and close connections.
         
         Called when the provider is being shut down. Subclasses should
@@ -105,13 +105,13 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
     comprehensive knowledge retrieval.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the multi-database provider."""
         self.vector_db: Optional[Any] = None
         self.graph_db: Optional[Any] = None
         self._config: Dict[str, Any] = {}
         
-    async def initialize(self, config: Dict[str, Any]):
+    async def initialize(self, config: Dict[str, Any]) -> None:
         """Initialize database connections.
         
         Args:
@@ -130,7 +130,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
         logger.info(f"Initialized {self.__class__.__name__} with "
                    f"vector={'chromadb' in config}, graph={'neo4j' in config}")
     
-    async def _initialize_vector_db(self, config: Dict[str, Any]):
+    async def _initialize_vector_db(self, config: Dict[str, Any]) -> None:
         """Initialize vector database connection.
         
         Args:
@@ -148,7 +148,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
         await self.vector_db.initialize()
         logger.debug("Vector database initialized")
     
-    async def _initialize_graph_db(self, config: Dict[str, Any]):
+    async def _initialize_graph_db(self, config: Dict[str, Any]) -> None:
         """Initialize graph database connection.
         
         Args:
@@ -248,7 +248,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
             return []
             
         # Remove duplicates based on content similarity
-        unique_results = {}
+        unique_results: dict[str, Knowledge] = {}
         for result in results:
             # Create a key based on first 100 chars and domain
             key = f"{result.content[:100].strip()}_{result.domain}"
@@ -266,7 +266,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
         
         return sorted_results[:limit]
     
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Shutdown all database connections."""
         if self.vector_db:
             try:

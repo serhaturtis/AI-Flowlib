@@ -5,7 +5,7 @@ including handling escape sequences and other common text transformations.
 """
 
 import re
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any
 
 
 def process_escape_sequences(text: str) -> str:

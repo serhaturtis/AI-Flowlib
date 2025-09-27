@@ -3,13 +3,13 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable, TypeVar, Tuple, Union
-from dataclasses import dataclass
+from typing import List, Dict, Any, Optional, Callable, TypeVar, Tuple
+from flowlib.agent.components.memory.manager import AgentMemoryManager
+from flowlib.agent.core.flow_runner import AgentFlowRunner
 from enum import Enum
-from collections import defaultdict
 from pydantic import BaseModel, Field, ConfigDict
 
-from flowlib.agent.core.errors import AgentError, ComponentError
+from flowlib.agent.core.errors import ComponentError
 from flowlib.agent.core.performance import PerformanceMonitor
 
 logger = logging.getLogger(__name__)
@@ -152,7 +152,7 @@ class FlowExecutionRequest(BaseModel):
 class BatchMemoryOperations:
     """Batch operations for memory subsystem."""
     
-    def __init__(self, memory_manager, performance_monitor: Optional[PerformanceMonitor] = None):
+    def __init__(self, memory_manager: AgentMemoryManager, performance_monitor: Optional[PerformanceMonitor] = None) -> None:
         self.memory_manager = memory_manager
         # Create default PerformanceMonitor if not provided (sensible default, not a fallback)
         self.performance_monitor = performance_monitor if performance_monitor is not None else PerformanceMonitor()
@@ -266,7 +266,7 @@ class BatchMemoryOperations:
         
         semaphore = asyncio.Semaphore(max_concurrent)
         
-        async def search_with_semaphore(query: str):
+        async def search_with_semaphore(query: str) -> tuple[str, Any]:
             async with semaphore:
                 try:
                     # Strict contract - memory manager must have search_all_memories method
@@ -389,7 +389,7 @@ class BatchMemoryOperations:
     
     async def _retrieve_single_item(self, request: MemoryRetrieveRequest) -> Any:
         """Retrieve a single memory item - no fallbacks."""
-        result = await self.memory_manager.retrieve(request.key)
+        result = await self.memory_manager.retrieve_memory(request.key)
         # No default fallback - callers must handle None explicitly
         return result
     
@@ -406,7 +406,7 @@ class BatchMemoryOperations:
 class BatchFlowOperations:
     """Batch operations for flow execution."""
     
-    def __init__(self, flow_manager, performance_monitor: Optional[PerformanceMonitor] = None):
+    def __init__(self, flow_manager: AgentFlowRunner, performance_monitor: Optional[PerformanceMonitor] = None) -> None:
         self.flow_manager = flow_manager
         # Create default PerformanceMonitor if not provided (sensible default, not a fallback)
         self.performance_monitor = performance_monitor if performance_monitor is not None else PerformanceMonitor()
@@ -422,7 +422,7 @@ class BatchFlowOperations:
         
         semaphore = asyncio.Semaphore(max_concurrent)
         
-        async def execute_with_semaphore(request: FlowExecutionRequest):
+        async def execute_with_semaphore(request: FlowExecutionRequest) -> Tuple[FlowExecutionRequest, Any]:
             async with semaphore:
                 try:
                     # Execute with timeout
@@ -537,7 +537,7 @@ class BatchAnalyticsOperations:
     async def batch_analyze_memory_patterns(
         self,
         memory_keys: List[str],
-        analysis_functions: List[Callable]
+        analysis_functions: List[Callable[..., Any]]
     ) -> Dict[str, Any]:
         """Analyze multiple memory access patterns."""
         results = {}
@@ -592,9 +592,11 @@ class BatchAnalyticsOperations:
             report_type = config["type"]
             
             if report_type == "performance":
-                return self.performance_monitor.get_all_stats()
+                all_stats = self.performance_monitor.get_all_stats()
+                return all_stats.model_dump()
             elif report_type == "memory":
-                return self.performance_monitor.memory_analytics.get_performance_stats()
+                memory_stats = self.performance_monitor.memory_analytics.get_performance_stats()
+                return memory_stats.model_dump()
             else:
                 raise ComponentError(f"Unknown report type: {report_type}. Supported types: performance, memory", "BatchReportOperations")
         except Exception as e:
@@ -606,10 +608,10 @@ class BatchOperationManager:
     
     def __init__(
         self,
-        memory_manager=None,
-        flow_manager=None,
+        memory_manager: Optional[AgentMemoryManager] = None,
+        flow_manager: Optional[AgentFlowRunner] = None,
         performance_monitor: Optional[PerformanceMonitor] = None
-    ):
+    ) -> None:
         # Create default PerformanceMonitor if not provided (sensible default, not a fallback)
         self.performance_monitor = performance_monitor if performance_monitor is not None else PerformanceMonitor()
         
@@ -637,4 +639,5 @@ class BatchOperationManager:
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get overall performance statistics."""
-        return self.performance_monitor.get_all_stats()
+        stats = self.performance_monitor.get_all_stats()
+        return stats.model_dump()

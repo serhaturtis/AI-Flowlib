@@ -37,7 +37,7 @@ class MCPToolExecutionOutput(StrictBaseModel):
 class MCPRegistry:
     """Global registry for MCP clients and tools."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._clients: Dict[str, MCPClientProvider] = {}
         self._tools: Dict[str, Dict[str, MCPTool]] = {}  # client_name -> {tool_name: tool}
     
@@ -78,7 +78,7 @@ class MCPRegistry:
 mcp_registry = MCPRegistry()
 
 
-@flow(name="mcp-tool-executor", description="Execute MCP tools via registered clients")
+@flow(name="mcp-tool-executor", description="Execute MCP tools via registered clients")  # type: ignore[arg-type]
 class MCPToolExecutorFlow:
     """Flow for executing MCP tools using the @flow decorator pattern."""
     
@@ -98,6 +98,7 @@ class MCPToolExecutorFlow:
             if not client:
                 return MCPToolExecutionOutput(
                     success=False,
+                    result=None,
                     error=f"MCP client '{input_data.client_name}' not found",
                     client_name=input_data.client_name,
                     tool_name=input_data.tool_name
@@ -108,6 +109,7 @@ class MCPToolExecutorFlow:
             if not tool:
                 return MCPToolExecutionOutput(
                     success=False,
+                    result=None,
                     error=f"Tool '{input_data.tool_name}' not found for client '{input_data.client_name}'",
                     client_name=input_data.client_name,
                     tool_name=input_data.tool_name
@@ -119,6 +121,7 @@ class MCPToolExecutorFlow:
             return MCPToolExecutionOutput(
                 success=True,
                 result=result,
+                error=None,
                 client_name=input_data.client_name,
                 tool_name=input_data.tool_name
             )
@@ -127,6 +130,7 @@ class MCPToolExecutorFlow:
             logger.error(f"Error executing MCP tool '{input_data.tool_name}' on client '{input_data.client_name}': {e}")
             return MCPToolExecutionOutput(
                 success=False,
+                result=None,
                 error=str(e),
                 client_name=input_data.client_name,
                 tool_name=input_data.tool_name

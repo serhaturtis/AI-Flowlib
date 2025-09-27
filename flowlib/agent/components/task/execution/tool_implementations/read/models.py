@@ -10,29 +10,32 @@ class ReadParameters(ToolParameters):
     """Parameters for read tool execution."""
     
     file_path: str = Field(description="Path to file to read")
-    start_line: Optional[int] = Field(default=None, description="Line number to start reading from (1-based)")
-    line_count: Optional[int] = Field(default=None, description="Number of lines to read")
+    start_line: int = Field(default=1, description="Line number to start reading from (1-based)")
+    line_count: int = Field(default=-1, description="Number of lines to read (-1 for all)")
     encoding: str = Field(default="utf-8", description="File encoding")
     
     @field_validator('file_path')
-    def validate_file_path(cls, v):
+    @classmethod
+    def validate_file_path(cls, v: str) -> str:
         """Validate file path format."""
         if not v or not v.strip():
             raise ValueError("file_path cannot be empty")
         return v.strip()
-    
+
     @field_validator('start_line')
-    def validate_start_line(cls, v):
+    @classmethod
+    def validate_start_line(cls, v: int) -> int:
         """Validate start line is positive."""
-        if v is not None and v < 1:
+        if v < 1:
             raise ValueError("start_line must be >= 1")
         return v
-    
+
     @field_validator('line_count')
-    def validate_line_count(cls, v):
-        """Validate line count is positive."""
-        if v is not None and v < 1:
-            raise ValueError("line_count must be >= 1")
+    @classmethod
+    def validate_line_count(cls, v: int) -> int:
+        """Validate line count is valid."""
+        if v != -1 and v < 1:
+            raise ValueError("line_count must be >= 1 or -1 for all")
         return v
 
 

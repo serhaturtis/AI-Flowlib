@@ -1,6 +1,6 @@
 """Models for graph storage flow."""
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
 from flowlib.knowledge.models import (

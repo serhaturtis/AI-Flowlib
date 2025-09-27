@@ -1,34 +1,34 @@
 """Plugin generation flow."""
 
-import asyncio
 import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any
 from datetime import datetime
+import yaml  # type: ignore[import-untyped]
 
 from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.knowledge.models import DocumentType, KnowledgeExtractionRequest, ExtractionConfig, ChunkingStrategy
+from flowlib.knowledge.models import KnowledgeExtractionRequest
 from flowlib.knowledge.streaming.flow import KnowledgeExtractionFlow
 from flowlib.knowledge.plugin_generation.models import (
     PluginGenerationRequest, PluginGenerationResult, PluginGenerationSummary,
-    ExtractionStats, ProcessedDataStats, ProcessedData, DomainStrategy
+    ExtractionStats, ProcessedDataStats, ProcessedData
 )
 from flowlib.knowledge.plugin_generation.domain_strategies import domain_strategy_registry
 
 logger = logging.getLogger(__name__)
 
 
-@flow(name="plugin-generation", description="Generate knowledge plugins from document collections")
+@flow(name="plugin-generation", description="Generate knowledge plugins from document collections")  # type: ignore[arg-type]
 class PluginGenerationFlow:
     """Generator that creates knowledge plugins from document collections."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.templates_dir = Path(__file__).parent / "plugin_templates"
         self.ensure_templates_exist()
-    
-    def ensure_templates_exist(self):
+
+    def ensure_templates_exist(self) -> None:
         """Ensure template directory exists."""
         self.templates_dir.mkdir(exist_ok=True)
     
@@ -173,19 +173,32 @@ class PluginGenerationFlow:
         extraction_request = KnowledgeExtractionRequest(
             input_directory=request.input_directory,
             output_directory=str(temp_dir),
-            extraction_config=ExtractionConfig(
-                batch_size=10,
-                checkpoint_interval=50,
-                chunking_strategy=ChunkingStrategy.PARAGRAPH_AWARE,
-                chunk_size=request.chunk_size,
-                chunk_overlap=request.chunk_overlap
-            ),
-            plugin_name_prefix=request.plugin_name,
+            collection_name="knowledge_base",
+            graph_name="knowledge_graph",
+            chunk_size=request.chunk_size,
+            chunk_overlap=request.chunk_overlap,
+            extract_entities=True,
+            extract_relationships=True,
+            create_summaries=True,
+            detect_topics=True,
             extraction_domain=request.domains[0] if request.domains else "general",
+            llm_model_name="music-album-model",
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            vector_dimensions=384,
+            vector_provider_name="chroma",
+            embedding_provider_name="default-embedding",
+            enable_graph_analysis=True,
+            min_entity_frequency=2,
+            min_relationship_confidence=0.7,
+            graph_provider_name="neo4j",
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_username="neo4j",
+            neo4j_password="password",
             use_vector_db=request.use_vector_db,
             use_graph_db=request.use_graph_db,
             max_files=request.max_files,
-            resume_from_checkpoint=False
+            resume_from_checkpoint=False,
+            plugin_name_prefix=request.plugin_name
         )
         
         # Create extraction flow
@@ -281,7 +294,7 @@ class PluginGenerationFlow:
         request: PluginGenerationRequest,
         processed_data: ProcessedData,
         extraction_stats: Dict[str, Any]
-    ):
+    ) -> None:
         """Generate all plugin files."""
         
         # Generate manifest.yaml
@@ -308,9 +321,8 @@ class PluginGenerationFlow:
     # Additional helper methods for file generation would continue here...
     # For brevity, I'm including placeholders for the remaining methods
     
-    async def _generate_manifest(self, plugin_dir: Path, request: PluginGenerationRequest, extraction_stats: Dict[str, Any]):
+    async def _generate_manifest(self, plugin_dir: Path, request: PluginGenerationRequest, extraction_stats: Dict[str, Any]) -> None:
         """Generate manifest.yaml file."""
-        import yaml
         
         manifest_data = {
             "name": request.plugin_name,
@@ -335,7 +347,7 @@ class PluginGenerationFlow:
         with open(manifest_path, 'w') as f:
             yaml.dump(manifest_data, f, default_flow_style=False, sort_keys=False)
         
-    async def _generate_provider(self, plugin_dir: Path, request: PluginGenerationRequest, processed_data: ProcessedData):
+    async def _generate_provider(self, plugin_dir: Path, request: PluginGenerationRequest, processed_data: ProcessedData) -> None:
         """Generate provider.py file."""
         provider_content = f'''"""Knowledge provider for {request.plugin_name}."""
 
@@ -434,7 +446,7 @@ class {request.plugin_name.title().replace('_', '')}Provider(KnowledgeProvider):
         with open(provider_path, 'w') as f:
             f.write(provider_content)
         
-    async def _generate_init_file(self, plugin_dir: Path, request: PluginGenerationRequest):
+    async def _generate_init_file(self, plugin_dir: Path, request: PluginGenerationRequest) -> None:
         """Generate __init__.py file."""
         init_content = f'''"""Knowledge plugin: {request.plugin_name}."""
 
@@ -453,7 +465,7 @@ __all__ = [
         with open(init_path, 'w') as f:
             f.write(init_content)
         
-    async def _generate_readme(self, plugin_dir: Path, request: PluginGenerationRequest, extraction_stats: Dict[str, Any]):
+    async def _generate_readme(self, plugin_dir: Path, request: PluginGenerationRequest, extraction_stats: Dict[str, Any]) -> None:
         """Generate README.md file."""
         readme_content = f'''# {request.plugin_name.title().replace('_', ' ')} Knowledge Plugin
 
@@ -512,7 +524,7 @@ Flowlib Knowledge Plugin Generator v1.0.0
         with open(readme_path, 'w') as f:
             f.write(readme_content)
         
-    async def _generate_test_script(self, plugin_dir: Path, request: PluginGenerationRequest):
+    async def _generate_test_script(self, plugin_dir: Path, request: PluginGenerationRequest) -> None:
         """Generate test script for the plugin."""
         test_content = f'''#!/usr/bin/env python3
 """Test script for {request.plugin_name} knowledge plugin."""
@@ -556,7 +568,7 @@ if __name__ == "__main__":
         with open(test_path, 'w') as f:
             f.write(test_content)
         
-    async def _create_database_configs(self, plugin_dir: Path, plugin_name: str, use_vector_db: bool, use_graph_db: bool):
+    async def _create_database_configs(self, plugin_dir: Path, plugin_name: str, use_vector_db: bool, use_graph_db: bool) -> None:
         """Create database configuration files."""
         import yaml
         
@@ -586,7 +598,7 @@ if __name__ == "__main__":
             with open(neo4j_path, 'w') as f:
                 yaml.dump(neo4j_config, f, default_flow_style=False)
         
-    async def _create_embedded_databases(self, plugin_dir: Path, temp_dir: Path, plugin_name: str, use_vector_db: bool, use_graph_db: bool):
+    async def _create_embedded_databases(self, plugin_dir: Path, temp_dir: Path, plugin_name: str, use_vector_db: bool, use_graph_db: bool) -> None:
         """Copy database files from extraction to create embedded databases in plugin."""
         import shutil
         
@@ -608,7 +620,7 @@ if __name__ == "__main__":
                 shutil.copytree(neo4j_source, neo4j_dest, dirs_exist_ok=True)
                 print(f"Copied Neo4j data to {neo4j_dest}")
         
-    async def _create_data_files(self, plugin_dir: Path, processed_data: ProcessedData):
+    async def _create_data_files(self, plugin_dir: Path, processed_data: ProcessedData) -> None:
         """Create data files for the plugin."""
         # Save documents
         data_dir = plugin_dir / "data"

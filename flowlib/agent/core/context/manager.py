@@ -9,9 +9,9 @@ import logging
 import os
 import tempfile
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Literal
+from typing import Dict, List, Optional, Any, Literal, cast
 from flowlib.agent.core.base import AgentComponent
-from flowlib.agent.core.errors import ConfigurationError, ExecutionError
+from flowlib.agent.core.errors import ExecutionError
 from flowlib.agent.models.config import ContextManagerConfig
 from .models import (
     ExecutionContext,
@@ -22,8 +22,7 @@ from .models import (
     ConversationMessage,
     UserProfile,
     WorkspaceKnowledge,
-    SuccessfulPattern,
-    RecoveryStrategy
+    SuccessfulPattern
 )
 
 logger = logging.getLogger(__name__)
@@ -111,9 +110,9 @@ class AgentContextManager(AgentComponent):
         
         logger.info(f"Task context started: {task_description[:50]}...")
     
-    async def create_execution_context(self, 
+    async def create_execution_context(self,
                                      component_type: Literal["task_generation", "task_decomposition", "task_execution", "task_debriefing"],
-                                     **component_config) -> ExecutionContext:
+                                     **component_config: Any) -> ExecutionContext:
         """Create execution context for component - THE context creation method.
         
         This is the ONLY way components get context. No manual assembly allowed.
@@ -408,9 +407,12 @@ class AgentContextManager(AgentComponent):
         """Get available tool configurations from registry."""
         try:
             # Access task executor through registry to get available tools
+            if self._registry is None:
+                return {}
             task_executor = self._registry.get("task_executor")
             if task_executor and hasattr(task_executor, 'get_available_tools'):
-                return await task_executor.get_available_tools()
+                result = await task_executor.get_available_tools()
+                return cast(dict[str, Any], result)
         except Exception as e:
             logger.debug(f"Could not get tool configurations: {e}")
         

@@ -5,7 +5,7 @@ that share common functionality for publishing and consuming messages.
 """
 
 import logging
-from typing import Any, Dict, Optional, Type, TypeVar, Generic, Callable, Union
+from typing import Any, Dict, Optional, Type, TypeVar, Callable, Union, Generic
 from pydantic import BaseModel, ConfigDict, Field
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
@@ -34,10 +34,10 @@ class MQProviderSettings(ProviderSettings):
     model_config = ConfigDict(frozen=True, extra="forbid")
     
     # Connection settings
-    host: str = Field(..., description="Message queue server host")
-    port: int = Field(..., description="Message queue server port")
-    username: str = Field(..., description="Username for authentication")
-    password: str = Field(..., description="Password for authentication (use SecretStr in implementations)")
+    host: str = Field(default="localhost", description="Message queue server host")
+    port: int = Field(default=5672, description="Message queue server port")
+    username: Optional[str] = Field(default=None, description="Username for authentication")
+    password: Optional[str] = Field(default=None, description="Password for authentication (use SecretStr in implementations)")
     virtual_host: str = Field(default="/", description="Virtual host path")
     
     # Performance settings
@@ -84,13 +84,16 @@ class MessageMetadata(BaseModel):
     offset: Optional[int] = None
 
 
-class MQProvider(Provider):
+SettingsT = TypeVar('SettingsT', bound=MQProviderSettings)
+
+
+class MQProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for message queue providers.
     
     Inherits from Provider and defines the MQ-specific interface.
     """
     
-    def __init__(self, name: str = "mq", settings: Optional[MQProviderSettings] = None):
+    def __init__(self, name: str = "mq", settings: Optional[SettingsT] = None):
         """Initialize message queue provider.
         
         Args:
@@ -123,14 +126,25 @@ class MQProvider(Provider):
                      consumer_tag: Optional[str] = None) -> Any:
         raise NotImplementedError("Subclasses must implement consume()")
         
-    async def acknowledge(self, delivery_tag: Any):
+    async def acknowledge(self, delivery_tag: Any) -> None:
         raise NotImplementedError("Subclasses must implement acknowledge()")
         
-    async def reject(self, delivery_tag: Any, requeue: bool = True):
+    async def reject(self, delivery_tag: Any, requeue: bool = True) -> None:
         raise NotImplementedError("Subclasses must implement reject()")
         
     async def check_connection(self) -> bool:
-        raise NotImplementedError("Subclasses must implement check_connection()") 
+        raise NotImplementedError("Subclasses must implement check_connection()")
+
+    async def stop_consuming(self, consumer_tag: Any) -> None:
+        """Stop consuming messages for the given consumer tag.
+
+        Args:
+            consumer_tag: Consumer identifier to stop
+
+        Raises:
+            NotImplementedError: Must be implemented by subclasses
+        """
+        raise NotImplementedError("Subclasses must implement stop_consuming()")
 
     # Keep consume_structured and publish_structured as they provide useful default logic
     async def publish_structured(self,
@@ -205,7 +219,7 @@ class MQProvider(Provider):
         """
         try:
             # Create a wrapper callback that parses messages
-            async def wrapper_callback(message: Any, metadata: MessageMetadata):
+            async def wrapper_callback(message: Any, metadata: MessageMetadata) -> Any:
                 try:
                     # Parse the message into the output type
                     parsed_message = output_type.model_validate(message) # Use model_validate

@@ -6,11 +6,11 @@ operations that were previously in BaseAgent.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, cast
+from flowlib.flows.base.base import Flow
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import NotInitializedError, ExecutionError
-from flowlib.flows.base.base import Flow
 from flowlib.flows.registry.registry import flow_registry, FlowRegistry
 from flowlib.flows.models.results import FlowResult
 
@@ -33,7 +33,7 @@ class AgentFlowRunner(AgentComponent):
             name: Component name
         """
         super().__init__(name)
-        self._flows: Dict[str, Flow] = {}
+        self._flows: Dict[str, Flow[Any]] = {}
     
     async def _initialize_impl(self) -> None:
         """Initialize the flow runner."""
@@ -53,13 +53,13 @@ class AgentFlowRunner(AgentComponent):
                 logger.info(f"Discovered {len(discovered_flows)} flows")
                 
                 for flow_name, flow in discovered_flows.items():
-                    self.register_flow(flow)
+                    self.register_flow(cast(Flow[Any], flow))
             else:
                 logger.warning("Flow registry not available")
         except Exception as e:
             logger.error(f"Error discovering flows: {e}")
     
-    def register_flow(self, flow: Any) -> None:
+    def register_flow(self, flow: Flow) -> None:
         """Register a flow with the agent.
         
         Args:
@@ -76,11 +76,11 @@ class AgentFlowRunner(AgentComponent):
         # Also register with global registry if it exists
         if flow_registry:
             try:
-                flow_registry.register(flow)
+                flow_registry.register(flow_name, flow)
             except Exception as e:
                 logger.debug(f"Could not register flow {flow_name} with global registry: {e}")
     
-    async def register_flow_async(self, flow: Flow) -> None:
+    async def register_flow_async(self, flow: Flow[Any]) -> None:
         """Register a flow asynchronously.
         
         Args:
@@ -105,12 +105,12 @@ class AgentFlowRunner(AgentComponent):
             del self._flows[flow_name]
             logger.debug(f"Unregistered flow: {flow_name}")
         
-        # Also unregister from global registry if it exists
+        # Also remove from global registry if it exists
         if flow_registry:
             try:
-                flow_registry.unregister(flow_name)
+                flow_registry.remove(flow_name)
             except Exception as e:
-                logger.debug(f"Could not unregister flow {flow_name} from global registry: {e}")
+                logger.debug(f"Could not remove flow {flow_name} from global registry: {e}")
     
     def get_flow_registry(self) -> FlowRegistry:
         """Get the flow registry.
@@ -156,7 +156,7 @@ class AgentFlowRunner(AgentComponent):
     async def execute_flow(self,
                           flow_name: str,
                           inputs: Any,
-                          **kwargs) -> FlowResult:
+                          **kwargs: Any) -> FlowResult[Any]:
         """Execute a flow with given inputs.
         
         Args:
@@ -209,7 +209,8 @@ class AgentFlowRunner(AgentComponent):
             # Log execution
             activity_stream = self.get_component("activity_stream")
             if activity_stream:
-                activity_stream.execution(
+                from flowlib.agent.core.activity_stream import ActivityStream
+                cast(ActivityStream, activity_stream).execution(
                     f"Flow '{flow_name}' executed successfully",
                     inputs=str(inputs)[:100],
                     result=str(result)[:100] if result else "None"
@@ -242,7 +243,8 @@ class AgentFlowRunner(AgentComponent):
         if flow_registry:
             try:
                 global_flows = flow_registry.get_agent_selectable_flows()
-                for flow_name, flow in global_flows.items():
+                for flow_name, flow_obj in global_flows.items():
+                    flow = cast(Flow[Any], flow_obj)
                     if flow_name not in self._flows:  # Don't duplicate
                         flows.append({
                             "name": flow_name,
@@ -256,7 +258,7 @@ class AgentFlowRunner(AgentComponent):
         return flows
     
     @property
-    def flows(self) -> Dict[str, Flow]:
+    def flows(self) -> Dict[str, Flow[Any]]:
         """Get registered flows.
         
         Returns:

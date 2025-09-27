@@ -3,15 +3,14 @@
 import json
 import hashlib
 import logging
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import shutil
+import yaml  # type: ignore[import-untyped]
 
 from flowlib.knowledge.models import (
-    ExtractionState, CheckpointData, PluginManifest,
-    Entity, Relationship, KnowledgeBaseStats
+    ExtractionState, PluginManifest
 )
 
 logger = logging.getLogger(__name__)
@@ -226,7 +225,9 @@ class CheckpointManager:
         
         return PluginManifest(
             name=plugin_name,
+            version="1.0.0",
             description=f"Incremental knowledge checkpoint: {len(state.processed_docs)}/{state.progress.total_documents} documents",
+            plugin_type="knowledge_plugin",
             provider_class=provider_class,
             entities_count=len(state.accumulated_entities),
             relationships_count=len(state.accumulated_relationships),
@@ -238,9 +239,7 @@ class CheckpointManager:
 
     async def _save_manifest(self, plugin_dir: Path, manifest: PluginManifest) -> None:
         """Save plugin manifest."""
-        
-        import yaml
-        
+
         manifest_data = manifest.model_dump()
         
         with open(plugin_dir / "manifest.yaml", 'w') as f:
@@ -252,270 +251,85 @@ class CheckpointManager:
         class_name = f"{plugin_name.title().replace('_', '')}Provider"
         domains_list = list(state.detected_domains)
         
-        provider_code = f'''"""
-Incremental knowledge plugin provider for checkpoint: {plugin_name}
-Generated from streaming extraction of {len(state.processed_docs)} documents.
-"""
-
-import json
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from flowlib.providers.knowledge.base import MultiDatabaseKnowledgeProvider, Knowledge
-
-class {class_name}(MultiDatabaseKnowledgeProvider):
-    """Incremental knowledge provider from streaming checkpoint."""
-    
-    domains = {domains_list}
-    
-    # Checkpoint metadata
-    is_incremental = True
-    processed_docs = {len(state.processed_docs)}
-    total_docs = {state.progress.total_documents}
-    progress_percentage = {state.progress.progress_percentage:.1f}
-    
-    def __init__(self):
-        super().__init__()
-        self.plugin_dir = Path(__file__).parent
-        self.data_dir = self.plugin_dir / "data"
-        self._entities_cache = None
-        self._relationships_cache = None
+        # Build provider code safely without complex f-string templates
+        lines = [
+            '"""',
+            f'Incremental knowledge plugin provider for checkpoint: {plugin_name}',
+            f'Generated from streaming extraction of {len(state.processed_docs)} documents.',
+            '"""',
+            '',
+            'import json',
+            'import logging',
+            'from pathlib import Path',
+            'from typing import List, Dict, Any',
+            'from flowlib.providers.knowledge.base import KnowledgeProvider, Knowledge',
+            '',
+            'logger = logging.getLogger(__name__)',
+            '',
+            '',
+            f'class {class_name}(KnowledgeProvider):',
+            '    """Incremental knowledge provider from streaming checkpoint."""',
+            '',
+            '    def __init__(self, plugin_dir: Path):',
+            '        super().__init__()',
+            '        self.plugin_dir = plugin_dir',
+            f'        self.domains = {domains_list}',
+            '        self._entities_cache = None',
+            '',
+            '    def get_description(self) -> str:',
+            f'        return "Incremental knowledge provider for checkpoint: {plugin_name}"',
+            '',
+            '    async def query(self, domain: str, query: str, limit: int = 10) -> List[Knowledge]:',
+            '        """Query knowledge from checkpoint data."""',
+            '        if domain not in self.domains:',
+            '            return []',
+            '',
+            '        entities = self._load_entities()',
+            '        matches = []',
+            '        query_lower = query.lower()',
+            '',
+            '        for entity in entities:',
+            '            if "name" in entity and query_lower in entity["name"].lower():',
+            '                entity_type = entity.get("entity_type", "unknown")',
+            '                entity_desc = entity.get("description", "N/A")',
+            '',
+            '                content = f"Entity: {entity[\'name\']}\\n"',
+            '                content += f"Type: {entity_type}\\n"',
+            '                content += f"Description: {entity_desc}"',
+            '',
+            '                matches.append(Knowledge(',
+            '                    content=content,',
+            '                    domain=domain,',
+            '                    confidence=0.8,',
+            '                    source="json_entities",',
+            '                    metadata={',
+            '                        "entity_id": entity.get("entity_id"),',
+            '                        "type": entity.get("entity_type")',
+            '                    }',
+            '                ))',
+            '',
+            '                if len(matches) >= limit:',
+            '                    break',
+            '',
+            '        return matches',
+            '',
+            '    def _load_entities(self) -> List[Dict]:',
+            '        """Load entities from checkpoint data."""',
+            '        if self._entities_cache is None:',
+            '            entities_file = self.plugin_dir / "entities.json"',
+            '            if entities_file.exists():',
+            '                try:',
+            '                    with open(entities_file, "r", encoding="utf-8") as f:',
+            '                        self._entities_cache = json.load(f)',
+            '                except Exception as e:',
+            '                    logger.warning(f"Failed to load entities: {e}")',
+            '                    self._entities_cache = []',
+            '            else:',
+            '                self._entities_cache = []',
+            '        return self._entities_cache',
+        ]
         
-    def _load_entities(self) -> List[Dict[str, Any]]:
-        """Lazy load entities data."""
-        if self._entities_cache is None:
-            entities_file = self.data_dir / "entities.json"
-            if entities_file.exists():
-                with open(entities_file, 'r') as f:
-                    self._entities_cache = json.load(f)
-            else:
-                self._entities_cache = []
-        return self._entities_cache
-    
-    def _load_relationships(self) -> List[Dict[str, Any]]:
-        """Lazy load relationships data."""
-        if self._relationships_cache is None:
-            relationships_file = self.data_dir / "relationships.json"
-            if relationships_file.exists():
-                with open(relationships_file, 'r') as f:
-                    self._relationships_cache = json.load(f)
-            else:
-                self._relationships_cache = []
-        return self._relationships_cache
-    
-    async def _query_vector(self, domain: str, query: str, limit: int) -> List[Knowledge]:
-        """Query ChromaDB for semantic similarity."""
-        if not self.vector_db:
-            return []
-            
-        try:
-            results = await self.vector_db.query(
-                collection_name=domain,
-                query_texts=[query],
-                n_results=limit
-            )
-            
-            knowledge_items = []
-            if results and "documents" in results:
-                documents = results["documents"][0] if results["documents"] else []
-                distances = results["distances"][0] if "distances" in results and results["distances"] else [0.5] * len(documents)
-                metadatas = results["metadatas"][0] if "metadatas" in results and results["metadatas"] else [{}] * len(documents)
-                
-                for doc, distance, metadata in zip(documents, distances, metadatas):
-                    knowledge_items.append(
-                        Knowledge(
-                            content=doc,
-                            domain=domain,
-                            confidence=max(0.0, 1.0 - distance),
-                            source="vector_search",
-                            metadata={{
-                                "chunk_id": metadata["chunk_id"] if "chunk_id" in metadata else None,
-                                "document": metadata["document"] if "document" in metadata else None
-                            }}
-                        )
-                    )
-            
-            return knowledge_items
-        except Exception as e:
-            # Fallback to JSON data
-            return await self._query_json_entities(domain, query, limit)
-    
-    async def _query_graph(self, domain: str, query: str, limit: int) -> List[Knowledge]:
-        """Query Neo4j for relationship-based knowledge."""
-        if not self.graph_db:
-            return await self._query_json_relationships(domain, query, limit)
-            
-        try:
-            # Entity search with relationship expansion
-            cypher = """
-            MATCH (e:Entity)
-            WHERE e.domain = $domain AND (e.name CONTAINS $query OR e.description CONTAINS $query)
-            OPTIONAL MATCH (e)-[r]-(related:Entity)
-            RETURN e, collect({{relation: r, entity: related}}) as relationships
-            LIMIT $limit
-            """
-            
-            results = await self.graph_db.run(
-                cypher,
-                domain=domain,
-                query=query,
-                limit=limit
-            )
-            
-            knowledge_items = []
-            for record in results:
-                entity = record["e"]
-                relationships = record["relationships"]
-                
-                content = self._build_entity_content(entity, relationships)
-                knowledge_items.append(
-                    Knowledge(
-                        content=content,
-                        domain=domain,
-                        confidence=0.9,
-                        source="graph_traversal",
-                        metadata={{"entity_id": entity["id"], "relationship_count": len(relationships)}}
-                    )
-                )
-                
-            return knowledge_items
-        except Exception as e:
-            # Fallback to JSON data
-            return await self._query_json_relationships(domain, query, limit)
-    
-    async def _query_json_entities(self, domain: str, query: str, limit: int) -> List[Knowledge]:
-        """Fallback: query entities from JSON data."""
-        entities = self._load_entities()
-        query_lower = query.lower()
-        matches = []
-        
-        for entity in entities:
-            entity_domains = entity['domains'] if 'domains' in entity else [domain]
-            if domain in entity_domains or domain == 'general':
-                entity_name = entity['name'] if 'name' in entity else ''
-                entity_description = entity['description'] if 'description' in entity else ''
-                if (query_lower in entity_name.lower() or 
-                    query_lower in entity_description.lower()):
-                    
-                    entity_type = entity['entity_type'] if 'entity_type' in entity else 'unknown'
-                    entity_desc = entity['description'] if 'description' in entity else 'N/A'
-                    
-                    content = f"Entity: {{entity['name']}}\\n"
-                    content += f"Type: {{entity_type}}\\n"
-                    content += f"Description: {{entity_desc}}"
-                    
-                    matches.append(
-                        Knowledge(
-                            content=content,
-                            domain=domain,
-                            confidence=0.8,
-                            source="json_entities",
-                            metadata={{
-                                "entity_id": entity["entity_id"] if "entity_id" in entity else None,
-                                "type": entity["entity_type"] if "entity_type" in entity else None
-                            }}
-                        )
-                    )
-                    
-                if len(matches) >= limit:
-                    break
-                    
-        return matches
-    
-    async def _query_json_relationships(self, domain: str, query: str, limit: int) -> List[Knowledge]:
-        """Fallback: query relationships from JSON data."""
-        relationships = self._load_relationships()
-        entities = self._load_entities()
-        
-        # Create entity lookup
-        entity_lookup = {{e['entity_id']: e for e in entities}}
-        
-        query_lower = query.lower()
-        matches = []
-        
-        for rel in relationships:
-            # Fail-fast approach - require relationship fields
-            if 'source_entity_id' not in rel or 'target_entity_id' not in rel:
-                continue
-                
-            source_id = rel['source_entity_id']
-            target_id = rel['target_entity_id']
-            
-            source_entity = entity_lookup[source_id] if source_id in entity_lookup else None
-            target_entity = entity_lookup[target_id] if target_id in entity_lookup else None
-            
-            if source_entity and target_entity:
-                source_name = source_entity['name'] if 'name' in source_entity else 'Unknown'
-                target_name = target_entity['name'] if 'name' in target_entity else 'Unknown'
-                rel_type = rel['relationship_type'] if 'relationship_type' in rel else 'relates_to'
-                
-                rel_text = f"{source_name} {rel_type} {target_name}"
-                
-                if query_lower in rel_text.lower():
-                    rel_desc = rel['description'] if 'description' in rel else 'N/A'
-                    content = f"Relationship: {rel_text}\\n"
-                    content += f"Description: {rel_desc}"
-                    
-                    matches.append(
-                        Knowledge(
-                            content=content,
-                            domain=domain,
-                            confidence=0.7,
-                            source="json_relationships",
-                            metadata={{
-                                "relationship_id": rel["relationship_id"] if "relationship_id" in rel else None,
-                                "type": rel["relationship_type"] if "relationship_type" in rel else None
-                            }}
-                        )
-                    )
-                    
-                if len(matches) >= limit:
-                    break
-                    
-        return matches
-    
-    def _build_entity_content(self, entity: Dict, relationships: List[Dict]) -> str:
-        """Build comprehensive content from entity and relationships."""
-        entity_desc = entity['description'] if 'description' in entity else 'N/A'
-        content = f"Entity: {{entity['name']}}\\n"
-        content += f"Description: {{entity_desc}}\\n"
-        
-        if relationships:
-            content += "\\nRelated entities:\\n"
-            for rel in relationships[:5]:  # Limit to top 5
-                rel_entity = rel["entity"]
-                relation = rel["relation"]
-                content += f"- {{relation.type}}: {{rel_entity['name']}}\\n"
-                
-        return content
-    
-    def get_checkpoint_info(self) -> Dict[str, Any]:
-        """Get information about this checkpoint."""
-        return {{
-            "is_incremental": self.is_incremental,
-            "processed_docs": self.processed_docs,
-            "total_docs": self.total_docs,
-            "progress_percentage": self.progress_percentage,
-            "can_resume": True,
-            "domains": self.domains,
-            "plugin_dir": str(self.plugin_dir)
-        }}
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get basic statistics about the knowledge base."""
-        entities = self._load_entities()
-        relationships = self._load_relationships()
-        
-        return {{
-            "total_entities": len(entities),
-            "total_relationships": len(relationships),
-            "entity_types": len(set(e['entity_type'] if 'entity_type' in e else 'unknown' for e in entities)),
-            "relationship_types": len(set(r['relationship_type'] if 'relationship_type' in r else 'unknown' for r in relationships)),
-            "processed_documents": self.processed_docs,
-            "progress_percentage": self.progress_percentage
-        }}
-'''
-
-        return provider_code
+        return '\n'.join(lines)
 
     async def _save_provider_code(self, plugin_dir: Path, provider_code: str) -> None:
         """Save provider code to plugin."""

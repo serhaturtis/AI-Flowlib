@@ -1,12 +1,11 @@
-import inspect
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 
 # Removed ProviderType import - using config-driven provider access
 from .registry import provider_registry
 
 from .provider_base import ProviderBase
 
-def provider(name: str, provider_type: str = "llm", *, settings_class: type = None, **metadata):
+def provider(name: str, provider_type: str = "llm", *, settings_class: Optional[type] = None, **metadata: Any) -> Callable[[type], type]:
     """
     Register a class as a provider factory.
     Enforces contract: only ProviderBase subclasses (pydantic v2) can be registered.
@@ -22,7 +21,7 @@ def provider(name: str, provider_type: str = "llm", *, settings_class: type = No
         if not isinstance(settings_value, (dict, settings_class)):
             raise TypeError(f"Decorator-defined settings for '{name}' must be a dict or an instance of {settings_class.__name__}, got {type(settings_value)}")
     
-    def decorator(cls):
+    def decorator(cls: type) -> type:
         if provider_registry is None:
             raise RuntimeError("Provider registry not initialized")
         # Check contract
@@ -30,13 +29,11 @@ def provider(name: str, provider_type: str = "llm", *, settings_class: type = No
             raise TypeError(f"Provider '{name}' must be a ProviderBase subclass (pydantic v2), got {type(cls)}")
         
         # Create factory function
-        def factory(runtime_settings_dict: Optional[Dict[str, Any]] = None):
+        def factory(runtime_settings_dict: Optional[Dict[str, Any]] = None) -> Any:
             final_settings_arg = None
-            source_of_settings = "unknown"
 
             # Priority 1: Runtime settings from configuration (e.g., agent_config.yaml)
             if runtime_settings_dict is not None:
-                source_of_settings = "runtime_config"
                 if settings_class:
                     try:
                         final_settings_arg = settings_class(**runtime_settings_dict)
@@ -49,7 +46,6 @@ def provider(name: str, provider_type: str = "llm", *, settings_class: type = No
                 # Priority 2: Settings defined as an argument to the decorator itself
                 decorator_arg_settings = metadata.get('settings')
                 if decorator_arg_settings is not None:
-                    source_of_settings = "decorator_argument"
                     if settings_class and isinstance(decorator_arg_settings, dict):
                         try:
                             final_settings_arg = settings_class(**decorator_arg_settings)
@@ -61,14 +57,12 @@ def provider(name: str, provider_type: str = "llm", *, settings_class: type = No
                         raise TypeError(f"Decorator-defined settings for '{name}' for provider '{name}' must be a dict or an instance of {settings_class.__name__}, got {type(decorator_arg_settings)}")
                 # Priority 3: Default instantiation of settings_class if no settings provided from runtime or decorator args
                 elif settings_class:
-                    source_of_settings = "pydantic_default"
                     try:
                         final_settings_arg = settings_class() # Use Pydantic model defaults
                     except Exception as e:
                         raise ValueError(f"Error instantiating default settings for '{name}' with {settings_class.__name__}: {e}") from e
                 else:
                     # No runtime_settings, no decorator_settings, no settings_class. Pass empty dict.
-                    source_of_settings = "empty_dict_fallback"
                     final_settings_arg = {}
             
             # Prepare kwargs for the provider, excluding 'settings' if it was a decorator metadata key, as it's now handled in final_settings_arg
@@ -82,37 +76,38 @@ def provider(name: str, provider_type: str = "llm", *, settings_class: type = No
             name=name,
             factory=factory,
             provider_type=provider_type,
-            settings_class=settings_class,
             **metadata
         )
-        cls.__provider_name__ = name
-        cls.__provider_type__ = provider_type
-        cls.__provider_metadata__ = metadata
-        cls.settings_class = settings_class  # Set settings_class for _default_settings() method
+        # Add dynamic attributes to the class with proper type annotation
+        cls.__provider_name__ = name  # type: ignore[attr-defined]
+        cls.__provider_type__ = provider_type  # type: ignore[attr-defined]
+        cls.__provider_metadata__ = metadata  # type: ignore[attr-defined]
+        cls.settings_class = settings_class  # type: ignore[attr-defined]
+
         return cls
     return decorator
 
 # Specialized provider decorators for convenience
-def llm_provider(name: str, **metadata):
+def llm_provider(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as an LLM provider factory."""
     return provider(name, "llm", **metadata)
 
-def db_provider(name: str, **metadata):
+def db_provider(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a database provider factory."""
     return provider(name, "database", **metadata)
 
-def vector_db_provider(name: str, **metadata):
+def vector_db_provider(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a vector database provider factory."""
     return provider(name, "vector_db", **metadata)
 
-def cache_provider(name: str, **metadata):
+def cache_provider(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a cache provider factory."""
     return provider(name, "cache", **metadata)
 
-def storage_provider(name: str, **metadata):
+def storage_provider(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a storage provider factory."""
     return provider(name, "storage", **metadata)
 
-def message_queue_provider(name: str, **metadata):
+def message_queue_provider(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a message queue provider factory."""
     return provider(name, "message_queue", **metadata) 

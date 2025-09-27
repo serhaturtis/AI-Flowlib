@@ -4,7 +4,7 @@ This module provides utilities for serializing complex objects
 for web display or API responses, ensuring they are JSON-compatible.
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict
 
 
 def make_serializable(obj: Any) -> Any:

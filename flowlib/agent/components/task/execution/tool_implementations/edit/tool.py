@@ -3,13 +3,13 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Any
-from ...models import ToolResult, ToolExecutionContext, ToolStatus
+from typing import cast
+from ...models import ToolResult, ToolExecutionContext, ToolStatus, TodoItem
 from ...decorators import tool
 from .models import EditParameters, EditResult
 
 
-@tool(name="edit", category="filesystem", description="Edit files by finding and replacing text with backup support")
+@tool(name="edit", tool_category="software", description="Edit files by finding and replacing text with backup support")
 class EditTool:
     """Tool for editing files with find/replace operations."""
     
@@ -22,8 +22,8 @@ class EditTool:
         return "Edit files by finding and replacing text with backup support"
     
     async def execute(
-        self, 
-        todo: Any,  # TodoItem with task description
+        self,
+        todo: TodoItem,  # TodoItem with task description
         context: ToolExecutionContext  # Execution context
     ) -> ToolResult:
         """Execute file edit operations."""
@@ -155,13 +155,16 @@ class EditTool:
                 file_path=params.file_path
             )
     
-    async def _generate_parameters(self, todo: Any, context: ToolExecutionContext) -> EditParameters:
+    async def _generate_parameters(self, todo: TodoItem, context: ToolExecutionContext) -> EditParameters:
         """Generate EditParameters from todo content using flow."""
         from flowlib.flows.registry.registry import flow_registry
-        from .flow import EditParameterGenerationInput
-        
+        from .flow import EditParameterGenerationInput, EditParameterGenerationFlow
+
         # Get the parameter generation flow class
-        flow_instance = flow_registry.get("edit-parameter-generation")
+        flow_obj = flow_registry.get("edit-parameter-generation")
+        if flow_obj is None:
+            raise RuntimeError("Edit parameter generation flow not found in registry")
+        flow_instance = cast(EditParameterGenerationFlow, flow_obj)
         
         
         # Extract task content from todo
@@ -175,5 +178,5 @@ class EditTool:
         
         # Execute flow to generate parameters
         result = await flow_instance.run_pipeline(flow_input)
-        
-        return result.parameters
+
+        return cast(EditParameters, result.parameters)

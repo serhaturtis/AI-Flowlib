@@ -5,6 +5,8 @@ Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
 Modify the settings below for your specific setup.
 """
 
+from typing import Any
+
 from flowlib.resources.decorators.decorators import embedding_config
 from flowlib.resources.models.config_resource import EmbeddingConfigResource
 
@@ -18,7 +20,7 @@ class ExampleLlamaCppEmbeddingProviderConfig(EmbeddingConfigResource):
     This config can be assigned to roles like 'default-embedding' via role assignment.
     """
     
-    def __init__(self, name: str, type: str, **kwargs):
+    def __init__(self, name: str, type: str, **kwargs: Any) -> None:
         super().__init__(
             name=name,
             type=type,

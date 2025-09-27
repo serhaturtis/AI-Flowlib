@@ -1,11 +1,12 @@
-from typing import Dict, Any, Protocol, runtime_checkable
+from typing import Optional, Callable, Any, TYPE_CHECKING
 from flowlib.resources.models.constants import ResourceType
 from flowlib.resources.models.base import ResourceBase
-from flowlib.resources.models.model_resource import ModelResource
-from flowlib.core.interfaces import PromptTemplate
+
+if TYPE_CHECKING:
+    from flowlib.resources.registry.registry import ResourceRegistry
 
 
-def _get_resource_registry():
+def _get_resource_registry() -> 'ResourceRegistry':
     """Lazy import of resource registry to avoid circular dependencies."""
     from flowlib.resources.registry.registry import resource_registry
     return resource_registry
@@ -13,12 +14,12 @@ def _get_resource_registry():
 
 
 
-def resource(name: str, resource_type: str = ResourceType.MODEL_CONFIG, **metadata):
+def resource(name: str, resource_type: str = ResourceType.MODEL_CONFIG, **metadata: Any) -> Callable[[type], type]:
     """Register a class or function as a resource.
     Enforces contract: only ResourceBase subclasses can be registered.
     If not, raises TypeError immediately.
     """
-    def decorator(obj):
+    def decorator(obj: type) -> type:
         registry = _get_resource_registry()
         if registry is None:
             raise RuntimeError("Resource registry not initialized")
@@ -27,9 +28,9 @@ def resource(name: str, resource_type: str = ResourceType.MODEL_CONFIG, **metada
             raise TypeError(f"Resource '{name}' must be a ResourceBase subclass (pydantic v2), got {type(obj)}")
         
         # Attach metadata to class first
-        obj.__resource_name__ = name
-        obj.__resource_type__ = resource_type
-        obj.__resource_metadata__ = {'name': name, 'type': resource_type, **metadata}
+        obj.__resource_name__ = name  # type: ignore[attr-defined]
+        obj.__resource_type__ = resource_type  # type: ignore[attr-defined]
+        obj.__resource_metadata__ = {'name': name, 'type': resource_type, **metadata}  # type: ignore[attr-defined]
         
         # Instantiate the resource for registration with minimal required fields
         instance = obj(name=name, type=resource_type)
@@ -42,7 +43,7 @@ def resource(name: str, resource_type: str = ResourceType.MODEL_CONFIG, **metada
         return obj
     return decorator
 
-def model_config(name: str, provider_type: str = None, provider: str = None, config: dict = None, **metadata):
+def model_config(name: str, provider_type: Optional[str] = None, provider: Optional[str] = None, config: Optional[dict[str, Any]] = None, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a model configuration resource.
     If the decorated class is not a ResourceBase subclass, wrap it in ModelResource.
     
@@ -53,15 +54,15 @@ def model_config(name: str, provider_type: str = None, provider: str = None, con
         config: Additional model configuration
         **metadata: Additional metadata
     """
-    def decorator(cls):
+    def decorator(cls: type) -> type:
         registry = _get_resource_registry()
         if registry is None:
             raise RuntimeError("Resource registry not initialized")
             
         # Attach metadata to class
-        cls.__resource_name__ = name
-        cls.__resource_type__ = ResourceType.MODEL_CONFIG
-        cls.__resource_metadata__ = {'name': name, 'type': ResourceType.MODEL, **metadata}
+        cls.__resource_name__ = name  # type: ignore[attr-defined]
+        cls.__resource_type__ = ResourceType.MODEL_CONFIG  # type: ignore[attr-defined]
+        cls.__resource_metadata__ = {'name': name, 'type': ResourceType.MODEL, **metadata}  # type: ignore[attr-defined]
         
         # Register with global registry if available
         if registry is not None:
@@ -75,22 +76,23 @@ def model_config(name: str, provider_type: str = None, provider: str = None, con
             
             # If already a ResourceBase subclass, register directly
             if isinstance(cls, type) and issubclass(cls, ResourceBase):
-                # Check if it's a ModelResource subclass (has provider_type and config fields)
-                if hasattr(cls, 'model_fields') and 'provider_type' in cls.model_fields and 'config' in cls.model_fields:
-                    # Explicit config required - no fallbacks
-                    if config is None:
-                        raise ValueError(f"model_config '{name}' requires explicit config parameter")
-                    instance = cls(name=name, type="model_config", provider_type=final_provider_type, config=config)
-                else:
-                    # Basic ResourceBase - just pass name and type
-                    instance = cls(name=name, type="model_config")
+                # ResourceBase accepts only name and type parameters
+                instance = cls(name=name, type="model_config")
             else:
                 # Wrap non-contract class in ModelResource
                 from flowlib.resources.models.model_resource import ModelResource
                 # Explicit config required - no fallbacks
                 if config is None:
                     raise ValueError(f"model_config '{name}' requires explicit config parameter")
-                instance = ModelResource(name=name, provider_type=final_provider_type, config=config, type="model_config")
+                instance = ModelResource(
+                    name=name,
+                    provider_type=final_provider_type,
+                    config=config,
+                    type="model_config",
+                    model_path=config.get("model_path"),
+                    model_name=config.get("model_name", name),
+                    model_type=config.get("model_type")
+                )
             registry.register(
                 name=name,
                 obj=instance,
@@ -102,7 +104,7 @@ def model_config(name: str, provider_type: str = None, provider: str = None, con
     return decorator
 
 
-def prompt(name: str, **metadata):
+def prompt(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a prompt resource.
     
     This decorator ensures the decorated class adheres to the PromptTemplate protocol
@@ -119,28 +121,48 @@ def prompt(name: str, **metadata):
         ValueError: If the decorated object does not have a 'template' attribute
                    or if 'config' is not present after decoration
     """
-    def decorator(obj):
+    def decorator(obj: type) -> type:
         registry = _get_resource_registry()
         
-        # Check if template exists before registration
-        # For Pydantic models, check both class annotations and model_fields
-        has_template = (hasattr(obj, '__annotations__') and 'template' in obj.__annotations__) or \
-                      (hasattr(obj, 'model_fields') and 'template' in obj.model_fields) or \
-                      hasattr(obj, 'template')
-        if not has_template:
+        # Check if template exists before registration using safe attribute access
+        template_exists = False
+        try:
+            # Check for template in annotations
+            if getattr(obj, '__annotations__', None) and 'template' in obj.__annotations__:
+                template_exists = True
+            # Check for template in Pydantic model fields
+            elif getattr(obj, 'model_fields', None) and 'template' in obj.model_fields:  # type: ignore[attr-defined]
+                template_exists = True
+            # Check for direct template attribute
+            elif getattr(obj, 'template', None) is not None:
+                template_exists = True
+        except (AttributeError, TypeError):
+            pass
+
+        if not template_exists:
             raise ValueError(f"Prompt '{name}' must have a 'template' attribute")
         
         # Attach metadata to class
-        obj.__resource_name__ = name
-        obj.__resource_type__ = ResourceType.PROMPT_CONFIG
-        obj.__resource_metadata__ = {'name': name, 'type': ResourceType.PROMPT, **metadata}
+        obj.__resource_name__ = name  # type: ignore[attr-defined]
+        obj.__resource_type__ = ResourceType.PROMPT_CONFIG  # type: ignore[attr-defined]
+        obj.__resource_metadata__ = {'name': name, 'type': ResourceType.PROMPT, **metadata}  # type: ignore[attr-defined]
         
-        # Add default config only if it doesn't already exist
-        has_existing_config = (hasattr(obj, '__annotations__') and 'config' in obj.__annotations__) or \
-                             (hasattr(obj, 'model_fields') and 'config' in obj.model_fields) or \
-                             hasattr(obj, 'config')
-        if not has_existing_config:
-            obj.config = {
+        # Add default config only if it doesn't already exist using safe attribute access
+        config_exists = False
+        try:
+            # Check for config in annotations
+            if getattr(obj, '__annotations__', None) and 'config' in obj.__annotations__:
+                config_exists = True
+            # Check for config in Pydantic model fields
+            elif getattr(obj, 'model_fields', None) and 'config' in obj.model_fields:  # type: ignore[attr-defined]
+                config_exists = True
+            # Check for direct config attribute
+            elif getattr(obj, 'config', None) is not None:
+                config_exists = True
+        except (AttributeError, TypeError):
+            pass
+        if not config_exists:
+            obj.config = {  # type: ignore[attr-defined]
                 "max_tokens": 2048,
                 "temperature": 0.5,
                 "top_p": 1,
@@ -170,57 +192,80 @@ def prompt(name: str, **metadata):
     
     return decorator
 
-def config(name: str, **metadata):
+def config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a configuration resource.
-    
+
     This decorator is a specialized version of @resource for configs.
-    
+
     Args:
         name: Unique name for the config
         **metadata: Additional metadata about the config
-        
+
     Returns:
         Decorator function
     """
     return resource(name, ResourceType.CONFIG, **metadata)
 
 
-def llm_config(name: str, **metadata):
+def llm_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as an LLM configuration resource.
-    
+
     Args:
         name: Unique name for the LLM config (e.g., 'default-llm', 'fast-chat')
         **metadata: Additional metadata about the config
     """
     return resource(name, ResourceType.LLM_CONFIG, **metadata)
 
-def database_config(name: str, **metadata):
+def database_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a database configuration resource."""
     return resource(name, ResourceType.DATABASE_CONFIG, **metadata)
 
-def vector_db_config(name: str, **metadata):
+def vector_db_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a vector database configuration resource."""
     return resource(name, ResourceType.VECTOR_DB_CONFIG, **metadata)
 
-def cache_config(name: str, **metadata):
+def cache_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a cache configuration resource."""
     return resource(name, ResourceType.CACHE_CONFIG, **metadata)
 
-def storage_config(name: str, **metadata):
+def storage_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a storage configuration resource."""
     return resource(name, ResourceType.STORAGE_CONFIG, **metadata)
 
-def embedding_config(name: str, **metadata):
+def embedding_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as an embedding configuration resource."""
     return resource(name, ResourceType.EMBEDDING_CONFIG, **metadata)
 
-def graph_db_config(name: str, **metadata):
+def graph_db_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a graph database configuration resource."""
     return resource(name, ResourceType.GRAPH_DB_CONFIG, **metadata)
 
-def message_queue_config(name: str, **metadata):
+def message_queue_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a message queue configuration resource."""
     return resource(name, ResourceType.MESSAGE_QUEUE_CONFIG, **metadata)
+
+def agent_profile_config(name: str, **metadata: Any) -> Callable[[type], type]:
+    """Register a class as an agent profile configuration resource."""
+    return resource(name, ResourceType.AGENT_PROFILE_CONFIG, **metadata)
+
+
+def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
+    """Register a class as an agent configuration resource.
+
+    Agent configs define complete agent setups including:
+    - Persona and behavior
+    - Profile for tool access
+    - Model and LLM selection
+    - Temperature and other settings
+
+    Args:
+        name: Unique name for the agent config
+        **metadata: Additional metadata about the config
+
+    Returns:
+        Decorator function
+    """
+    return resource(name, ResourceType.AGENT_CONFIG, **metadata)
 
 # Template registration removed - templates now use direct registry.register() calls
 

@@ -4,10 +4,9 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Any
 
 from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.providers.core.registry import provider_registry
 
 from flowlib.knowledge.orchestration.models import OrchestrationRequest, OrchestrationResult, OrchestrationProgress
 from flowlib.knowledge.extraction.flow import DocumentExtractionFlow
@@ -27,7 +26,7 @@ from flowlib.knowledge.models import (
 logger = logging.getLogger(__name__)
 
 
-@flow(name="knowledge-orchestration", description="Orchestrate knowledge extraction pipeline")
+@flow(name="knowledge-orchestration", description="Orchestrate knowledge extraction pipeline")  # type: ignore[arg-type]
 class KnowledgeOrchestrationFlow:
     """Orchestrates the complete knowledge extraction pipeline.
     
@@ -39,7 +38,7 @@ class KnowledgeOrchestrationFlow:
     async def run_pipeline(self, request: OrchestrationRequest) -> OrchestrationResult:
         """Execute the complete knowledge orchestration pipeline."""
         
-        logger.info(f"🚀 Starting knowledge orchestration pipeline")
+        logger.info("🚀 Starting knowledge orchestration pipeline")
         logger.info(f"📂 Input: {request.input_directory}")
         logger.info(f"📁 Output: {request.output_directory}")
         
@@ -118,7 +117,7 @@ class KnowledgeOrchestrationFlow:
                 output_files=output_files,
                 export_directory=request.output_directory,
                 processing_time_seconds=processing_time,
-                total_size_bytes=sum(len(doc.content.encode()) for doc in documents)
+                total_size_bytes=sum(len(doc.full_text.encode()) for doc in documents)
             )
             
         except Exception as e:
@@ -164,14 +163,51 @@ class KnowledgeOrchestrationFlow:
                     break
         
         # Extract documents
+        from flowlib.knowledge.models import KnowledgeExtractionRequest
+
+        # Convert OrchestrationRequest to KnowledgeExtractionRequest
+        knowledge_request = KnowledgeExtractionRequest(
+            input_directory=request.input_directory,
+            output_directory=request.output_directory,
+            collection_name=request.collection_name,
+            graph_name=request.graph_name,
+            chunk_size=request.chunk_size,
+            chunk_overlap=request.chunk_overlap,
+            max_files=request.max_files,
+            supported_formats=request.supported_formats,
+            extract_entities=request.extract_entities,
+            extract_relationships=request.extract_relationships,
+            create_summaries=request.create_summaries,
+            detect_topics=request.detect_topics,
+            # Use defaults for fields not in OrchestrationRequest
+            extraction_domain="general",
+            llm_model_name="default-llm",
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            vector_dimensions=384,
+            vector_provider_name=request.vector_provider_name or "chroma",
+            graph_provider_name=request.graph_provider_name or "neo4j",
+            embedding_provider_name=None,  # Optional field
+            enable_graph_analysis=True,
+            min_entity_frequency=2,
+            min_relationship_confidence=0.7,
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_username="neo4j",
+            neo4j_password="password",
+            use_vector_db=True,
+            use_graph_db=True,
+            resume_from_checkpoint=False,  # New orchestration doesn't resume
+            plugin_name_prefix="knowledge_extraction"
+        )
+
         extraction_flow = DocumentExtractionFlow()
         extraction_input = DocumentExtractionInput(
-            request=request,  # Pass the orchestration request
+            request=knowledge_request,
             file_paths=file_paths
         )
         
         extraction_result = await extraction_flow.run_pipeline(extraction_input)
-        return extraction_result.documents
+        documents: List[DocumentContent] = extraction_result.documents
+        return documents
 
     async def _analyze_entities(
         self, 
@@ -183,7 +219,10 @@ class KnowledgeOrchestrationFlow:
         analysis_flow = EntityAnalysisFlow()
         analysis_input = EntityExtractionInput(
             documents=documents,
-            extraction_domain="general"
+            extraction_domain="general",
+            llm_model_name="music-album-model",
+            min_entity_frequency=2,
+            min_relationship_confidence=0.7
         )
         
         analysis_result = await analysis_flow.run_pipeline(analysis_input)
@@ -204,7 +243,11 @@ class KnowledgeOrchestrationFlow:
         vector_flow = VectorStorageFlow()
         vector_input = VectorStoreInput(
             documents=documents,
-            collection_name=request.collection_name
+            collection_name=request.collection_name,
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+            vector_dimensions=384,
+            vector_provider_name="chroma",
+            embedding_provider_name="default-embedding"
         )
         
         return await vector_flow.run_pipeline(vector_input)
@@ -228,7 +271,16 @@ class KnowledgeOrchestrationFlow:
             documents=documents,
             entities=entities,
             relationships=relationships,
-            graph_name=request.graph_name
+            graph_name=request.graph_name,
+            graph_provider_name="neo4j",
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_username="neo4j",
+            neo4j_password="password",
+            query_entity_id="",
+            query_entity_type="",
+            query_source_id="",
+            query_target_id="",
+            query_limit=100
         )
         
         return await graph_flow.run_pipeline(graph_input)

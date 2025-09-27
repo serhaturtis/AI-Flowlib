@@ -1,15 +1,15 @@
 """Plugin manager for knowledge providers."""
 
 import os
-import yaml
+import yaml  # type: ignore[import-untyped]
 import importlib.util
 import asyncio
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Tuple, Any
 import logging
 
 from .base import KnowledgeProvider, Knowledge
-from flowlib.providers.knowledge.models.plugin import PluginManifest, ProjectConfig, DatabaseConfig, PluginInfo
+from flowlib.providers.knowledge.models.plugin import PluginManifest, ProjectConfig
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,13 @@ class KnowledgePluginManager:
     querying across all loaded plugins.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the plugin manager."""
         self.loaded_plugins: Dict[str, KnowledgeProvider] = {}
         self.plugin_configs: Dict[str, Dict] = {}
         self._initialized = False
-        
-    async def initialize(self):
+
+    async def initialize(self) -> None:
         """Initialize the plugin manager and discover plugins."""
         if self._initialized:
             return
@@ -37,7 +37,7 @@ class KnowledgePluginManager:
         await self.discover_and_load_plugins()
         self._initialized = True
         
-    async def discover_and_load_plugins(self):
+    async def discover_and_load_plugins(self) -> None:
         """Discover and load all available plugins."""
         plugin_paths = self._get_plugin_discovery_paths()
         logger.info(f"Searching for plugins in {len(plugin_paths)} directories")
@@ -185,7 +185,7 @@ class KnowledgePluginManager:
             logger.error(f"Failed to load plugin at {plugin_path}: {e}")
             return False
     
-    async def _load_database_configs(self, plugin_path: Path, manifest) -> Dict[str, Any]:
+    async def _load_database_configs(self, plugin_path: Path, manifest: Any) -> Dict[str, Any]:
         """Load database configuration files for the plugin.
         
         Args:
@@ -233,7 +233,7 @@ class KnowledgePluginManager:
         
         return databases
     
-    def _import_provider_class(self, plugin_path: Path, manifest):
+    def _import_provider_class(self, plugin_path: Path, manifest: Any) -> Any:
         """Dynamically import the provider class from the plugin.
         
         Args:
@@ -368,7 +368,7 @@ class KnowledgePluginManager:
             return []
         
         # Remove duplicates based on content similarity
-        unique_results = {}
+        unique_results: Dict[str, Any] = {}
         for result in results:
             # Create a key based on first 100 chars and domain
             key = f"{result.content[:100].strip()}_{result.domain}"
@@ -451,7 +451,7 @@ class KnowledgePluginManager:
             if provider.supports_domain(domain)
         ]
     
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Shutdown all loaded plugins."""
         logger.info("Shutting down Knowledge Plugin Manager")
         
@@ -469,7 +469,7 @@ class KnowledgePluginManager:
         self._initialized = False
         logger.info("Knowledge Plugin Manager shutdown complete")
     
-    async def _shutdown_plugin_safely(self, plugin_name: str, provider: KnowledgeProvider):
+    async def _shutdown_plugin_safely(self, plugin_name: str, provider: KnowledgeProvider) -> None:
         """Shutdown a single plugin with error handling.
         
         Args:
@@ -546,8 +546,8 @@ class KnowledgePluginManager:
                 return False, f"Plugin '{plugin_name}' is not loaded", {}
             
             provider = self.loaded_plugins[plugin_name]
-            test_results = {}
-            
+            test_results: Dict[str, Any] = {}
+
             # Test 1: Check domains
             domains = provider.domains
             test_results["domains"] = {
@@ -555,9 +555,9 @@ class KnowledgePluginManager:
                 "value": domains,
                 "message": f"Plugin supports {len(domains)} domains" if domains else "No domains supported"
             }
-            
+
             # Test 2: Check if provider responds to domain queries
-            domain_tests = {}
+            domain_tests: Dict[str, Dict[str, str]] = {}
             if domains:
                 for domain in domains[:3]:  # Test first 3 domains
                     try:
@@ -588,7 +588,7 @@ class KnowledgePluginManager:
             
             test_results["configuration"] = {
                 "status": "PASS" if config else "FAIL",
-                "message": f"Configuration loaded" if config else "No configuration found",
+                "message": "Configuration loaded" if config else "No configuration found",
                 "databases": databases_list
             }
             

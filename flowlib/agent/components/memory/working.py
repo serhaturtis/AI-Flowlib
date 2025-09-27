@@ -13,14 +13,13 @@ from datetime import datetime, timedelta, timezone
 from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
-from ...core.errors import MemoryError, ErrorContext
+from ...core.errors import MemoryError
 from .models import (
     MemoryStoreRequest,
     MemoryRetrieveRequest,
-    MemorySearchRequest,
-    MemoryContext
+    MemorySearchRequest
 )
-from .models import MemoryItem, MemorySearchResult
+from .models import MemoryItem, MemorySearchResult, MemorySearchMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ class WorkingMemory:
         self._contexts: Set[str] = set()
         
         # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task[None]] = None
         self._shutdown = False
         
         # Resource tracking
@@ -147,8 +146,9 @@ class WorkingMemory:
             )
         
         # Ensure context exists
-        if request.context not in self._store:
-            await self.create_context(request.context)
+        context = request.context or "default"
+        if context not in self._store:
+            await self.create_context(context)
         
         try:
             # Create TTL entry
@@ -158,18 +158,18 @@ class WorkingMemory:
                 ttl_delta = timedelta(seconds=self._config.default_ttl_seconds)
             
             expiry = datetime.now(timezone.utc) + ttl_delta
-            key = f"{request.context}:{request.key}"
-            
+            key = f"{context}:{request.key}"
+
             # Create a MemoryItem to store
             memory_item = MemoryItem(
                 key=request.key,
                 value=request.value,
-                context=request.context,
-                metadata=request.metadata or {}
+                context=context,
+                updated_at=datetime.now()
             )
-            
+
             # Store the item
-            self._store[request.context][request.key] = memory_item
+            self._store[context][request.key] = memory_item
             self._ttl_map[key] = expiry
             
             # Update resource tracking
@@ -252,7 +252,10 @@ class WorkingMemory:
                     results.append(MemorySearchResult(
                         item=item,
                         score=1.0,  # Simple binary matching
-                        metadata={"match_type": "text_search"}
+                        metadata=MemorySearchMetadata(
+                            search_query=request.query,
+                            search_type="text_search"
+                        )
                     ))
             
             # Apply limit
@@ -286,7 +289,11 @@ class WorkingMemory:
         search_request = MemorySearchRequest(
             query=query,
             context=context,
-            limit=limit
+            limit=limit,
+            threshold=None,
+            sort_by=None,
+            search_type="hybrid",
+            metadata_filter=None
         )
         
         search_results = await self.search(search_request)

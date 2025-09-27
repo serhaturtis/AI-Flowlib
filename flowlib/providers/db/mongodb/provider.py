@@ -5,37 +5,35 @@ for MongoDB database using motor (async driver).
 """
 
 import logging
-import asyncio
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union, Callable
-import json
-from datetime import datetime, date
+from typing import Any, Dict, List, Optional, Callable, cast, Coroutine
+from typing import List as ListType
+
+from pydantic import Field, BaseModel
+
+from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.models import ProviderErrorContext
+from flowlib.providers.db.base import DatabaseHealthInfo, DatabaseInfo, PoolInfo
+from flowlib.providers.core.base import ProviderSettings
+from flowlib.providers.core.base import Provider
+from flowlib.providers.core.decorators import provider
 
 logger = logging.getLogger(__name__)
-
-# For type annotations only
-ObjectId = Any
 
 try:
     from bson import ObjectId
 except ImportError:
+    ObjectId = Any  # type: ignore
     logger.warning("bson module not found. Install with 'pip install pymongo'")
-
-from pydantic import Field, BaseModel
-from typing import List as ListType
-
-from flowlib.core.errors.errors import ProviderError, ErrorContext
-from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.db.base import DBProvider, DatabaseHealthInfo, DatabaseInfo, PoolInfo
-from flowlib.providers.core.base import ProviderSettings
-from flowlib.providers.core.base import Provider
-from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
 
 try:
     import motor.motor_asyncio
-    from pymongo import ASCENDING, DESCENDING
-    from pymongo.errors import PyMongoError
+    from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+    MOTOR_AVAILABLE = True
 except ImportError:
+    AsyncIOMotorClient = None  # type: ignore
+    AsyncIOMotorDatabase = None  # type: ignore
+    MOTOR_AVAILABLE = False
     logger.warning("motor package not found. Install with 'pip install motor'")
 
 
@@ -111,14 +109,11 @@ class MongoDBProviderSettings(ProviderSettings):
     ssl_certfile: Optional[str] = Field(default=None, description="SSL certificate file path")
     ssl_keyfile: Optional[str] = Field(default=None, description="SSL key file path")
     
-    # Default port for MongoDB if not specified
-    port: int = 27017
     
     # Additional connection arguments
     connect_args: Dict[str, Any] = Field(default_factory=dict)
 
 
-from flowlib.providers.core.base import Provider
 
 @provider(provider_type="db", name="mongodb", settings_class=MongoDBProviderSettings)
 class MongoDBProvider(Provider[MongoDBProviderSettings]):
@@ -137,8 +132,8 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         super().__init__(name=name, provider_type="database", settings=settings or MongoDBProviderSettings(database="test"))
         self._settings = settings or MongoDBProviderSettings(database="test")
-        self._client = None
-        self._db = None
+        self._client: Optional[AsyncIOMotorClient] = None
+        self._db: Optional[AsyncIOMotorDatabase] = None
         
     async def _initialize(self) -> None:
         """Initialize MongoDB connection.
@@ -250,7 +245,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
             
             # Get database
             self._db = self._client[self._settings.database]
-            
+
             # Ping database to verify connection
             await self._client.admin.command('ping')
             logger.info(f"Connected to MongoDB: {self._settings.host}:{self._settings.port}/{self._settings.database}")
@@ -322,8 +317,19 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         if "collection" not in params:
             raise ProviderError(
                 message="MongoDB query operation requires 'collection' parameter",
-                context=error_context,
-                provider_context=provider_context
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="ValidationError",
+                    error_location="execute",
+                    component=self.name,
+                    operation="validate_collection_parameter"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="db",
+                    operation="execute",
+                    retry_count=0
+                )
             )
         collection = params["collection"]
         if not collection:
@@ -360,7 +366,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     raise KeyError("Required 'document' parameter missing for insert_one query")
                 document = params["document"]
                 document_id = await self.insert_document(collection, document)
-                return MongoDBInsertOneResult(inserted_id=document_id)
+                return [{"operation": "insert_one", "inserted_id": str(document_id), "acknowledged": True}]
                 
             elif query == "insert_many":
                 if "documents" not in params:
@@ -370,7 +376,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 for document in documents:
                     document_id = await self.insert_document(collection, document)
                     inserted_ids.append(document_id)
-                return MongoDBInsertManyResult(inserted_ids=inserted_ids)
+                return [{"operation": "insert_many", "inserted_ids": [str(id) for id in inserted_ids], "acknowledged": True}]
                 
             elif query == "update_one":
                 if "filter" not in params:
@@ -381,26 +387,26 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 update = params["update"]
                 upsert = params["upsert"] if "upsert" in params else False
                 modified_count = await self.update_document(collection, filter_query, update, upsert)
-                return MongoDBUpdateResult(modified_count=modified_count)
+                return [{"operation": "update_one", "modified_count": modified_count, "acknowledged": True}]
                 
             elif query == "delete_one":
                 if "filter" not in params:
                     raise ValueError("delete_one operation requires 'filter' parameter")
                 filter_query = params["filter"]
                 deleted_count = await self.delete_document(collection, filter_query)
-                return MongoDBDeleteResult(deleted_count=deleted_count)
+                return [{"operation": "delete_one", "deleted_count": deleted_count, "acknowledged": True}]
                 
             elif query == "delete_many":
                 if "filter" not in params:
                     raise ValueError("delete_many operation requires 'filter' parameter")
                 filter_query = params["filter"]
                 deleted_count = await self.delete_document(collection, filter_query)
-                return MongoDBDeleteResult(deleted_count=deleted_count)
+                return [{"operation": "delete_many", "deleted_count": deleted_count, "acknowledged": True}]
                 
             elif query == "count":
                 filter_query = params["filter"] if "filter" in params else {}
                 count = await self.count_documents(collection, filter_query)
-                return MongoDBCountResult(count=count)
+                return [{"operation": "count", "count": count}]
                 
             else:
                 raise ProviderError(
@@ -466,7 +472,25 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._db is None:
             await self.initialize()
-            
+
+        if self._db is None:
+            raise ProviderError(
+                message="MongoDB database not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="database_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="database_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Get collection
             coll = self._db[collection]
@@ -489,8 +513,8 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
             for doc in results:
                 if '_id' in doc and isinstance(doc['_id'], ObjectId):
                     doc['_id'] = str(doc['_id'])
-                    
-            return results
+
+            return cast(List[Dict[str, Any]], results)
             
         except Exception as e:
             raise ProviderError(
@@ -526,7 +550,25 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._db is None:
             await self.initialize()
-            
+
+        if self._db is None:
+            raise ProviderError(
+                message="MongoDB database not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="database_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="database_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Get collection
             coll = self._db[collection]
@@ -577,7 +619,25 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._db is None:
             await self.initialize()
-            
+
+        if self._db is None:
+            raise ProviderError(
+                message="MongoDB database not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="database_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="database_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Get collection
             coll = self._db[collection]
@@ -622,7 +682,25 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._db is None:
             await self.initialize()
-            
+
+        if self._db is None:
+            raise ProviderError(
+                message="MongoDB database not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="database_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="database_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Get collection
             coll = self._db[collection]
@@ -673,7 +751,25 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._db is None:
             await self.initialize()
-            
+
+        if self._db is None:
+            raise ProviderError(
+                message="MongoDB database not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="database_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="database_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Get collection
             coll = self._db[collection]
@@ -703,7 +799,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 cause=e
             )
     
-    async def begin_transaction(self):
+    async def begin_transaction(self) -> Any:
         """Begin a MongoDB transaction.
         
         Returns:
@@ -714,7 +810,25 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._client is None:
             await self.initialize()
-            
+
+        if self._client is None:
+            raise ProviderError(
+                message="MongoDB client not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="client_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="client_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Start a session for transaction
             session = await self._client.start_session()
@@ -741,7 +855,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 cause=e
             )
 
-    async def commit_transaction(self, session):
+    async def commit_transaction(self, session: Any) -> bool:
         """Commit a MongoDB transaction.
         
         Args:
@@ -782,7 +896,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 cause=e
             )
 
-    async def rollback_transaction(self, session):
+    async def rollback_transaction(self, session: Any) -> bool:
         """Rollback a MongoDB transaction.
         
         Args:
@@ -856,7 +970,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 pool=PoolInfo(
                     active_connections=0,
-                    pool_size=self._settings.max_pool_size
+                    pool_size=self._settings.max_pool_size if self._settings.max_pool_size is not None else 10
                 ),
                 version=None
             )
@@ -892,7 +1006,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 pool=PoolInfo(
                     active_connections=1 if connection_active else 0,  # MongoDB client manages connections internally
-                    pool_size=self._settings.pool_size
+                    pool_size=self._settings.max_pool_size if self._settings.max_pool_size is not None else 0
                 ),
                 version=version,
                 additional_info=additional_info
@@ -909,13 +1023,13 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 pool=PoolInfo(
                     active_connections=0,
-                    pool_size=self._settings.max_pool_size
+                    pool_size=self._settings.max_pool_size if self._settings.max_pool_size is not None else 10
                 ),
                 version=None,
                 additional_info={"error": str(e)}
             )
 
-    async def execute_transaction(self, operations: Callable):
+    async def execute_transaction(self, operations: Callable[..., Coroutine[Any, Any, Dict[str, Any]]]) -> Dict[str, Any]:
         """Execute operations in a transaction.
         
         Args:
@@ -929,12 +1043,30 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._client is None:
             await self.initialize()
-            
+
+        if self._client is None:
+            raise ProviderError(
+                message="MongoDB client not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="client_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="client_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Start a session
             async with await self._client.start_session() as session:
                 # Start a transaction
-                result = await session.with_transaction(operations)
+                result: Dict[str, Any] = await session.with_transaction(operations)
                 return result
                 
         except Exception as e:
@@ -971,7 +1103,25 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._db is None:
             await self.initialize()
-            
+
+        if self._db is None:
+            raise ProviderError(
+                message="MongoDB database not available after initialization",
+                context=ErrorContext.create(
+                    flow_name="mongodb_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="database_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="database",
+                    operation="database_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Get collection
             coll = self._db[collection]

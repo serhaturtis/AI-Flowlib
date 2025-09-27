@@ -5,11 +5,10 @@ including structured error types, error context, and error management.
 """
 
 from contextlib import asynccontextmanager
-import contextlib
 import logging
 import traceback
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union, Callable, Awaitable
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union, Callable, Awaitable, AsyncIterator, Protocol
 
 from .models import (
     ErrorContextData,
@@ -18,9 +17,6 @@ from .models import (
     ResourceErrorContext,
     StateErrorContext,
     ConfigurationErrorContext,
-    ExecutionErrorContext,
-    ErrorMetadata,
-    ErrorDetails,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,7 +112,7 @@ class BaseError(Exception):
         self.cause = cause
         self.timestamp = datetime.now()
         self.traceback = self._capture_traceback()
-        self.result = None  # Can be set by error handlers
+        self.result: Optional[Any] = None  # Can be set by error handlers
         
         # Initialize with message
         super().__init__(message)
@@ -335,7 +331,7 @@ class ErrorManager:
     4. Context preservation
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize error manager."""
         self._handlers: Dict[Type[BaseError], List[ErrorHandler]] = {}
         self._global_handlers: List[ErrorHandler] = []
@@ -404,7 +400,7 @@ class ErrorManager:
         flow_name: str,
         component: str,
         operation: str
-    ):
+    ) -> AsyncIterator[None]:
         """Create an error boundary that handles errors with registered handlers.
         
         Args:
@@ -514,13 +510,20 @@ class LoggingHandler:
         # Log the error
         self.logger.log(self.level, message)
 
+class MetricsClient(Protocol):
+    """Protocol for metrics clients."""
+    def increment(self, metric: str, tags: Optional[Dict[str, str]] = None) -> None:
+        """Increment a metric counter."""
+        ...
+
+
 class MetricsHandler:
     """Error handler that records error metrics.
-    
+
     This class provides error tracking for monitoring and alerting.
     """
     
-    def __init__(self, metrics_client: Any):
+    def __init__(self, metrics_client: MetricsClient):
         """Initialize metrics handler.
         
         Args:
@@ -528,9 +531,9 @@ class MetricsHandler:
         """
         self.metrics_client = metrics_client
     
-    def __call__(self, error: BaseError, context: Dict[str, Any]) -> None:
+    def __call__(self, error: BaseError, context: Dict[str, Union[str, int, bool, None]]) -> None:
         """Handle error by recording metrics.
-        
+
         Args:
             error: Error to handle
             context: Context data

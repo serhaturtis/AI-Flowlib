@@ -40,21 +40,21 @@ def extract_user_display(result_data: object) -> Optional[str]:
     Returns:
         User-friendly display text, or None if not available
     """
-    # Check if it has a get_user_display method (including UserDisplayable protocol)
-    if hasattr(result_data, 'get_user_display') and callable(result_data.get_user_display):
+    # Check if it implements UserDisplayable protocol
+    if isinstance(result_data, UserDisplayable):
         try:
-            return result_data.get_user_display()
+            display_text = result_data.get_user_display()
+            return str(display_text) if display_text is not None else None
         except Exception as e:
             # If method exists but fails, this is a critical error - don't mask it
             raise RuntimeError(f"get_user_display() method failed: {str(e)}") from e
     
-    # Check for common display fields
-    if hasattr(result_data, '__dict__'):
-        data_dict = result_data.__dict__
-    elif isinstance(result_data, dict):
+    # Handle known types for display field extraction
+    if isinstance(result_data, dict):
         data_dict = result_data
     else:
-        return None
+        # Convert unknown objects to string representation
+        return str(result_data)
     
     # Look for common display fields in order of preference
     display_fields = [
@@ -105,16 +105,20 @@ def format_flow_output_for_user(flow_name: str, result_data: object, success: bo
         if isinstance(result_data, dict):
             if 'error' in result_data:
                 error_msg = str(result_data['error'])
-        elif hasattr(result_data, 'error'):
-            error_msg = str(result_data.error)
+        else:
+            # Try to extract error from object with error attribute
+            try:
+                error_attr = getattr(result_data, 'error', None)
+                if error_attr is not None:
+                    error_msg = str(error_attr)
+            except (AttributeError, TypeError):
+                pass
         return f"❌ {flow_name} failed: {error_msg}"
 
 
 def _format_shell_command_output(result_data: object, success: bool) -> str:
     """Format shell command output for user display."""
-    if hasattr(result_data, '__dict__'):
-        data = result_data.__dict__
-    elif isinstance(result_data, dict):
+    if isinstance(result_data, dict):
         data = result_data
     else:
         return "Shell command executed"
@@ -136,9 +140,7 @@ def _format_shell_command_output(result_data: object, success: bool) -> str:
 
 def _format_conversation_output(result_data: object, success: bool) -> str:
     """Format conversation output for user display."""
-    if hasattr(result_data, '__dict__'):
-        data = result_data.__dict__
-    elif isinstance(result_data, dict):
+    if isinstance(result_data, dict):
         data = result_data
     else:
         return "Conversation completed"

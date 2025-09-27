@@ -17,6 +17,7 @@ from flowlib.providers.core.base import Provider, ProviderSettings
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=BaseModel)
+SettingsT = TypeVar('SettingsT', bound='DBProviderSettings')
 
 
 class DatabaseInfo(BaseModel):
@@ -92,7 +93,7 @@ class DBProviderSettings(ProviderSettings):
     retry_delay: float = 1.0
 
 
-class DBProvider(Provider):
+class DBProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for database providers.
     
     This class provides:
@@ -102,7 +103,7 @@ class DBProvider(Provider):
     4. Error handling and retries
     """
     
-    def __init__(self, name: str = "db", settings: Optional[DBProviderSettings] = None):
+    def __init__(self, name: str = "db", settings: Optional[SettingsT] = None):
         """Initialize database provider.
         
         Args:
@@ -113,14 +114,13 @@ class DBProvider(Provider):
         super().__init__(name=name, settings=settings, provider_type="db")
         self._initialized = False
         self._pool = None
-        self._settings = settings or DBProviderSettings()
         
     @property
     def initialized(self) -> bool:
         """Return whether provider has been initialized."""
         return self._initialized
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the database provider.
         
         This method should be implemented by subclasses to establish
@@ -128,7 +128,7 @@ class DBProvider(Provider):
         """
         self._initialized = True
         
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Close all connections and release resources.
         
         This method should be implemented by subclasses to properly
@@ -224,7 +224,7 @@ class DBProvider(Provider):
                     error_type="StructuredQueryError",
                     error_location="execute_structured",
                     component=self.name,
-                    operation=f"query_execution"
+                    operation="query_execution"
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
@@ -235,7 +235,7 @@ class DBProvider(Provider):
                 cause=e
             )
             
-    async def begin_transaction(self):
+    async def begin_transaction(self) -> Any:
         """Begin a database transaction.
         
         Returns:

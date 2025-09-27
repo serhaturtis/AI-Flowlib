@@ -16,10 +16,6 @@ from flowlib.providers.mq.base import MQProvider
 from .models import AgentTaskMessage
 from .config_loader import load_remote_config
 # Import all provider modules to trigger decorator registration
-from flowlib.providers.mq import rabbitmq, kafka
-from flowlib.providers.llm import llama_cpp, google_ai  
-from flowlib.providers.db import postgres, sqlite, mongodb
-from flowlib.providers.vector import chroma, pinecone, qdrant
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -32,7 +28,7 @@ async def submit_task(
     initial_state_id: Optional[str] = None,
     reply_to: Optional[str] = None,
     correlation_id: Optional[str] = None
-):
+) -> None:
     """Constructs and publishes an AgentTaskMessage to the specified queue."""
     
     mq_provider: Optional[MQProvider] = None
@@ -40,7 +36,8 @@ async def submit_task(
         logger.info(f"Getting MQ provider: {mq_provider_name}")
         # Providers are now auto-registered via imports above
         
-        mq_provider = await provider_registry.get_by_config(mq_provider_name)
+        provider = await provider_registry.get_by_config(mq_provider_name)
+        mq_provider = provider if isinstance(provider, MQProvider) else None
         if not mq_provider or not isinstance(mq_provider, MQProvider):
             raise ValueError(f"Could not find or initialize MQ provider '{mq_provider_name}'. Is it configured and registered?")
         if not mq_provider.initialized:
@@ -55,17 +52,22 @@ async def submit_task(
             task_id=task_id,
             task_description=task_description,
             initial_state_id=initial_state_id,
-            # initial_state_data and agent_config could be added as arguments later
+            initial_state_data=None,
+            agent_config=None,
             reply_to_queue=reply_to,
             correlation_id=correlation_id
         )
         
         logger.info(f"Publishing task {task_id} to queue '{queue_name}'")
+        # Create metadata with correlation_id
+        from flowlib.providers.mq.base import MessageMetadata
+        metadata = MessageMetadata(correlation_id=correlation_id)
+
         await mq_provider.publish(
-            queue=queue_name,
+            exchange="",  # Use default exchange
+            routing_key=queue_name,
             message=task_message,
-            persistent=True,
-            correlation_id=correlation_id
+            metadata=metadata
         )
         
         logger.info(f"Task {task_id} submitted successfully.")
@@ -82,7 +84,7 @@ async def submit_task(
         #     await mq_provider.shutdown()
         pass 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Submit a task to the remote agent worker queue.")
     
     # Add config file argument first

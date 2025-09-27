@@ -5,6 +5,8 @@ Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
 Modify the settings below for your specific setup.
 """
 
+from typing import Any
+
 from flowlib.resources.decorators.decorators import llm_config
 from flowlib.resources.models.config_resource import LLMConfigResource
 
@@ -18,11 +20,19 @@ class ExampleLlamaCppProviderConfig(LLMConfigResource):
     This config can be assigned to roles like 'default-llm' via role assignment.
     """
     
-    def __init__(self, name: str, type: str, **kwargs):
+    def __init__(self, name: str, type: str, **kwargs: Any) -> None:
         super().__init__(
             name=name,
             type=type,
             provider_type="llamacpp",
+            n_threads=None,
+            n_batch=None,
+            use_gpu=None,
+            n_gpu_layers=None,
+            chat_format=None,
+            verbose=None,
+            timeout=None,
+            max_concurrent_models=None,
             settings={
                 # Pure infrastructure settings (LlamaCppSettings) - Provider concerns only
                 "max_concurrent_models": 3,        # Maximum models loaded simultaneously

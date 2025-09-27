@@ -2,10 +2,11 @@
 
 import logging
 import hashlib
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any, cast
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
 
 from flowlib.knowledge.models import (
@@ -26,11 +27,11 @@ from flowlib.knowledge.analysis.models import (
 logger = logging.getLogger(__name__)
 
 
-@flow(name="entity-analysis-flow", description="Extract entities, relationships, and topics from documents")
+@flow(name="entity-analysis-flow", description="Extract entities, relationships, and topics from documents")  # type: ignore[arg-type]
 class EntityAnalysisFlow:
     """Flow for analyzing entities and relationships in documents."""
     
-    async def extract_from_single_document(self, doc_content: "DocumentContent") -> "EntityExtractionOutput":
+    async def extract_from_single_document(self, doc_content: DocumentContent) -> EntityExtractionOutput:
         """Extract entities and relationships from a single document (for streaming)."""
         
         logger.info(f"Analyzing single document: {doc_content.document_id}")
@@ -40,7 +41,10 @@ class EntityAnalysisFlow:
         
         single_doc_input = EntityExtractionInput(
             documents=[doc_content],
-            extraction_domain="general"
+            extraction_domain="general",
+            llm_model_name="music-album-model",
+            min_entity_frequency=2,
+            min_relationship_confidence=0.7
         )
         
         # Extract using existing logic but optimized for single document
@@ -49,7 +53,7 @@ class EntityAnalysisFlow:
         # Convert to entities and relationships
         entities = []
         relationships = []
-        entity_doc_map = {}
+        entity_doc_map: dict[str, list[str]] = {}
         
         # Convert LLM entities
         for llm_entity in extraction_result['entities']:
@@ -110,7 +114,7 @@ class EntityAnalysisFlow:
             entity_document_map=entity_doc_map
         )
 
-    async def process_document_batch(self, documents: List["DocumentContent"], batch_size: int = 5) -> List["EntityExtractionOutput"]:
+    async def process_document_batch(self, documents: List[DocumentContent], batch_size: int = 5) -> List[EntityExtractionOutput]:
         """Process multiple documents in efficient batches for streaming."""
         
         logger.info(f"Processing batch of {len(documents)} documents")
@@ -154,7 +158,7 @@ class EntityAnalysisFlow:
         
         all_entities = []
         all_relationships = []
-        entity_doc_map = {}
+        entity_doc_map: dict[str, list[str]] = {}
         
         for doc in input_data.documents:
             if not doc.full_text:
@@ -278,7 +282,7 @@ class EntityAnalysisFlow:
     
     def _deduplicate_entities(self, entities: List[Entity]) -> List[Entity]:
         """Deduplicate entities by name and aggregate properties."""
-        entity_map = {}
+        entity_map: dict[str, Entity] = {}
         
         for entity in entities:
             key = entity.name.lower()
@@ -302,7 +306,7 @@ class EntityAnalysisFlow:
     
     def _deduplicate_relationships(self, relationships: List[Relationship]) -> List[Relationship]:
         """Deduplicate relationships."""
-        rel_map = {}
+        rel_map: dict[tuple[str, str, Any], Relationship] = {}
         
         for rel in relationships:
             key = (rel.source_entity_id, rel.target_entity_id, rel.relationship_type)
@@ -322,18 +326,18 @@ class EntityAnalysisFlow:
     
     async def _extract_from_document_llm(self, document: DocumentContent, config: EntityExtractionInput) -> Dict[str, Any]:
         """Extract entities and relationships from document using LLM."""
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Process all chunks - no artificial limits
         chunks = document.chunks
-        all_entities = []
-        all_relationships = []
+        all_entities: List[Entity] = []
+        all_relationships: List[Relationship] = []
         
         for chunk in chunks:
             # Extract entities
             entity_prompt = resource_registry.get("entity-extraction-llm")
             entity_result = await llm.generate_structured(
-                prompt=entity_prompt,
+                prompt=cast(PromptTemplate, entity_prompt),
                 output_type=LLMEntityExtractionResult,
                 model_name="default-model",
                 prompt_variables={
@@ -344,22 +348,24 @@ class EntityAnalysisFlow:
             )
             
             for entity in entity_result.entities:
-                all_entities.append({
-                    'name': entity.name,
-                    'type': entity.type,
-                    'description': entity.description,
-                    'importance': entity.importance,
-                    'attributes': entity.attributes
-                })
+                all_entities.append(Entity(
+                    entity_id=hashlib.md5(entity.name.encode()).hexdigest(),
+                    name=entity.name,
+                    entity_type=EntityType[entity.type.upper()] if hasattr(EntityType, entity.type.upper()) else EntityType.CONCEPT,
+                    description=entity.description,
+                    documents=[document.metadata.file_name] if document.metadata.file_name else [],
+                    frequency=1,
+                    confidence=float(entity.importance) if entity.importance else 0.5
+                ))
         
         # Extract relationships if we have entities
         if all_entities:
-            entity_names = list(set(e['name'] for e in all_entities))[:20]
+            entity_names = list(set(e.name for e in all_entities))[:20]
             rel_prompt = resource_registry.get("relationship-extraction-llm")
             
             for chunk in chunks:  # Process all chunks for relationships
                 rel_result = await llm.generate_structured(
-                    prompt=rel_prompt,
+                    prompt=cast(PromptTemplate, rel_prompt),
                     output_type=LLMRelationshipExtractionResult,
                     model_name="default-model",
                     prompt_variables={
@@ -370,18 +376,26 @@ class EntityAnalysisFlow:
                 )
                 
                 for rel in rel_result.relationships:
-                    all_relationships.append({
-                        'source': rel.source,
-                        'target': rel.target,
-                        'type': rel.type,
-                        'description': rel.description,
-                        'confidence': rel.confidence
-                    })
+                    # Find entity IDs for source and target
+                    source_entity_id = next((e.entity_id for e in all_entities if e.name == rel.source), "")
+                    target_entity_id = next((e.entity_id for e in all_entities if e.name == rel.target), "")
+
+                    if source_entity_id and target_entity_id:
+                        all_relationships.append(Relationship(
+                            relationship_id=hashlib.md5(f"{rel.source}:{rel.target}:{rel.type}".encode()).hexdigest(),
+                            source_entity_id=source_entity_id,
+                            target_entity_id=target_entity_id,
+                            relationship_type=RelationType[rel.type.upper()] if hasattr(RelationType, rel.type.upper()) else RelationType.RELATES_TO,
+                            description=rel.description,
+                            documents=[document.metadata.file_name] if document.metadata.file_name else [],
+                            confidence=float(rel.confidence) if rel.confidence else 0.5,
+                            frequency=1
+                        ))
         
         # Extract key concepts
         concept_prompt = resource_registry.get("concept-extraction-llm")
         concept_result = await llm.generate_structured(
-            prompt=concept_prompt,
+            prompt=cast(PromptTemplate, concept_prompt),
             output_type=LLMConceptExtractionResult,
             model_name="knowledge-extraction",
             prompt_variables={
@@ -393,16 +407,16 @@ class EntityAnalysisFlow:
         
         # Add concepts as special entities
         for concept in concept_result.concepts:
-            all_entities.append({
-                'name': concept.concept,
-                'type': 'concept',
-                'description': concept.explanation,
-                'importance': concept.importance,
-                'attributes': {
-                    'abbreviation': concept.abbreviation,
-                    'related_concepts': concept.related_concepts
-                }
-            })
+            all_entities.append(Entity(
+                entity_id=hashlib.md5(concept.concept.encode()).hexdigest(),
+                name=concept.concept,
+                entity_type=EntityType.CONCEPT,
+                description=concept.explanation,
+                documents=[document.metadata.file_name] if document.metadata.file_name else [],
+                frequency=1,
+                confidence=float(concept.importance) if concept.importance else 0.7,
+                aliases=concept.related_concepts if concept.related_concepts else []
+            ))
         
         return {
             'entities': all_entities,

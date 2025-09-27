@@ -10,12 +10,13 @@ from typing import Any, Dict, List, Optional, Type, TypeVar, Generic
 from pydantic import BaseModel, Field, ConfigDict
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
-from flowlib.providers.core.base import Provider, ProviderSettings
 from flowlib.core.errors.models import ProviderErrorContext
+from flowlib.providers.core.base import Provider, ProviderSettings
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=BaseModel)
+SettingsT = TypeVar('SettingsT', bound='VectorDBProviderSettings')
 
 
 class VectorDBProviderSettings(ProviderSettings):
@@ -168,7 +169,7 @@ class VectorBatchSearchResult(BaseModel):
 SimilaritySearchResult = VectorSearchResult
 
 
-class VectorDBProvider(Provider):
+class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for vector database providers.
     
     This class provides:
@@ -178,7 +179,7 @@ class VectorDBProvider(Provider):
     4. Type-safe operations with Pydantic models
     """
     
-    def __init__(self, name: str, provider_type: str, settings: Optional[VectorDBProviderSettings] = None, **kwargs: Any):
+    def __init__(self, name: str, provider_type: str, settings: Optional[SettingsT] = None, **kwargs: Any):
         """Initialize VectorDB provider.
         
         Args:
@@ -189,7 +190,7 @@ class VectorDBProvider(Provider):
         """
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         self._initialized = False
-        self._client = None
+        self._client: Optional[Any] = None
         self._settings = settings or VectorDBProviderSettings()
         
     @property
@@ -197,7 +198,7 @@ class VectorDBProvider(Provider):
         """Return whether provider has been initialized."""
         return self._initialized
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the vector database connection.
         
         This method should be implemented by subclasses to establish
@@ -205,7 +206,7 @@ class VectorDBProvider(Provider):
         """
         self._initialized = True
         
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Close all connections and release resources.
         
         This method should be implemented by subclasses to properly
@@ -214,7 +215,7 @@ class VectorDBProvider(Provider):
         self._initialized = False
         self._client = None
         
-    async def create_index(self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs) -> bool:
+    async def create_index(self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs: Any) -> bool:
         """Create a new vector index/collection.
         
         Args:
@@ -470,14 +471,25 @@ class VectorDBProvider(Provider):
             
         except Exception as e:
             # Wrap and re-raise errors with context
+            error_context = ErrorContext.create(
+                flow_name="vector_search",
+                error_type="ProviderError",
+                error_location="search_structured",
+                component="vector_provider",
+                operation="structured_search"
+            )
+
+            provider_context = ProviderErrorContext(
+                provider_name=self.name,
+                provider_type="vector",
+                operation="structured_search",
+                retry_count=0
+            )
+
             raise ProviderError(
                 message=f"Failed to perform structured vector search: {str(e)}",
-                provider_name=self.name,
-                context=ErrorContext.create(
-                    output_type=output_type.__name__,
-                    top_k=top_k,
-                    filter=filter
-                ),
+                context=error_context,
+                provider_context=provider_context,
                 cause=e
             )
             

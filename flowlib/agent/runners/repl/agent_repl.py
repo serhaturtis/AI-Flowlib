@@ -1,45 +1,46 @@
 """Main REPL implementation for interactive agent sessions."""
 
-import asyncio
-import sys
 import os
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pathlib import Path
-import json
-from pydantic import BaseModel, Field, ConfigDict
-
-logger = logging.getLogger(__name__)
 
 try:
     import readline  # For command history
+    READLINE_AVAILABLE = True
 except ImportError:
-    readline = None  # Windows fallback
+    # Readline not available on Windows - create dummy namespace
+    class DummyReadline:
+        """Dummy readline for platforms without readline support."""
+        def set_completer(self, func: Any) -> None: pass
+        def parse_and_bind(self, string: str) -> None: pass
 
+    readline = DummyReadline()  # type: ignore[assignment]
+    READLINE_AVAILABLE = False
+
+from pydantic import Field, ConfigDict
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.live import Live
-from rich.spinner import Spinner
 from rich.table import Table
 
+from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
 from flowlib.agent.core.base_agent import BaseAgent
-from flowlib.agent.models.state import AgentState, AgentStats
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.core.thread_manager import AgentThreadPoolManager
 from flowlib.agent.core.models.messages import (
-    AgentMessage, AgentResponse, AgentMessageType, AgentMessagePriority
+    AgentMessage, AgentMessageType, AgentMessagePriority
 )
 from flowlib.agent.runners.repl.commands import CommandRegistry, CommandType
 from flowlib.agent.runners.repl.handlers import DefaultCommandHandler, AgentCommandHandler, ToolCommandHandler, TodoCommandHandler
 from flowlib.agent.core.agent_activity_formatter import AgentActivityFormatter
 
+logger = logging.getLogger(__name__)
 
-class SessionStats(BaseModel):
+
+class SessionStats(MutableStrictBaseModel):
     """Session statistics model."""
-    model_config = ConfigDict(extra="forbid")
     
     message_count: int = Field(default=0, description="Number of messages processed")
     tokens_used: int = Field(default=0, description="Number of tokens used")
@@ -48,7 +49,7 @@ class SessionStats(BaseModel):
     start_time: datetime = Field(default_factory=datetime.now, description="Session start time")
 
 
-class REPLContext(BaseModel):
+class REPLContext(StrictBaseModel):
     """REPL context model."""
     model_config = ConfigDict(extra="forbid")
     
@@ -61,7 +62,7 @@ class REPLContext(BaseModel):
     stream: bool = Field(default=True, description="Streaming mode enabled")
 
 
-class ModeEmojis(BaseModel):
+class ModeEmojis(StrictBaseModel):
     """Mode emoji mapping model."""
     model_config = ConfigDict(extra="forbid")
     
@@ -112,7 +113,7 @@ class AgentREPL:
         
         # Agent initialization handled by initialize() method
     
-    def _setup_history(self):
+    def _setup_history(self) -> None:
         """Setup command history."""
         if readline:
             # Configure readline
@@ -129,7 +130,7 @@ class AgentREPL:
             # Set history size
             readline.set_history_length(1000)
     
-    def _save_history(self):
+    def _save_history(self) -> None:
         """Save command history."""
         if readline:
             try:
@@ -137,14 +138,14 @@ class AgentREPL:
             except Exception:
                 pass
     
-    def _register_handlers(self):
+    def _register_handlers(self) -> None:
         """Register command handlers."""
         self.command_registry.register_handler(DefaultCommandHandler())
         self.command_registry.register_handler(AgentCommandHandler())
         self.command_registry.register_handler(ToolCommandHandler())
         self.command_registry.register_handler(TodoCommandHandler())
     
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the REPL with queue-based agent."""
         # Create agent in its own thread
         self.agent = self.thread_pool_manager.create_agent(
@@ -156,19 +157,19 @@ class AgentREPL:
         router = self.thread_pool_manager.get_response_router(self.agent_id)
         if router:
             await router.start()
-            self.console.print(f"[green]✓[/green] Response router started")
+            self.console.print("[green]✓[/green] Response router started")
         else:
-            self.console.print(f"[red]✗[/red] No response router found")
+            self.console.print("[red]✗[/red] No response router found")
         
         self.console.print(f"[green]✓[/green] Agent {self.agent_id} initialized and running")
     
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Shutdown the REPL and agent."""
         # Shutdown agent
         self.thread_pool_manager.shutdown_agent(self.agent_id)
         self.console.print(f"[yellow]Agent {self.agent_id} stopped[/yellow]")
     
-    async def start(self):
+    async def start(self) -> None:
         """Start the REPL session."""
         # Initialize agent
         await self.initialize()
@@ -189,7 +190,7 @@ class AgentREPL:
             self._save_history()
             self._show_goodbye()
     
-    def _show_welcome(self):
+    def _show_welcome(self) -> None:
         """Show welcome message."""
         welcome = Panel(
             "[bold cyan]🤖 Flowlib Agent REPL[/bold cyan]\n\n"
@@ -202,7 +203,7 @@ class AgentREPL:
         self.console.print(welcome)
         self.console.print()
     
-    def _show_goodbye(self):
+    def _show_goodbye(self) -> None:
         """Show goodbye message."""
         # Calculate session duration
         duration = datetime.now() - self.repl_context.session_stats.start_time
@@ -222,7 +223,7 @@ class AgentREPL:
         self.console.print(stats_table)
         self.console.print("\n[cyan]Thanks for using Flowlib Agent! Goodbye! 👋[/cyan]")
     
-    async def _repl_loop(self):
+    async def _repl_loop(self) -> None:
         """Main REPL loop."""
         while not self.context["should_exit"]:
             try:
@@ -273,7 +274,7 @@ class AgentREPL:
         except (KeyboardInterrupt, EOFError):
             return None
     
-    def _display_output(self, output: Any):
+    def _display_output(self, output: object) -> None:
         """Display output to console."""
         if isinstance(output, str):
             if output.strip():  # Don't display empty strings
@@ -281,7 +282,7 @@ class AgentREPL:
         else:
             self.console.print(output)
     
-    async def _handle_user_message(self, message: str):
+    async def _handle_user_message(self, message: str) -> None:
         """Handle a user message by sending to agent."""
         if not self.agent:
             self.console.print("[red]No agent initialized![/red]")
@@ -295,7 +296,7 @@ class AgentREPL:
         response = await self._get_agent_response(message)
         
         # Display response
-        self.console.print(f"\n[bold green]🤖 Assistant[/bold green]")
+        self.console.print("\n[bold green]🤖 Assistant[/bold green]")
         self._display_output(response)
     
     async def _get_agent_response(self, message: str) -> str:
@@ -322,14 +323,14 @@ class AgentREPL:
             self.console.print("[dim]Message received, processing...[/dim]")
             
             # Send to agent queue
-            logger.debug(f"[REPL] Sending message to agent queue...")
+            logger.debug("[REPL] Sending message to agent queue...")
             message_id = await self.thread_pool_manager.send_message(
                 self.agent_id, agent_message
             )
             logger.debug(f"[REPL] Message sent to agent queue with ID: {message_id}")
             
             # Wait for response
-            logger.debug(f"[REPL] Waiting for response from agent...")
+            logger.debug("[REPL] Waiting for response from agent...")
             response = await self.thread_pool_manager.wait_for_response(
                 self.agent_id, message_id, agent_message.timeout
             )
@@ -372,7 +373,7 @@ class AgentREPL:
             return "\n".join(output_parts) if output_parts else content
                 
         except TimeoutError:
-            return f"[red]Response timeout[/red]"
+            return "[red]Response timeout[/red]"
         except Exception as e:
             import traceback
             error_msg = f"Error getting agent response: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
@@ -380,7 +381,7 @@ class AgentREPL:
 
 
 # Main entry point
-async def start_agent_repl(agent_id: str, config: AgentConfig, **kwargs):
+async def start_agent_repl(agent_id: str, config: AgentConfig, **kwargs: Any) -> None:
     """Start an agent REPL session."""
     repl = AgentREPL(agent_id=agent_id, config=config, **kwargs)
     await repl.start()

@@ -6,19 +6,20 @@ following flowlib's AgentComponent patterns and strict validation principles.
 
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, cast, Dict, Any
 
 from flowlib.agent.core.base import AgentComponent
-from flowlib.agent.core.errors import NotInitializedError
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
+from flowlib.providers.vector.base import VectorDBProvider
+from flowlib.providers.graph.base import GraphDBProvider
 from flowlib.resources.registry.registry import resource_registry
-from flowlib.core.interfaces import LLMProvider, VectorProvider, GraphProvider
 
 from .models import (
     KnowledgeComponentConfig,
     LearningInput, LearningResult,
     StorageRequest, RetrievalRequest, RetrievalResult,
-    KnowledgeSet, KnowledgeType
+    KnowledgeSet
 )
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,8 @@ class KnowledgeComponent(AgentComponent):
         
         # Provider instances (initialized during _initialize_impl)
         self._llm_provider: Optional[LLMProvider] = None
-        self._vector_provider: Optional[VectorProvider] = None
-        self._graph_provider: Optional[GraphProvider] = None
+        self._vector_provider: Optional[VectorDBProvider] = None
+        self._graph_provider: Optional[GraphDBProvider] = None
         
     async def _initialize_impl(self) -> None:
         """Initialize the knowledge component and its providers."""
@@ -53,7 +54,7 @@ class KnowledgeComponent(AgentComponent):
         
         # Initialize LLM provider (required for learning)
         if self._config.enable_learning:
-            self._llm_provider = await provider_registry.get_by_config(self._config.llm_config)
+            self._llm_provider = cast(LLMProvider, await provider_registry.get_by_config(self._config.llm_config))
             if not self._llm_provider:
                 raise RuntimeError(f"LLM provider '{self._config.llm_config}' not available")
             logger.debug(f"Initialized LLM provider: {self._config.llm_config}")
@@ -61,7 +62,7 @@ class KnowledgeComponent(AgentComponent):
         # Initialize vector database provider (optional for storage/retrieval)
         if self._config.enable_storage or self._config.enable_retrieval:
             try:
-                self._vector_provider = await provider_registry.get_by_config(self._config.vector_db_config)
+                self._vector_provider = cast(VectorDBProvider, await provider_registry.get_by_config(self._config.vector_db_config))
                 if self._vector_provider:
                     logger.debug(f"Initialized vector provider: {self._config.vector_db_config}")
             except Exception as e:
@@ -69,7 +70,7 @@ class KnowledgeComponent(AgentComponent):
             
             # Initialize graph database provider (optional for storage/retrieval)
             try:
-                self._graph_provider = await provider_registry.get_by_config(self._config.graph_db_config)
+                self._graph_provider = cast(GraphDBProvider, await provider_registry.get_by_config(self._config.graph_db_config))
                 if self._graph_provider:
                     logger.debug(f"Initialized graph provider: {self._config.graph_db_config}")
             except Exception as e:
@@ -227,11 +228,14 @@ class KnowledgeComponent(AgentComponent):
     
     async def _extract_knowledge(self, learning_input: LearningInput) -> KnowledgeSet:
         """Extract knowledge using LLM with structured output."""
+        # Ensure LLM provider is available
+        assert self._llm_provider is not None, "LLM provider must be initialized before extraction"
+
         # Get knowledge extraction prompt
         extraction_prompt = resource_registry.get("knowledge-extraction-prompt")
-        
-        # Prepare prompt variables
-        prompt_vars = {
+
+        # Prepare prompt variables - use Dict[str, Any] for compatibility
+        prompt_vars: Dict[str, Any] = {
             "content": learning_input.content,
             "context": learning_input.context,
             "focus_areas": ", ".join(learning_input.focus_areas) if learning_input.focus_areas else "general",
@@ -239,13 +243,18 @@ class KnowledgeComponent(AgentComponent):
         }
         
         # Use structured generation to extract knowledge
-        extraction_result = await self._llm_provider.generate_structured(
-            prompt=extraction_prompt,
+        result = await self._llm_provider.generate_structured(
+            prompt=cast(PromptTemplate, extraction_prompt),
             prompt_variables=prompt_vars,
             output_type=KnowledgeSet,
             model_name="default-model"
         )
-        
+
+        # Result is guaranteed to be KnowledgeSet from structured generation
+        if not isinstance(result, KnowledgeSet):
+            raise RuntimeError(f"Expected KnowledgeSet, got {type(result)}")
+        extraction_result = result
+
         # Add source context to all extracted items
         for entity in extraction_result.entities:
             entity.source_context = learning_input.context
@@ -255,7 +264,7 @@ class KnowledgeComponent(AgentComponent):
             relationship.source_context = learning_input.context
         for pattern in extraction_result.patterns:
             pattern.source_context = learning_input.context
-        
+
         return extraction_result
     
     async def _store_in_vector(self, knowledge: KnowledgeSet, context_id: str) -> None:

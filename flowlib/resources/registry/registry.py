@@ -5,69 +5,43 @@ managing non-provider resources like models, prompts, and configurations.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Type, TypeVar, cast
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 from flowlib.core.registry.registry import BaseRegistry
 from flowlib.resources.models.constants import ResourceType
 from flowlib.resources.models.base import ResourceBase
-from flowlib.resources.auto_discovery import get_auto_discovery
+# Auto-discovery removed - projects handle configuration loading explicitly
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 
 
-class ResourceRegistry(BaseRegistry[T]):
+class ResourceRegistry(BaseRegistry[ResourceBase]):
     """Registry for non-provider resources.
     
     This class implements the BaseRegistry interface for managing resources
     like models, prompts, and configurations with type safety and validation.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize resource registry."""
         # Main storage for resources: (resource_type, name) -> resource
-        self._resources: Dict[tuple, Any] = {}
+        self._resources: Dict[tuple[str, str], ResourceBase] = {}
         # Storage for resource metadata
-        self._metadata: Dict[tuple, Dict[str, Any]] = {}
+        self._metadata: Dict[tuple[str, str], Dict[str, Any]] = {}
         # Collection of resource types in use
-        self._resource_types: set = set()
+        self._resource_types: set[str] = set()
         # Alias mapping: alias_name -> (canonical_resource_type, canonical_name)
-        self._aliases: Dict[str, tuple] = {}
+        self._aliases: Dict[str, tuple[str, str]] = {}
         # Reverse mapping: (canonical_resource_type, canonical_name) -> [alias_names]
-        self._canonical_to_aliases: Dict[tuple, List[str]] = {}
+        self._canonical_to_aliases: Dict[tuple[str, str], List[str]] = {}
         
-        # Flag to track if auto-discovery has been performed
-        self._auto_discovery_done: bool = False
+        # Registry is now stateless - no auto-discovery needed
     
-    def _auto_discover_configurations(self) -> None:
-        """Auto-discover and load configurations from .flowlib directory.
+    # Auto-discovery method removed - projects handle configuration loading explicitly
         
-        This method integrates the FlowlibAutoDiscovery system into the
-        resource registry, ensuring all user configurations are automatically
-        loaded on first access to avoid circular dependency issues.
-        """
-        if self._auto_discovery_done:
-            return
-            
-        try:
-            auto_discovery = get_auto_discovery()
-            auto_discovery.discover_and_load_configurations()
-            
-            loaded_modules = auto_discovery.get_loaded_modules()
-            if loaded_modules:
-                logger.info(f"Auto-discovered {len(loaded_modules)} .flowlib configuration modules: {', '.join(loaded_modules)}")
-            else:
-                logger.debug("No .flowlib configuration modules found")
-                
-        except Exception as e:
-            # Log error but don't fail initialization - registry should work without user configs
-            logger.warning(f"Auto-discovery of .flowlib configurations failed: {e}")
-        finally:
-            # Mark as done regardless of success/failure to prevent retry loops
-            self._auto_discovery_done = True
-        
-    def register(self, name: str, obj: Any, resource_type: str = ResourceType.MODEL_CONFIG, **metadata) -> None:
+    def register(self, name: str, obj: ResourceBase, resource_type: str = ResourceType.MODEL_CONFIG, **metadata: Union[str, int, bool]) -> None:
         """Register a resource with the registry.
         
         Args:
@@ -95,7 +69,7 @@ class ResourceRegistry(BaseRegistry[T]):
         self._resource_types.add(resource_type)
         logger.debug(f"Registered {resource_type} '{name}'")
         
-    def get(self, name: str, expected_type: Optional[Type] = None) -> Any:
+    def get(self, name: str, expected_type: Optional[Type[Any]] = None) -> ResourceBase:
         """Get a resource by name or alias (type determined by decorator).
         
         This is the ONLY way to access resources in the clean registry.
@@ -120,7 +94,7 @@ class ResourceRegistry(BaseRegistry[T]):
             llm = resource_registry.get("default-model")  # alias -> canonical
         """
         # Trigger auto-discovery on first access
-        self._auto_discover_configurations()
+        # Configuration loading now handled explicitly by projects
         # First, check if it's an alias
         if name in self._aliases:
             canonical_key = self._aliases[name]
@@ -227,16 +201,6 @@ class ResourceRegistry(BaseRegistry[T]):
                 result[name] = resource
         return result
     
-    def clear(self) -> None:
-        """Clear all registrations from the registry.
-        
-        This method removes all registered resources and associated metadata.
-        """
-        self._resources.clear()
-        self._metadata.clear()
-        self._resource_types.clear()
-        logger.debug("Cleared all resources from registry")
-    
     def remove(self, name: str) -> bool:
         """Remove a specific registration from the registry.
         
@@ -262,7 +226,7 @@ class ResourceRegistry(BaseRegistry[T]):
         
         return False
     
-    def update(self, name: str, obj: Any, resource_type: str = None, **metadata) -> bool:
+    def update(self, name: str, obj: ResourceBase, resource_type: Optional[str] = None, **metadata: Union[str, int, bool]) -> bool:
         """Update or replace an existing registration.
         
         Args:
@@ -300,7 +264,7 @@ class ResourceRegistry(BaseRegistry[T]):
             return False
     
     # Enhanced alias support methods
-    def register_with_aliases(self, canonical_name: str, obj: T, aliases: Optional[List[str]] = None, resource_type: str = ResourceType.MODEL_CONFIG, **metadata) -> None:
+    def register_with_aliases(self, canonical_name: str, obj: ResourceBase, aliases: Optional[List[str]] = None, resource_type: str = ResourceType.MODEL_CONFIG, **metadata: Union[str, int, bool]) -> None:
         """Register a resource with canonical name and optional aliases.
         
         Args:
@@ -405,9 +369,11 @@ class ResourceRegistry(BaseRegistry[T]):
     
     def clear(self) -> None:
         """Clear all registrations and aliases from the registry."""
-        super().clear()
+        self._resources.clear()
+        self._metadata.clear()
+        self._resource_types.clear()
         self._aliases.clear()
         self._canonical_to_aliases.clear()
         logger.debug("Cleared all resources and aliases from registry")
         
-resource_registry = ResourceRegistry()
+resource_registry: ResourceRegistry = ResourceRegistry()

@@ -3,26 +3,27 @@ Embedding provider using llama-cpp-python.
 """
 
 import logging
-from typing import List, Union, Any, Dict, Optional, Generic, TypeVar
+from typing import List, Union, Optional, TypeVar, Dict, Any
 import asyncio
 from pydantic import Field
-from abc import ABC, abstractmethod
 
-from flowlib.providers.embedding.base import EmbeddingProvider
-from flowlib.providers.core.base import ProviderSettings
-from flowlib.core.errors.errors import ProviderError, ConfigurationError, ErrorContext
-from flowlib.core.errors.models import ProviderErrorContext, ConfigurationErrorContext
+from flowlib.providers.embedding.base import EmbeddingProvider, EmbeddingProviderSettings
+from flowlib.providers.core.decorators import provider
+from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.models import ProviderErrorContext
 
 # Lazy import llama_cpp
 try:
     from llama_cpp import Llama
+    LLAMA_CPP_AVAILABLE = True
 except ImportError:
-    Llama = None
+    Llama = None  # type: ignore
+    LLAMA_CPP_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 # --- Settings Model ---
-class LlamaCppEmbeddingProviderSettings(ProviderSettings):
+class LlamaCppEmbeddingProviderSettings(EmbeddingProviderSettings):
     """LlamaCpp embedding provider settings - direct inheritance, only LlamaCpp embedding fields.
     
     LlamaCpp embedding requires:
@@ -45,7 +46,7 @@ class LlamaCppEmbeddingProviderSettings(ProviderSettings):
     use_mlock: bool = Field(default=False, description="Use mlock to keep model in memory")
     
     # Embedding-specific settings
-    embedding_dim: Optional[int] = Field(default=None, description="Dimension of embedding vectors")
+    embedding_dim: int = Field(default=384, description="Dimension of embedding vectors")
     normalize: bool = Field(default=True, description="Whether to normalize embedding vectors")
     batch_size: int = Field(default=32, description="Batch size for embedding processing")
 
@@ -53,7 +54,6 @@ class LlamaCppEmbeddingProviderSettings(ProviderSettings):
 SettingsType = TypeVar('SettingsType', bound=LlamaCppEmbeddingProviderSettings)
 
 # --- Provider Implementation ---
-from flowlib.providers.core.decorators import provider
 
 @provider(
     provider_type="embedding", 
@@ -66,7 +66,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
     Supports GGUF models compatible with llama.cpp for generating embeddings.
     """
     
-    def __init__(self, name: str, provider_type: str, settings: Optional[LlamaCppEmbeddingProviderSettings] = None, **kwargs: Any):
+    def __init__(self, name: str, provider_type: str, settings: LlamaCppEmbeddingProviderSettings, **kwargs: object):
         """Initialize LlamaCppEmbeddingProvider.
         
         Args:
@@ -76,8 +76,10 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
             **kwargs: Additional keyword arguments for the base EmbeddingProvider
         """
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
-        object.__setattr__(self, '_model', None)
-        
+
+        # Initialize model-related attributes
+        self._model: Optional[Any] = None
+
         # --- Post-initialization validation and setup ---
         if Llama is None:
             raise ImportError(
@@ -86,8 +88,8 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 "pip install llama-cpp-python[server] or similar."
             )
         
-        self._model_path = None
-        self._model_config = None
+        self._model_path: Optional[str] = None
+        self._model_config: Optional[Dict[str, object]] = None
         self._lock = asyncio.Lock()
         
         logger.info(f"LlamaCppEmbeddingProvider '{name}' configured")
@@ -96,7 +98,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
         """Initialize the embedding provider."""
         logger.info(f"LlamaCppEmbeddingProvider '{self.name}' initialized successfully")
         
-    async def _initialize_model(self, model_name: str):
+    async def _initialize_model(self, model_name: str) -> None:
         """Initialize a specific embedding model.
         
         Args:
@@ -112,26 +114,19 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
             # Get model configuration from registry - similar to LlamaCppProvider
             model_config_raw = await self.get_model_config(model_name)
             
-            # Convert to model config with path attribute
-            if isinstance(model_config_raw, dict):
-                # Extract path from dict
-                if 'path' not in model_config_raw:
-                    raise ValueError(f"Model config for '{model_name}' missing required 'path' field")
-                model_path = model_config_raw['path']
-                self._model_config = model_config_raw
-            else:
-                # Handle ModelResource format - access config dictionary
-                if hasattr(model_config_raw, 'config') and isinstance(model_config_raw.config, dict):
-                    if 'path' not in model_config_raw.config:
-                        raise ValueError(f"Model config for '{model_name}' missing required 'path' field")
-                    model_path = model_config_raw.config['path']
-                    self._model_config = model_config_raw.config
-                elif hasattr(model_config_raw, 'path'):
-                    # Direct access to path attribute
-                    model_path = model_config_raw.path
-                    self._model_config = model_config_raw
-                else:
-                    raise ValueError(f"Model config for '{model_name}' has no accessible 'path' field")
+            # Convert to model config with path attribute - get_model_config always returns Dict[str, object]
+            # Path is always in the nested 'config' field - single source of truth
+            if 'config' not in model_config_raw or not isinstance(model_config_raw['config'], dict):
+                raise ValueError(f"Model config for '{model_name}' has invalid structure - missing 'config' field")
+
+            if 'path' not in model_config_raw['config']:
+                raise ValueError(f"Model config for '{model_name}' missing required 'path' field in config")
+
+            path_value = model_config_raw['config']['path']
+            if not isinstance(path_value, str):
+                raise TypeError(f"Model path must be a string, got {type(path_value)}")
+            model_path = path_value
+            self._model_config = model_config_raw
                     
             # Load the model with the path from config
             await self._load_model(model_path)
@@ -166,21 +161,19 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
             
             logger.info(f"Loading embedding model: {model_path}...")
             try:
-                # Prepare arguments for Llama constructor using self.settings
-                llama_args = {
-                    "model_path": model_path,
-                    "embedding": True,  # Crucial for embedding models
-                    "n_ctx": self.settings.n_ctx,
-                    "n_threads": self.settings.n_threads,
-                    "n_batch": self.settings.n_batch,
-                    "use_mlock": self.settings.use_mlock,
-                    "n_gpu_layers": self.settings.n_gpu_layers,
-                    "verbose": self.settings.verbose
-                }
-                # Remove None values
-                llama_args = {k: v for k, v in llama_args.items() if v is not None}
+                # Prepare arguments for Llama constructor with explicit types
+                llama_kwargs: Dict[str, Any] = {}
+                llama_kwargs["model_path"] = model_path  # str
+                llama_kwargs["embedding"] = True  # bool
+                llama_kwargs["n_ctx"] = int(self.settings.n_ctx)  # int
+                if self.settings.n_threads is not None:
+                    llama_kwargs["n_threads"] = int(self.settings.n_threads)  # int
+                llama_kwargs["n_batch"] = int(self.settings.n_batch)  # int
+                llama_kwargs["use_mlock"] = bool(self.settings.use_mlock)  # bool
+                llama_kwargs["n_gpu_layers"] = int(self.settings.n_gpu_layers)  # int
+                llama_kwargs["verbose"] = bool(self.settings.verbose)  # bool
 
-                object.__setattr__(self, '_model', Llama(**llama_args))
+                object.__setattr__(self, '_model', Llama(**llama_kwargs))
                 self._model_path = model_path
                 logger.info(f"Embedding model loaded successfully: {model_path}")
             except Exception as e:
@@ -214,7 +207,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 object.__setattr__(self, '_model', None)
                 logger.info(f"Embedding model resources released for: {self._model_path}")
             
-    async def embed(self, text: Union[str, List[str]], model_name: str = None) -> List[List[float]]:
+    async def embed(self, text: Union[str, List[str]], model_name: Optional[str] = None) -> List[List[float]]:
         """Generate embeddings for the given text(s).
         
         Args:
@@ -260,6 +253,25 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 if not input_texts:
                     return []
                 
+                # Ensure model is loaded
+                if self._model is None:
+                    raise ProviderError(
+                        message="Model failed to initialize",
+                        context=ErrorContext.create(
+                            flow_name="LlamaCppEmbeddingProvider",
+                            error_type="StateError",
+                            error_location="generate_embeddings",
+                            component=self.name,
+                            operation="embedding_generation"
+                        ),
+                        provider_context=ProviderErrorContext(
+                            provider_name=self.name,
+                            provider_type="embedding",
+                            operation="embedding_generation",
+                            retry_count=0
+                        )
+                    )
+
                 # Get embeddings
                 # Note: Llama.embed() might be synchronous depending on version/setup
                 # If it blocks significantly, consider running in a thread pool executor

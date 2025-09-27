@@ -6,7 +6,7 @@ based on the specified type.
 """
 
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 from flowlib.agent.core.errors import StatePersistenceError
 from .file import FileStatePersister, FileStatePersisterSettings
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def create_state_persister(
     persister_type: str = "file",
-    **kwargs
+    **kwargs: Any
 ) -> Optional[Union[FileStatePersister, ProviderStatePersister]]:
     """Create a state persister based on the specified type.
     

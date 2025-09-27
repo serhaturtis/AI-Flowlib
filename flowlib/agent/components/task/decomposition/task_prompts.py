@@ -21,18 +21,21 @@ Available tools:
 Additional context:
 {{context}}
 
-DECOMPOSITION GUIDELINES:
-- For reading FILE CONTENTS → use "read" tool (reads a specific file's content)
-- For listing files/directories → use "bash" tool with ls/find commands
-- For file writing tasks → use "write" tool
-- For file editing tasks → use "edit" tool
-- For shell commands → use "bash" tool
-- For conversations → use "conversation" tool
-- **CRITICAL: Simple greetings/conversations → create ONLY 1 TODO using conversation tool**
-- **DO NOT break conversations into multiple TODOs**
-- Complex tasks → break into logical, executable steps with dependencies
+Strategic insights from thinking phase:
+{{thinking_insights}}
 
-IMPORTANT: Every TODO MUST have an assigned_tool field set to one of the available tools!
+DECOMPOSITION GUIDELINES:
+- Use the strategic insights above to guide decomposition decisions
+- Select tools ONLY from the available tools list above
+- Match tool capabilities to task requirements based on strategic analysis
+- **CRITICAL: Simple greetings/conversations → create ONLY 1 TODO with appropriate conversation tool**
+- **DO NOT break conversations into multiple TODOs**
+- Complex tasks → break into logical, executable steps with dependencies following the strategic approach
+- Consider file operations, system commands, and interactive responses as separate task categories
+- Prioritize tasks based on dependencies, logical flow, and strategic execution order
+- Account for identified challenges and use recommended mitigation strategies
+
+IMPORTANT: Every TODO MUST have an assigned_tool field set to one of the available tools above!
 
 EXECUTION STRATEGY:
 - Determine optimal execution order considering dependencies

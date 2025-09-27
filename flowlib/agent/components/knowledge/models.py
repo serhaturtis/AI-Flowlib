@@ -4,9 +4,8 @@ This module defines all models for the unified knowledge component following
 flowlib's strict Pydantic contract principles.
 """
 
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any
 from enum import Enum
-from datetime import datetime
 from pydantic import Field
 from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
 

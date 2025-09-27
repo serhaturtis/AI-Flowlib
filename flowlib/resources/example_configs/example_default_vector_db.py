@@ -5,6 +5,8 @@ Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
 Modify the settings below for your specific setup.
 """
 
+from typing import Any
+
 from flowlib.resources.decorators.decorators import vector_db_config
 from flowlib.resources.models.config_resource import VectorDBConfigResource
 
@@ -52,5 +54,5 @@ class ExampleVectorDBProviderConfig(VectorDBConfigResource):
     # api_key: str = "optional-api-key"
     # class_name: str = "FlowlibDocument"
     
-    def __init__(self, name: str, type: str, **kwargs):
-        super().__init__(name=name, type=type)
+    def __init__(self, name: str, type: str, **kwargs: Any) -> None:
+        super().__init__(name=name, type=type, provider_type=self.provider_type)

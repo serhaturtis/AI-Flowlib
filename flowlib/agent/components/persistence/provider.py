@@ -6,9 +6,9 @@ interface, allowing for flexible storage backends.
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 from pydantic import Field
-from flowlib.core.models import StrictBaseModel
+from flowlib.providers.core.base import ProviderSettings
 
 from flowlib.agent.core.errors import StatePersistenceError
 from flowlib.agent.models.state import AgentState
@@ -17,7 +17,7 @@ from .base import BaseStatePersister
 logger = logging.getLogger(__name__)
 
 
-class ProviderStatePersisterSettings(StrictBaseModel):
+class ProviderStatePersisterSettings(ProviderSettings):
     """Settings for ProviderStatePersister."""
     
     provider_name: str = Field(..., min_length=1, description="Name of the provider to use")
@@ -29,7 +29,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
     Uses a registered provider to store and retrieve agent states.
     """
     
-    def __init__(self, provider_name: str = None, name: str = "provider_state_persister", settings: Optional[ProviderStatePersisterSettings] = None):
+    def __init__(self, provider_name: Optional[str] = None, name: str = "provider_state_persister", settings: Optional[ProviderStatePersisterSettings] = None):
         """Initialize provider state persister.
         
         Args:
@@ -44,7 +44,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
             raise ValueError("Either provider_name or settings must be provided")
             
         super().__init__(name=name, settings=settings)
-        self._provider = None
+        self._provider: Optional[BaseStatePersister] = None
     
     async def _initialize(self) -> None:
         """Initialize persister by getting the provider from registry."""
@@ -53,12 +53,13 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
             provider_name = self.settings.provider_name
             # For now, use a default config approach - this may need to be updated
             # based on the actual provider registry API for named providers
-            self._provider = await provider_registry.get_by_config(provider_name)
-            if not self._provider:
+            provider = await provider_registry.get_by_config(provider_name)
+            if not provider:
                 raise StatePersistenceError(
                     message=f"Provider not found: {provider_name}",
                     operation="initialize"
                 )
+            self._provider = cast(BaseStatePersister, provider)
             logger.debug(f"Using provider: {provider_name}")
         except Exception as e:
             error_msg = f"Error initializing provider: {str(e)}"
@@ -84,11 +85,11 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
             True if state was saved successfully
         """
         try:
-            # Convert state to dict
-            state_dict = state.model_dump()
-            
-            # Save state
-            await self._provider.save_state(state_dict, metadata)
+            if self._provider is None:
+                raise RuntimeError(f"{self.name} not initialized - provider is None")
+
+            # Save state directly - the provider handles conversion
+            await self._provider.save_state(state, metadata)
             
             logger.debug(f"State saved using provider: {state.task_id}")
             return True
@@ -116,15 +117,18 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
             Loaded state or None if not found
         """
         try:
+            if self._provider is None:
+                raise RuntimeError(f"{self.name} not initialized - provider is None")
+
             # Load state from provider
-            state_dict = await self._provider.load_state(task_id)
-            
-            if not state_dict:
+            # Load state directly - the provider returns AgentState
+            state = await self._provider.load_state(task_id)
+
+            if not state:
                 logger.warning(f"State not found: {task_id}")
                 return None
-            
-            # Create AgentState from dictionary
-            return AgentState(initial_state_data=state_dict)
+
+            return state
             
         except Exception as e:
             error_msg = f"Error loading state using provider: {str(e)}"
@@ -149,6 +153,9 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
             True if state was deleted successfully
         """
         try:
+            if self._provider is None:
+                raise RuntimeError(f"{self.name} not initialized - provider is None")
+
             # Delete state from provider
             await self._provider.delete_state(task_id)
             
@@ -178,8 +185,34 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
             List of state metadata dictionaries
         """
         try:
+            if self._provider is None:
+                raise RuntimeError(f"{self.name} not initialized - provider is None")
+
             # List states from provider
-            return await self._provider.list_states(filter_criteria)
+            result = await self._provider.list_states(filter_criteria)
+
+            # Type validation following flowlib's no-fallbacks principle
+            if not isinstance(result, list):
+                raise StatePersistenceError(
+                    message=f"Provider returned invalid type: expected list, got {type(result)}",
+                    operation="list",
+                    context={'filter_criteria': filter_criteria}
+                )
+
+            # Validate each item is a dict with string keys and values
+            validated_result: list[dict[str, str]] = []
+            for item in result:
+                if not isinstance(item, dict):
+                    raise StatePersistenceError(
+                        message=f"Provider returned invalid item type: expected dict, got {type(item)}",
+                        operation="list",
+                        context={'filter_criteria': filter_criteria}
+                    )
+                # Convert all values to strings for consistency
+                validated_item = {str(k): str(v) for k, v in item.items()}
+                validated_result.append(validated_item)
+
+            return validated_result
             
         except Exception as e:
             error_msg = f"Error listing states using provider: {str(e)}"

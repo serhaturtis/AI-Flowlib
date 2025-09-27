@@ -8,18 +8,17 @@ import logging
 import inspect
 import os
 import json
-from typing import Any, Dict, Optional, Type
+from typing import Dict, Optional, Type, cast, Any
 from llama_cpp import LlamaGrammar
 from pydantic import BaseModel, Field, ConfigDict
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
-from ...core.decorators import provider
+from flowlib.providers.core.decorators import provider
+from flowlib.providers.llm.base import PromptTemplate
 # Removed ProviderType import - using config-driven provider access
-from ..base import LLMProvider, ModelType
-from flowlib.providers.core.base import ProviderSettings
-from ..models import LlamaModelConfig
-from flowlib.core.interfaces import PromptTemplate
+from flowlib.providers.llm.base import LLMProvider, LLMProviderSettings, ModelType
+from flowlib.providers.llm.models import LlamaModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ class GenerationParams(BaseModel):
     repeat_penalty: float = Field(default=1.1, description="Repetition penalty")
     
     @classmethod
-    def from_model_config(cls, model_config: Any) -> 'GenerationParams':
+    def from_model_config(cls, model_config: object) -> 'GenerationParams':
         """Extract generation parameters from model config.
         
         Args:
@@ -55,9 +54,9 @@ class GenerationParams(BaseModel):
                 value = getattr(model_config, field_name)
                 # Validate type matches expected
                 expected_type = field_info.annotation
-                if expected_type == int and not isinstance(value, int):
+                if expected_type is int and not isinstance(value, int):
                     raise ValueError(f"Parameter '{field_name}' must be int, got {type(value).__name__}")
-                elif expected_type == float and not isinstance(value, (int, float)):
+                elif expected_type is float and not isinstance(value, (int, float)):
                     raise ValueError(f"Parameter '{field_name}' must be float, got {type(value).__name__}")
                 params[field_name] = value
         
@@ -72,7 +71,7 @@ class StructuredGenerationParams(GenerationParams):
     top_p: float = Field(default=0.95, description="Higher top_p for structured output")
 
 
-class LlamaCppSettings(ProviderSettings):
+class LlamaCppSettings(LLMProviderSettings):
     """Settings for the LlamaCpp provider - Pure infrastructure concerns only.
     
     Provider-level settings that control how the LlamaCpp provider operates,
@@ -91,7 +90,7 @@ class LlamaCppSettings(ProviderSettings):
 
 
 @provider(provider_type="llm", name="llamacpp", settings_class=LlamaCppSettings)
-class LlamaCppProvider(LLMProvider):
+class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
     """Provider for local inference using llama-cpp-python.
     
     This provider supports:
@@ -100,7 +99,7 @@ class LlamaCppProvider(LLMProvider):
     3. Optional GPU acceleration with Metal or CUDA
     """
     
-    def __init__(self, name: str, provider_type: str, settings: Optional[LlamaCppSettings] = None, **kwargs: Any):
+    def __init__(self, name: str, provider_type: str, settings: Optional[LlamaCppSettings] = None, **kwargs: object):
         """Initialize LlamaCpp provider.
         
         Args:
@@ -112,12 +111,12 @@ class LlamaCppProvider(LLMProvider):
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         if not isinstance(self.settings, LlamaCppSettings):
             raise TypeError(f"settings must be a LlamaCppSettings instance, got {type(self.settings)}")
-        
-        # Store settings for local use
+
+        # Store validated settings for local use
         self._models = {}
-        self._settings = settings
+        self._settings = self.settings  # Use validated settings from parent
             
-    async def _initialize_model(self, model_name: str):
+    async def _initialize_model(self, model_name: str) -> None:
         """Initialize a specific model.
         
         Args:
@@ -135,28 +134,13 @@ class LlamaCppProvider(LLMProvider):
             
             # Get model configuration from registry - must be LlamaModelConfig
             model_config_raw = await self.get_model_config(model_name)
-            
-            # Convert to strict Pydantic model
-            if isinstance(model_config_raw, dict):
-                model_config = LlamaModelConfig(**model_config_raw)
-            else:
-                # Handle ModelResource format - access config dictionary
-                if hasattr(model_config_raw, 'config') and isinstance(model_config_raw.config, dict):
-                    model_config = LlamaModelConfig(**model_config_raw.config)
-                else:
-                    # Assume it's already a LlamaModelConfig or convert from object attributes
-                    model_config = LlamaModelConfig(
-                        path=model_config_raw.path,
-                        model_type=model_config_raw.model_type,
-                        n_ctx=model_config_raw.n_ctx,
-                        n_threads=model_config_raw.n_threads,
-                        n_batch=model_config_raw.n_batch,
-                        use_gpu=model_config_raw.use_gpu,
-                        n_gpu_layers=model_config_raw.n_gpu_layers,
-                        verbose=model_config_raw.verbose,
-                        temperature=model_config_raw.temperature,
-                        max_tokens=model_config_raw.max_tokens
-                    )
+
+            # Extract the nested 'config' field - single source of truth
+            if 'config' not in model_config_raw or not isinstance(model_config_raw['config'], dict):
+                raise ValueError(f"Model config for '{model_name}' has invalid structure - missing 'config' field")
+
+            # Convert to strict Pydantic model - validate only the config part
+            model_config = LlamaModelConfig.model_validate(model_config_raw['config'])
             
             # Extract model-specific values
             model_path = model_config.path
@@ -398,21 +382,21 @@ class LlamaCppProvider(LLMProvider):
                     cause=e
                 )
             
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the provider."""
         self._initialized = True
-        
-    async def _initialize(self):
+
+    async def _initialize(self) -> None:
         """Initialize the provider.
-        
+
         This implements the required abstract method from the Provider base class.
         The actual model initialization is done lazily in _initialize_model when needed.
         """
         # The LlamaCpp provider uses lazy initialization of models
         # when they are first requested, so there's no work to do here
         pass
-        
-    async def shutdown(self):
+
+    async def shutdown(self) -> None:
         """Release model resources."""
         for model_name, model_data in self._models.items():
             logger.info(f"Released LlamaCpp model: {model_name}")
@@ -420,7 +404,7 @@ class LlamaCppProvider(LLMProvider):
         self._models = {}
         self._initialized = False
         
-    async def generate(self, prompt: PromptTemplate, model_name: str, prompt_variables: Optional[Dict[str, Any]] = None) -> str:
+    async def generate(self, prompt: PromptTemplate, model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> str:
         """Generate text completion.
         
         Args:
@@ -488,7 +472,7 @@ class LlamaCppProvider(LLMProvider):
             # Extract generated text
             if isinstance(result, dict) and "choices" in result:
                 # Extract from completion format
-                return result["choices"][0]["text"]
+                return cast(str, result["choices"][0]["text"])
             elif isinstance(result, list) and len(result) > 0:
                 # Extract from list format
                 return result[0]["text"] if "text" in result[0] else ""
@@ -522,7 +506,7 @@ class LlamaCppProvider(LLMProvider):
                 cause=e
             )
             
-    async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, Any]] = None) -> ModelType:
+    async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> ModelType:
         """Generate structured output using a JSON grammar.
         
         Args:
@@ -724,7 +708,7 @@ class LlamaCppProvider(LLMProvider):
         # Replace unescaped newlines and tabs within strings specifically
         # This regex is complex: it finds "key": "...content..." and replaces 
         # unescaped newlines/tabs within the content part.
-        def replace_control_chars(match):
+        def replace_control_chars(match: Any) -> str:
             key = match.group(1)
             content = match.group(2)
             # Replace unescaped newlines/tabs within the content
@@ -747,7 +731,7 @@ class LlamaCppProvider(LLMProvider):
         try:
             # Create an instance of the output_type class using the parsed data
             validated_response = output_type.model_validate(parsed_data)
-            return validated_response
+            return cast(ModelType, validated_response)
         except Exception as e:
             error_context = ErrorContext.create(
                 flow_name="structured_generation",
@@ -886,7 +870,7 @@ class LlamaCppProvider(LLMProvider):
             
         return ""
 
-    def _sanitize_strings(self, obj):
+    def _sanitize_strings(self, obj: Any) -> Any:
         """Sanitize strings in parsed data to ensure consistent formatting.
         
         Args:

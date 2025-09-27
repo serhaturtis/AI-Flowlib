@@ -5,53 +5,18 @@ configuration, initialization, and error handling.
 """
 
 import asyncio
-from typing import Any, Dict, Optional, TypeVar, Generic, List, Union, Callable
-from pydantic import Field, ConfigDict
-from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
+from typing import Any, Dict, Optional, TypeVar, Union, Callable, cast
+from pydantic import Field
+from flowlib.core.models import StrictBaseModel
 import logging
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from .provider_base import ProviderBase
-from flowlib.core.errors.errors import ResourceError, ProviderError, ErrorContext
+from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.flows.base import FlowSettings
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T', bound=StrictBaseModel)  # For settings type
+T = TypeVar('T', bound='ProviderSettings')  # For settings type
 
-
-class RetryConfig(StrictBaseModel):
-    """Retry configuration model."""
-    # Inherits strict configuration from StrictBaseModel
-    
-    max_retries: int = Field(description="Maximum number of retry attempts")
-    retry_delay_seconds: float = Field(description="Delay between retries in seconds")  
-    timeout_seconds: float = Field(description="Timeout for each attempt in seconds")
-    
-    @classmethod
-    def from_settings_and_params(
-        cls,
-        settings: 'ProviderSettings',
-        retries: Optional[int] = None,
-        retry_delay: Optional[float] = None,
-        timeout: Optional[float] = None
-    ) -> 'RetryConfig':
-        """Create retry config from settings and explicit parameters.
-        
-        Args:
-            settings: Provider settings containing defaults
-            retries: Optional explicit retry count
-            retry_delay: Optional explicit retry delay
-            timeout: Optional explicit timeout
-            
-        Returns:
-            Validated retry configuration
-        """
-        return cls(
-            max_retries=retries if retries is not None else settings.max_retries,
-            retry_delay_seconds=retry_delay if retry_delay is not None else settings.retry_delay_seconds,
-            timeout_seconds=timeout if timeout is not None else settings.timeout_seconds
-        )
 
 # Changed to StrictBaseModel - enforcing CLAUDE.md principles
 class ProviderSettings(StrictBaseModel):
@@ -64,7 +29,7 @@ class ProviderSettings(StrictBaseModel):
     # Inherits strict configuration from StrictBaseModel
     
     # Common timeout and retry settings (apply to all providers)
-    timeout: int = Field(default=300, description="Operation timeout in seconds (5 minutes default)")
+    timeout: float = Field(default=300.0, description="Operation timeout in seconds (5 minutes default)")
     max_retries: int = Field(default=3, description="Maximum number of retry attempts on failure") 
     retry_delay_seconds: float = Field(default=1.0, description="Delay between retry attempts in seconds")
     
@@ -116,6 +81,40 @@ class ProviderSettings(StrictBaseModel):
         settings_dict.update(kwargs)
         return self.__class__(**settings_dict)
 
+
+class RetryConfig(StrictBaseModel):
+    """Retry configuration model for provider operations."""
+
+    max_retries: int = Field(description="Maximum number of retry attempts")
+    retry_delay_seconds: float = Field(description="Delay between retry attempts in seconds")
+    timeout_seconds: Optional[float] = Field(default=None, description="Timeout for individual operations in seconds")
+
+    @classmethod
+    def from_settings_and_params(
+        cls,
+        settings: ProviderSettings,
+        retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
+        timeout: Optional[float] = None
+    ) -> 'RetryConfig':
+        """Create retry config from settings and optional parameter overrides.
+
+        Args:
+            settings: Provider settings to use as base
+            retries: Optional override for max_retries
+            retry_delay: Optional override for retry delay
+            timeout: Optional override for timeout
+
+        Returns:
+            Configured RetryConfig instance
+        """
+        return cls(
+            max_retries=retries if retries is not None else settings.max_retries,
+            retry_delay_seconds=retry_delay if retry_delay is not None else settings.retry_delay_seconds,
+            timeout_seconds=timeout if timeout is not None else settings.timeout
+        )
+
+
 class Provider(ProviderBase[T]):
     """Base class for all providers with enhanced lifecycle management.
     
@@ -134,8 +133,10 @@ class Provider(ProviderBase[T]):
     ):
         # Create default settings if none provided
         if settings is None:
-            settings = self._default_settings()
-        
+            settings = cast(T, self._default_settings())
+        else:
+            settings = cast(T, settings)
+
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         self._initialized = False
         self._setup_lock = asyncio.Lock()
@@ -146,7 +147,7 @@ class Provider(ProviderBase[T]):
         """Check if provider is initialized."""
         return self._initialized
     
-    def _default_settings(self) -> T:
+    def _default_settings(self) -> ProviderSettings:
         """Create default settings instance.
         
         Returns:
@@ -157,31 +158,40 @@ class Provider(ProviderBase[T]):
         """
         # First check if the provider has a settings_class attribute (from decorator)
         if hasattr(self.__class__, 'settings_class') and self.__class__.settings_class:
-            return self.__class__.settings_class()
+            settings_instance = self.__class__.settings_class()
+            if not isinstance(settings_instance, ProviderSettings):
+                raise TypeError(f"Settings class must return ProviderSettings instance, got {type(settings_instance)}")
+            return settings_instance
         
         # Look through the MRO to find a class that inherits from Provider with generic args
         for base in self.__class__.__mro__:
             if hasattr(base, '__orig_bases__'):
                 for orig_base in base.__orig_bases__:
                     if hasattr(orig_base, '__origin__') and hasattr(orig_base, '__args__'):
-                        # Check if this is Provider[SomeSettings] 
+                        # Check if this is Provider[SomeSettings]
                         origin = orig_base.__origin__
-                        if (hasattr(origin, '__name__') and 
-                            origin.__name__ == 'Provider' and 
+                        if (hasattr(origin, '__name__') and
+                            origin.__name__ == 'Provider' and
                             orig_base.__args__):
                             settings_type = orig_base.__args__[0]
-                            return settings_type()
+                            settings_instance = settings_type()
+                            if not isinstance(settings_instance, ProviderSettings):
+                                raise TypeError(f"Settings type must return ProviderSettings instance, got {type(settings_instance)}")
+                            return settings_instance
                         # Check if this is SomeProvider that inherits from Provider[SomeSettings]
                         elif hasattr(origin, '__mro__'):
                             for parent in origin.__mro__:
                                 if hasattr(parent, '__orig_bases__'):
                                     for parent_base in parent.__orig_bases__:
-                                        if (hasattr(parent_base, '__origin__') and 
+                                        if (hasattr(parent_base, '__origin__') and
                                             hasattr(parent_base, '__args__') and
                                             hasattr(parent_base.__origin__, '__name__') and
                                             parent_base.__origin__.__name__ == 'Provider'):
                                             settings_type = parent_base.__args__[0]
-                                            return settings_type()
+                                            settings_instance = settings_type()
+                                            if not isinstance(settings_instance, ProviderSettings):
+                                                raise TypeError(f"Settings type must return ProviderSettings instance, got {type(settings_instance)}")
+                                            return settings_instance
         
         # If no settings type found, raise helpful error
         raise TypeError(
@@ -204,10 +214,11 @@ class Provider(ProviderBase[T]):
         """
         if self._initialized:
             return
-            
+
         async with self._setup_lock:
+            # Double-checked locking pattern
             if self._initialized:
-                return
+                return  # type: ignore[unreachable]
                 
             try:
                 await self._initialize()
@@ -263,7 +274,7 @@ class Provider(ProviderBase[T]):
         """
         pass
     
-    def update_settings(self, new_settings: dict) -> None:
+    def update_settings(self, new_settings: Dict[str, Any]) -> None:
         """Update provider settings using flowlib's functional pattern.
         
         This method creates a new frozen settings instance with the updated values,
@@ -295,7 +306,7 @@ class Provider(ProviderBase[T]):
         
     async def execute_with_retry(
         self,
-        operation: Callable,
+        operation: Callable[..., Any],
         *args: Any,
         retries: Optional[int] = None,
         retry_delay: Optional[float] = None,
@@ -319,8 +330,10 @@ class Provider(ProviderBase[T]):
             ProviderError: If operation fails after retries or times out
         """
         # Create strict retry configuration using Pydantic model
+        # Since T is bound to ProviderSettings, this cast is safe
+        provider_settings = self.settings if isinstance(self.settings, ProviderSettings) else ProviderSettings()
         retry_config = RetryConfig.from_settings_and_params(
-            settings=self.settings,
+            settings=provider_settings,
             retries=retries,
             retry_delay=retry_delay,
             timeout=timeout
@@ -332,7 +345,7 @@ class Provider(ProviderBase[T]):
         
         # Execute with retries
         attempt = 0
-        last_error = None
+        last_error: Optional[Exception] = None
         
         while attempt <= retry_config.max_retries:
             try:

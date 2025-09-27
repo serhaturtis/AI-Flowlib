@@ -19,7 +19,7 @@ class AgentComponent(ABC):
     2. Registry access for inter-component communication
     """
     
-    def __init__(self, name: str = None):
+    def __init__(self, name: str):
         """Initialize component.
         
         Args:

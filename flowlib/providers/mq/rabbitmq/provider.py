@@ -13,22 +13,21 @@ from datetime import datetime
 from pydantic import Field
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.mq.base import MQProvider, MessageMetadata
-from flowlib.providers.core.base import ProviderSettings
+from flowlib.providers.mq.base import MQProvider, MQProviderSettings, MessageMetadata
 from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
 
 logger = logging.getLogger(__name__)
 
 try:
-    import aio_pika
-    from aio_pika import Message, Connection, Channel, Queue, Exchange
-    from aio_pika.abc import AbstractIncomingMessage
+    import aio_pika  # type: ignore[import-not-found]
+    from aio_pika import Message
+    from aio_pika.abc import AbstractIncomingMessage  # type: ignore[import-not-found]
 except ImportError:
     logger.warning("aio_pika package not found. Install with 'pip install aio-pika'")
 
 
-class RabbitMQProviderSettings(ProviderSettings):
+class RabbitMQProviderSettings(MQProviderSettings):
     """RabbitMQ provider settings - direct inheritance, only RabbitMQ-specific fields.
     
     RabbitMQ requires:
@@ -38,16 +37,8 @@ class RabbitMQProviderSettings(ProviderSettings):
     4. SSL and reliability settings
     """
     
-    # Connection settings
-    host: str = Field(default="localhost", description="RabbitMQ server host")
-    port: int = Field(default=5672, description="RabbitMQ server port")
-    username: Optional[str] = Field(default="guest", description="RabbitMQ username")
-    password: Optional[str] = Field(default="guest", description="RabbitMQ password")
-    
     # RabbitMQ-specific connection settings
     connection_string: Optional[str] = Field(default=None, description="Connection string (overrides host/port if provided)")
-    virtual_host: str = Field(default="/", description="RabbitMQ virtual host")
-    heartbeat: int = Field(default=60, description="Heartbeat interval in seconds")
     connection_timeout: float = Field(default=10.0, description="Connection timeout in seconds")
     
     # SSL settings
@@ -67,7 +58,7 @@ class RabbitMQProviderSettings(ProviderSettings):
 
 
 @provider(provider_type="message_queue", name="rabbitmq", settings_class=RabbitMQProviderSettings)
-class RabbitMQProvider(MQProvider):
+class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
     """RabbitMQ implementation of the MQProvider.
     
     This provider implements message queue operations using aio_pika,
@@ -92,12 +83,12 @@ class RabbitMQProvider(MQProvider):
         if not isinstance(self.settings, RabbitMQProviderSettings):
             raise TypeError(f"settings must be a RabbitMQProviderSettings instance, got {type(self.settings)}")
         
-        self._connection = None
-        self._channel = None
-        self._exchange = None
-        self._queues = {}
-        self._consumer_tags = set()
-        self._tag_to_queue_map = {}
+        self._connection: Optional[aio_pika.Connection] = None
+        self._channel: Optional[aio_pika.Channel] = None
+        self._exchange: Optional[aio_pika.Exchange] = None
+        self._queues: Dict[str, aio_pika.Queue] = {}
+        self._consumer_tags: set[str] = set()
+        self._tag_to_queue_map: Dict[str, str] = {}
         
     async def _initialize(self) -> None:
         """Initialize RabbitMQ connection.
@@ -136,11 +127,7 @@ class RabbitMQProvider(MQProvider):
             )
             
             logger.info(f"Connected to RabbitMQ: {self.settings.host}:{self.settings.port}/{self.settings.virtual_host}")
-            # Add debug log to confirm channel state
-            if self._channel:
-                logger.debug(f"RabbitMQ channel successfully created: {self._channel}")
-            else:
-                logger.error("!!! RabbitMQ channel is None after creation attempt in _initialize !!!")
+            logger.debug(f"RabbitMQ channel successfully created: {self._channel}")
             
         except Exception as e:
             self._connection = None
@@ -170,7 +157,8 @@ class RabbitMQProvider(MQProvider):
             # Cancel all consumers
             for consumer_tag in self._consumer_tags:
                 try:
-                    await self._channel.cancel(consumer_tag)
+                    if self._channel:
+                        await self._channel.cancel(consumer_tag)
                 except Exception as e:
                     logger.warning(f"Error canceling consumer {consumer_tag}: {str(e)}")
             
@@ -187,21 +175,22 @@ class RabbitMQProvider(MQProvider):
         except Exception as e:
             logger.error(f"Error during RabbitMQ connection shutdown: {str(e)}")
     
-    async def publish(self, 
-                     routing_key: str, 
-                     message: Any, 
-                     metadata: Optional[MessageMetadata] = None, 
-                     content_type: str = "application/json",
-                     expiration: Optional[int] = None) -> None:
+    async def publish(self,
+                     exchange: str,
+                     routing_key: str,
+                     message: Any,
+                     metadata: Optional[MessageMetadata] = None) -> bool:
         """Publish a message to RabbitMQ.
-        
+
         Args:
+            exchange: Exchange name (uses default if empty)
             routing_key: Routing key
             message: Message to publish
             metadata: Optional message metadata
-            content_type: Content type
-            expiration: Message expiration in milliseconds
-            
+
+        Returns:
+            True if publish was successful
+
         Raises:
             ProviderError: If publish fails
         """
@@ -218,14 +207,19 @@ class RabbitMQProvider(MQProvider):
                 body = message
             else:
                 body = str(message).encode()
-            
+
             # Prepare metadata
             headers = {}
+            content_type = "application/json"
+            expiration = None
             if metadata:
                 headers = metadata.model_dump()
-            
+                if metadata.content_type:
+                    content_type = metadata.content_type
+                expiration = metadata.expiration
+
             # Create message
-            message = Message(
+            amqp_message = Message(
                 body=body,
                 content_type=content_type,
                 delivery_mode=self.settings.delivery_mode,
@@ -234,14 +228,32 @@ class RabbitMQProvider(MQProvider):
                 expiration=str(expiration) if expiration else None,
                 headers=headers
             )
-            
+
             # Publish message
+            if not self._exchange:
+                raise ProviderError(
+                    message="Exchange not initialized",
+                    context=ErrorContext.create(
+                        flow_name="rabbitmq_provider",
+                        error_type="InitializationError",
+                        error_location="publish",
+                        component=self.name,
+                        operation="message_publish"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="mq",
+                        operation="message_publish",
+                        retry_count=0
+                    )
+                )
             await self._exchange.publish(
-                message=message,
+                message=amqp_message,
                 routing_key=routing_key
             )
-            
-            logger.debug(f"Published message to {routing_key}")
+
+            logger.debug(f"Published message to {routing_key} via exchange {exchange or 'default'}")
+            return True
             
         except Exception as e:
             raise ProviderError(
@@ -262,48 +274,56 @@ class RabbitMQProvider(MQProvider):
                 cause=e
             )
     
-    async def consume(self, 
-                     queue_name: str, 
+    async def consume(self,
+                     queue: str,
                      callback: Callable[[Any, MessageMetadata], Any],
-                     routing_keys: Optional[List[str]] = None,
-                     auto_ack: bool = False,
-                     consumer_tag: Optional[str] = None) -> str:
+                     consumer_tag: Optional[str] = None) -> Any:
         """Consume messages from RabbitMQ.
-        
+
         Args:
-            queue_name: Queue name to consume from
+            queue: Queue name to consume from
             callback: Callback function (receives message body, metadata)
-            routing_keys: Optional list of routing keys to bind (for topic/direct exchanges)
-            auto_ack: Whether to auto-acknowledge messages (Defaults to False)
-            consumer_tag: Optional consumer tag (if not provided, one is generated)
-            
+            consumer_tag: Optional consumer tag
+
         Returns:
-            The consumer tag used for this consumer.
-            
+            The consumer tag used for this consumer
+
         Raises:
             ProviderError: If subscribe fails
         """
-        # Removed check: Rely on Provider.initialize() called earlier in worker startup
-        # if not self._connection or not self._channel or not self._exchange:
-        #     await self.initialize()
-            
-        if not routing_keys:
-             routing_keys = [queue_name] # Default routing key to queue name if not specified
-            
+        if not self._connection or not self._channel or not self._exchange:
+            await self.initialize()
+
         try:
             # Declare queue
-            queue = await self._channel.declare_queue(
-                name=queue_name,
+            if not self._channel:
+                raise ProviderError(
+                    message="Channel not initialized",
+                    context=ErrorContext.create(
+                        flow_name="rabbitmq_provider",
+                        error_type="InitializationError",
+                        error_location="consume",
+                        component=self.name,
+                        operation="queue_declaration"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="mq",
+                        operation="queue_declaration",
+                        retry_count=0
+                    )
+                )
+            amqp_queue = await self._channel.declare_queue(
+                name=queue,
                 durable=self.settings.queue_durable,
                 auto_delete=self.settings.queue_auto_delete
             )
-            
-            # Bind queue to exchange with routing keys
-            for routing_key in routing_keys:
-                await queue.bind(self._exchange, routing_key=routing_key)
-            
+
+            # Bind queue to exchange (use queue name as routing key)
+            await amqp_queue.bind(self._exchange, routing_key=queue)
+
             # Store queue
-            self._queues[queue_name] = queue
+            self._queues[queue] = amqp_queue
             
             # Define message handler
             async def message_handler(message: AbstractIncomingMessage) -> None:
@@ -338,32 +358,30 @@ class RabbitMQProvider(MQProvider):
                         # Call the user-provided callback
                         await callback(data, meta)
                         
-                        # Manual Ack needed if auto_ack is False
-                        if not auto_ack:
-                             await message.ack()
-                            
+                        # Manual Ack needed (always manual in base interface)
+                        await message.ack()
+
                     except Exception as e:
                         logger.exception(f"Error processing message (ID: {message.message_id}): {str(e)}")
-                        # Manual Nack needed if auto_ack is False
-                        if not auto_ack:
-                            try:
-                                await message.nack(requeue=False)
-                            except Exception as nack_err:
-                                 logger.error(f"Failed to NACK message (ID: {message.message_id}): {nack_err}")
-            
+                        # Manual Nack on error
+                        try:
+                            await message.nack(requeue=False)
+                        except Exception as nack_err:
+                            logger.error(f"Failed to NACK message (ID: {message.message_id}): {nack_err}")
+
             # Start consuming
             # Use provided consumer_tag or let aio_pika generate one
-            tag = await queue.consume(message_handler, consumer_tag=consumer_tag, no_ack=auto_ack)
+            tag = await amqp_queue.consume(message_handler, consumer_tag=consumer_tag, no_ack=False)
             self._consumer_tags.add(tag)
             # Store mapping from tag to queue name for cancellation
-            self._tag_to_queue_map[tag] = queue_name 
+            self._tag_to_queue_map[tag] = queue 
             
-            logger.info(f"Started consuming from queue '{queue_name}' with consumer tag '{tag}'")
-            return tag # Return the consumer tag
+            logger.info(f"Started consuming from queue '{queue}' with consumer tag '{tag}'")
+            return tag  # Return the consumer tag
             
         except Exception as e:
             raise ProviderError(
-                message=f"Failed to start consuming from queue '{queue_name}': {str(e)}",
+                message=f"Failed to start consuming from queue '{queue}': {str(e)}",
                 context=ErrorContext.create(
                     flow_name="rabbitmq_provider",
                     error_type="ConsumeError",
@@ -471,6 +489,23 @@ class RabbitMQProvider(MQProvider):
             queue_auto_delete = auto_delete if auto_delete is not None else self.settings.queue_auto_delete
             
             # Declare queue
+            if not self._channel:
+                raise ProviderError(
+                    message="Channel not initialized",
+                    context=ErrorContext.create(
+                        flow_name="rabbitmq_provider",
+                        error_type="InitializationError",
+                        error_location="create_queue",
+                        component=self.name,
+                        operation="queue_declaration"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="mq",
+                        operation="queue_declaration",
+                        retry_count=0
+                    )
+                )
             queue = await self._channel.declare_queue(
                 name=queue_name,
                 durable=queue_durable,
@@ -520,6 +555,23 @@ class RabbitMQProvider(MQProvider):
             
         try:
             # Delete queue
+            if not self._channel:
+                raise ProviderError(
+                    message="Channel not initialized",
+                    context=ErrorContext.create(
+                        flow_name="rabbitmq_provider",
+                        error_type="InitializationError",
+                        error_location="delete_queue",
+                        component=self.name,
+                        operation="queue_deletion"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="mq",
+                        operation="queue_deletion",
+                        retry_count=0
+                    )
+                )
             await self._channel.queue_delete(queue_name)
             
             # Remove queue from tracked queues

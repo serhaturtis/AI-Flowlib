@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class AgentThreadPoolManager:
     """Manages agent threads and their queues."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize thread pool manager."""
         self.agents: Dict[str, BaseAgent] = {}
         self.response_routers: Dict[str, ResponseRouter] = {}
@@ -45,7 +45,7 @@ class AgentThreadPoolManager:
             # Create agent with task description from config
             agent = BaseAgent(
                 config=config,
-                task_description=config.task_description
+                task_description=config.task_description or ""
             )
             
             # Store agent
@@ -140,7 +140,7 @@ class AgentThreadPoolManager:
         logger.debug(f"[ThreadManager] Received response for message {message_id}")
         return response
     
-    def shutdown_agent(self, agent_id: str):
+    def shutdown_agent(self, agent_id: str) -> None:
         """Shutdown an agent.
         
         Args:
@@ -176,7 +176,7 @@ class AgentThreadPoolManager:
             
             logger.info(f"Shutdown agent {agent_id}")
     
-    def shutdown_all(self):
+    def shutdown_all(self) -> None:
         """Shutdown all agents."""
         agent_ids = list(self.agents.keys())
         for agent_id in agent_ids:

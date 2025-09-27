@@ -3,21 +3,19 @@
 import asyncio
 import json
 import logging
-from typing import Dict, Any, Optional, List, Callable
-from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional, List, Callable, Union, cast
+from pydantic import Field
 
 # Optional HTTP dependencies
 try:
     from aiohttp import web, WSMsgType
-    import aiohttp_cors
+    import aiohttp_cors  # type: ignore[import-not-found]
     HTTP_AVAILABLE = True
 except ImportError:
     HTTP_AVAILABLE = False
-    web = None
-    WSMsgType = None
-    aiohttp_cors = None
 
 from ..base import Provider, ProviderSettings
+from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
 from flowlib.providers.mcp.base import (
     BaseMCPServer, MCPTool, MCPResource, MCPTransport,
@@ -25,6 +23,7 @@ from flowlib.providers.mcp.base import (
 )
 from flowlib.flows.base import Flow
 from flowlib.flows.registry.registry import flow_registry
+from flowlib.core.context.context import Context
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +60,15 @@ class MCPServerSettings(ProviderSettings):
 class FlowToolHandler:
     """Handler for flow-based MCP tools."""
     
-    def __init__(self, flow_instance: Flow, flow_name: str = None):
+    def __init__(self, flow_instance: Flow, flow_name: Optional[str] = None):
         self.flow = flow_instance
-        self.flow_name = flow_name or getattr(flow_instance, '__name__', 'unknown_flow')
+        # Ensure flow_name is always a string
+        if flow_name:
+            self.flow_name = flow_name
+        else:
+            # Try to get name from flow instance, fallback to 'unknown_flow'
+            instance_name = getattr(flow_instance, '__name__', None)
+            self.flow_name = str(instance_name) if instance_name else 'unknown_flow'
         
     def create_tool(self) -> MCPTool:
         """Create an MCP tool from the flow."""
@@ -134,8 +139,9 @@ class FlowToolHandler:
                 else:
                     result = await self.flow.run_pipeline(arguments)
             else:
-                # Try to execute flow directly
-                result = await self.flow.execute(arguments)
+                # Try to execute flow directly with proper Context
+                context: Context[Any] = Context(data=arguments)
+                result = await self.flow.execute(context)
             
             # Convert result to serializable format
             if hasattr(result, 'model_dump'):
@@ -175,10 +181,10 @@ class ResourceHandler:
             raise MCPError(f"Resource access failed: {str(e)}")
 
 
-from flowlib.providers.core.decorators import provider
+# Decorator already imported above
 
 @provider(provider_type="mcp_server", name="mcp-server", settings_class=MCPServerSettings)
-class MCPServerProvider(Provider):
+class MCPServerProvider(Provider[MCPServerSettings]):
     """Provider that exposes flowlib capabilities as an MCP server."""
     
     def __init__(self, name: str, provider_type: str = "mcp_server", settings: Optional[MCPServerSettings] = None):
@@ -188,7 +194,7 @@ class MCPServerProvider(Provider):
             settings=settings
         )
         self._server: Optional[BaseMCPServer] = None
-        self._http_server = None
+        self._http_server: Optional[Any] = None  # AppRunner when HTTP_AVAILABLE
         self._running = False
         
     async def _initialize(self) -> None:
@@ -228,8 +234,7 @@ class MCPServerProvider(Provider):
         
         if self._http_server:
             try:
-                self._http_server.close()
-                await self._http_server.wait_closed()
+                await self._http_server.cleanup()
             except Exception as e:
                 logger.warning(f"Error stopping HTTP server: {e}")
             finally:
@@ -252,6 +257,8 @@ class MCPServerProvider(Provider):
                 handler = FlowToolHandler(flow_instance, flow_name)
                 tool = handler.create_tool()
                 
+                if self._server is None:
+                    raise RuntimeError("MCP server not initialized")
                 self._server.register_tool(tool, handler)
                 logger.debug(f"Registered flow '{flow_name}' as MCP tool")
                 
@@ -265,13 +272,13 @@ class MCPServerProvider(Provider):
         if self.settings.expose_all_flows:
             # Expose all flows except excluded ones
             return {
-                name: flow for name, flow in all_flows.items()
+                name: cast(Flow, flow) for name, flow in all_flows.items()
                 if name not in self.settings.exclude_flows
             }
         else:
             # Only expose specifically listed flows
             return {
-                name: all_flows[name] for name in self.settings.exposed_flows
+                name: cast(Flow, all_flows[name]) for name in self.settings.exposed_flows
                 if name in all_flows
             }
     
@@ -316,10 +323,12 @@ class MCPServerProvider(Provider):
                 mime_type="application/json"
             )
             
-            async def get_memory():
+            async def get_memory() -> Dict[str, str]:
                 # This would need to be connected to actual memory system
                 return {"type": "working_memory", "contents": "memory data"}
             
+            if self._server is None:
+                raise RuntimeError("MCP server not initialized")
             self._server.register_resource(
                 memory_resource,
                 ResourceHandler(get_memory, "working_memory")
@@ -334,13 +343,15 @@ class MCPServerProvider(Provider):
                 mime_type="application/json"
             )
             
-            def get_flow_registry():
+            def get_flow_registry() -> Dict[str, Union[List[str], int]]:
                 flows = flow_registry.get_flow_instances()
                 return {
                     "flows": list(flows.keys()),
                     "count": len(flows)
                 }
             
+            if self._server is None:
+                raise RuntimeError("MCP server not initialized")
             self._server.register_resource(
                 registry_resource,
                 ResourceHandler(get_flow_registry, "flow_registry")
@@ -355,13 +366,21 @@ class MCPServerProvider(Provider):
                 mime_type="application/json"
             )
             
-            def get_metrics():
+            def get_metrics() -> Dict[str, Union[bool, int]]:
+                if self._server is None:
+                    return {
+                        "server_running": self._running,
+                        "tools_registered": 0,
+                        "resources_registered": 0
+                    }
                 return {
                     "server_running": self._running,
                     "tools_registered": len(self._server._tools),
                     "resources_registered": len(self._server._resources)
                 }
-            
+
+            if self._server is None:
+                raise RuntimeError("MCP server not initialized")
             self._server.register_resource(
                 metrics_resource,
                 ResourceHandler(get_metrics, "performance_metrics")
@@ -373,7 +392,7 @@ class MCPServerProvider(Provider):
             raise MCPError("aiohttp and aiohttp-cors are required for HTTP transport")
         
         try:
-            
+            from aiohttp import web
             app = web.Application()
             
             # Enable CORS
@@ -396,22 +415,25 @@ class MCPServerProvider(Provider):
             for route in list(app.router.routes()):
                 cors.add(route)
             
-            # Start server
-            self._http_server = await asyncio.start_server(
-                lambda: app,
-                self.settings.host,
-                self.settings.port
-            )
+            # Start server using aiohttp runner
+            from aiohttp import web
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, self.settings.host, self.settings.port)
+            await site.start()
+            self._http_server = runner
             
         except Exception as e:
             raise MCPError(f"Failed to start HTTP server: {str(e)}")
     
-    async def _handle_http_message(self, request):
+    async def _handle_http_message(self, request: Any) -> Any:
         """Handle HTTP message requests."""
         try:
             data = await request.json()
             message = MCPMessage(**data)
-            
+
+            if self._server is None:
+                raise RuntimeError("MCP server not initialized")
             response = await self._server.handle_request(message)
             
             return web.json_response(response.model_dump(exclude_none=True))
@@ -423,7 +445,7 @@ class MCPServerProvider(Provider):
                 status=500
             )
     
-    async def _handle_sse(self, request):
+    async def _handle_sse(self, request: Any) -> Any:
         """Handle Server-Sent Events."""
         response = web.StreamResponse(
             status=200,
@@ -447,7 +469,7 @@ class MCPServerProvider(Provider):
         
         return response
     
-    async def _handle_websocket(self, request):
+    async def _handle_websocket(self, request: Any) -> Any:
         """Handle WebSocket connections."""
         ws = web.WebSocketResponse()
         await ws.prepare(request)
@@ -458,7 +480,9 @@ class MCPServerProvider(Provider):
                     try:
                         data = json.loads(msg.data)
                         message = MCPMessage(**data)
-                        
+
+                        if self._server is None:
+                            raise RuntimeError("MCP server not initialized")
                         response = await self._server.handle_request(message)
                         
                         await ws.send_str(
@@ -475,7 +499,7 @@ class MCPServerProvider(Provider):
         
         return ws
     
-    async def _handle_health(self, request):
+    async def _handle_health(self, request: Any) -> Any:
         """Handle health check requests."""
         return web.json_response({
             "status": "healthy" if self._running else "unhealthy",
@@ -514,8 +538,15 @@ class MCPServerProvider(Provider):
             raise MCPError(f"Tool not found: {tool_name}")
         
         try:
-            handler = self._server._tools[tool_name]['handler']
-            return await handler.handle(arguments)
+            # Get the tool object and execute it
+            tool = self._server._tools[tool_name]
+            # Assume MCPTool has an execute method or similar
+            result = await tool.execute(arguments) if hasattr(tool, 'execute') else tool
+            # Ensure the result is a dictionary
+            if isinstance(result, dict):
+                return result
+            else:
+                return {"result": result}
         except Exception as e:
             raise MCPError(f"Tool execution failed: {str(e)}")
     

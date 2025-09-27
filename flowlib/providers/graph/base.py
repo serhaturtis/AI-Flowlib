@@ -6,19 +6,20 @@ establishing a common interface for entity and relationship operations.
 
 import logging
 from abc import abstractmethod
-from typing import Dict, List, Optional, Any
+from typing import List, Optional, TypeVar, Generic
 
-from flowlib.providers.core.base import Provider
-from flowlib.core.models import StrictBaseModel
+from flowlib.providers.core.base import Provider, ProviderSettings
 from flowlib.providers.graph.models import (
     Entity, GraphQueryResult, EntitySearchResult, RelationshipSearchResult, 
-    GraphStoreResult, GraphDeleteResult, GraphUpdateResult, GraphStats, 
-    GraphHealthResult, EntityRelationship, GraphQueryParams, TraversalParams
+    GraphStoreResult, GraphDeleteResult, GraphStats, 
+    GraphHealthResult, EntityRelationship, GraphQueryParams
 )
 
 logger = logging.getLogger(__name__)
 
-class GraphDBProviderSettings(StrictBaseModel):
+SettingsT = TypeVar('SettingsT', bound='GraphDBProviderSettings')
+
+class GraphDBProviderSettings(ProviderSettings):
     """Settings for graph database providers.
     
     Attributes:
@@ -32,14 +33,14 @@ class GraphDBProviderSettings(StrictBaseModel):
     timeout_seconds: float = 30.0
     max_batch_size: int = 100
 
-class GraphDBProvider(Provider):
+class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for graph database providers.
     
     This class defines the common interface for all graph database providers,
     with methods for entity and relationship operations.
     """
     
-    def __init__(self, name: str = "graph", provider_type: str = "graph_db", settings: Optional[GraphDBProviderSettings] = None):
+    def __init__(self, name: str = "graph", provider_type: str = "graph_db", settings: Optional[SettingsT] = None):
         """Initialize graph database provider.
         
         Args:
@@ -242,6 +243,8 @@ class GraphDBProvider(Provider):
             return GraphHealthResult(
                 healthy=True,
                 connection_status="connected",
+                response_time_ms=None,
+                error_message=None,
                 database_info={
                     "provider": self.name,
                     "provider_type": self.provider_type,
@@ -263,6 +266,7 @@ class GraphDBProvider(Provider):
             return GraphHealthResult(
                 healthy=False,
                 connection_status="error",
+                response_time_ms=None,
                 error_message=str(e),
                 database_info={
                     "provider": provider_name,

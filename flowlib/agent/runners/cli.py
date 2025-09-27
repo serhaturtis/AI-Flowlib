@@ -5,7 +5,6 @@ AI-Flowlib Agent CLI
 Command-line interface for running individual agents.
 """
 
-import os
 import sys
 import json
 import argparse
@@ -31,7 +30,7 @@ except ImportError as e:
 class AgentCLI:
     """Command-line interface for running agents."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.home_dir = Path.home()
         self.config_dir = self.home_dir / ".flowlib"
         self.agents_dir = self.config_dir / "agents"
@@ -42,12 +41,17 @@ class AgentCLI:
         
         if not config_file.exists():
             print(f"Error: Agent '{agent_name}' not found.")
-            print(f"Run 'flowlib-config' to create agents.")
+            print("Run 'flowlib-config' to create agents.")
             return None
         
         try:
             with open(config_file, 'r') as f:
-                return json.load(f)
+                loaded_data = json.load(f)
+                # Validate that loaded data is a dictionary
+                if not isinstance(loaded_data, dict):
+                    print(f"Error: Invalid config format for agent '{agent_name}' - not a dictionary")
+                    return None
+                return loaded_data
         except Exception as e:
             print(f"Error loading agent config: {e}")
             return None
@@ -71,7 +75,7 @@ class AgentCLI:
         
         return BaseAgent(agent_config)
     
-    def print_welcome(self, config: Dict[str, Any]):
+    def print_welcome(self, config: Dict[str, Any]) -> None:
         """Print welcome message for the agent."""
         print(f"\n🤖 {config['name']} Agent")
         print(f"Persona: {config['persona']['name']}")
@@ -86,7 +90,7 @@ class AgentCLI:
         print("\nType 'exit', 'quit', or press Ctrl+C to end the conversation.")
         print("-" * 60)
     
-    async def run_agent(self, agent_name: str, args: argparse.Namespace):
+    async def run_agent(self, agent_name: str, args: argparse.Namespace) -> int:
         """Run the specified agent."""
         # Load configuration
         config = self.load_agent_config(agent_name)
@@ -125,7 +129,7 @@ class AgentCLI:
                     # Use REPL interface
                     try:
                         from flowlib.agent.runners.repl import start_agent_repl
-                        await start_agent_repl(agent)
+                        await start_agent_repl(agent.agent_id, agent.config)
                     except ImportError:
                         print("REPL interface not available, falling back to CLI")
                         await run_interactive_session(agent)
@@ -147,7 +151,7 @@ class AgentCLI:
                 traceback.print_exc()
             return 1
     
-    def list_agents(self):
+    def list_agents(self) -> None:
         """List all available agents."""
         if not self.agents_dir.exists():
             print("No agents configured yet.")
@@ -233,7 +237,7 @@ Examples:
     return parser
 
 
-async def async_main(agent_name: Optional[str] = None):
+async def async_main(agent_name: Optional[str] = None) -> int:
     """Async main function."""
     cli = AgentCLI()
     
@@ -265,7 +269,7 @@ async def async_main(agent_name: Optional[str] = None):
     return await cli.run_agent(args.agent, args)
 
 
-def main(agent_name: Optional[str] = None):
+def main(agent_name: Optional[str] = None) -> int:
     """Main entry point."""
     try:
         return asyncio.run(async_main(agent_name))

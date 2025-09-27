@@ -3,7 +3,6 @@
 import re
 import logging
 from typing import List, Dict, Any
-from pathlib import Path
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.knowledge.models import (
@@ -14,7 +13,7 @@ from flowlib.knowledge.models import (
 logger = logging.getLogger(__name__)
 
 
-@flow(name="smart-chunking", description="Intelligent text chunking with boundary awareness")
+@flow(name="smart-chunking", description="Intelligent text chunking with boundary awareness")  # type: ignore[arg-type]
 class SmartChunkingFlow:
     """Smart chunking flow that respects natural text boundaries."""
 
@@ -63,9 +62,9 @@ class SmartChunkingFlow:
         )
 
     async def _paragraph_aware_chunking(
-        self, 
-        document: DocumentContent, 
-        config
+        self,
+        document: DocumentContent,
+        config: Any
     ) -> List[TextChunk]:
         """Create chunks respecting paragraph boundaries."""
         
@@ -126,9 +125,9 @@ class SmartChunkingFlow:
         return chunks
 
     async def _sentence_aware_chunking(
-        self, 
-        document: DocumentContent, 
-        config
+        self,
+        document: DocumentContent,
+        config: Any
     ) -> List[TextChunk]:
         """Create chunks respecting sentence boundaries."""
         
@@ -174,9 +173,9 @@ class SmartChunkingFlow:
         return chunks
 
     async def _semantic_aware_chunking(
-        self, 
-        document: DocumentContent, 
-        config
+        self,
+        document: DocumentContent,
+        config: Any
     ) -> List[TextChunk]:
         """Create chunks based on semantic boundaries (future implementation)."""
         
@@ -185,9 +184,9 @@ class SmartChunkingFlow:
         return await self._paragraph_aware_chunking(document, config)
 
     async def _fixed_size_chunking(
-        self, 
-        document: DocumentContent, 
-        config
+        self,
+        document: DocumentContent,
+        config: Any
     ) -> List[TextChunk]:
         """Create fixed-size chunks (existing behavior)."""
         
@@ -221,10 +220,10 @@ class SmartChunkingFlow:
         return chunks
 
     async def _split_paragraph_by_sentences(
-        self, 
-        paragraph: str, 
-        config, 
-        start_chunk_index: int, 
+        self,
+        paragraph: str,
+        config: Any,
+        start_chunk_index: int,
         start_char: int,
         document_id: str
     ) -> List[TextChunk]:
@@ -340,10 +339,10 @@ class SmartChunkingFlow:
         )
 
     def _generate_chunking_stats(
-        self, 
-        original_chunks: List[TextChunk], 
+        self,
+        original_chunks: List[TextChunk],
         new_chunks: List[TextChunk],
-        config
+        config: Any
     ) -> Dict[str, Any]:
         """Generate statistics about the chunking process."""
         

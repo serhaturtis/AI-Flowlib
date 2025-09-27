@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ResponseRouter:
     """Routes agent responses to waiting clients."""
     
-    def __init__(self, agent_id: str, agent_output_queue: Union[asyncio.Queue, queue.Queue]):
+    def __init__(self, agent_id: str, agent_output_queue: Union[asyncio.Queue[AgentResponse], queue.Queue[AgentResponse]]):
         """Initialize response router.
         
         Args:
@@ -25,20 +25,20 @@ class ResponseRouter:
         """
         self.agent_id = agent_id
         self.agent_output_queue = agent_output_queue
-        self.pending_responses: Dict[str, asyncio.Future] = {}
-        self.routing_task: Optional[asyncio.Task] = None
+        self.pending_responses: Dict[str, asyncio.Future[AgentResponse]] = {}
+        self.routing_task: Optional[asyncio.Task[None]] = None
         self._running = False
         
-    async def start(self):
+    async def start(self) -> None:
         """Start routing responses."""
         if self._running:
             raise RuntimeError(f"Response router for agent {self.agent_id} already running")
-            
+
         self._running = True
         self.routing_task = asyncio.create_task(self._routing_loop())
         logger.info(f"Started response router for agent {self.agent_id}")
-        
-    async def stop(self):
+
+    async def stop(self) -> None:
         """Stop routing responses."""
         self._running = False
         
@@ -58,13 +58,13 @@ class ResponseRouter:
         
         logger.info(f"Stopped response router for agent {self.agent_id}")
         
-    async def _routing_loop(self):
+    async def _routing_loop(self) -> None:
         """Route responses from agent to waiting clients."""
         logger.debug(f"[Router] Starting routing loop for agent {self.agent_id}")
         while self._running:
             try:
                 # Wait for response from agent
-                logger.debug(f"[Router] Waiting for response from agent output queue...")
+                logger.debug("[Router] Waiting for response from agent output queue...")
                 
                 # Handle both thread-safe and async queues
                 if isinstance(self.agent_output_queue, queue.Queue):
@@ -110,14 +110,14 @@ class ResponseRouter:
             TimeoutError: If response times out
             RuntimeError: If router is not running
         """
-        logger.debug(f"[Router] Checking if router is running...")
+        logger.debug("[Router] Checking if router is running...")
         if not self._running:
             logger.error(f"[Router] Router for agent {self.agent_id} is not running")
             raise RuntimeError(f"Response router for agent {self.agent_id} is not running")
             
         # Create future for this message
         logger.debug(f"[Router] Creating future for message {message_id}")
-        future = asyncio.Future()
+        future: asyncio.Future[AgentResponse] = asyncio.Future()
         self.pending_responses[message_id] = future
         
         try:
@@ -125,7 +125,7 @@ class ResponseRouter:
                 logger.debug(f"[Router] Waiting for response with timeout {timeout}s")
                 return await asyncio.wait_for(future, timeout)
             else:
-                logger.debug(f"[Router] Waiting for response without timeout")
+                logger.debug("[Router] Waiting for response without timeout")
                 return await future
         except asyncio.TimeoutError:
             logger.error(f"[Router] Response timeout for message {message_id} after {timeout}s")

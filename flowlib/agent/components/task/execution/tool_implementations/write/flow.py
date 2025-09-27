@@ -1,8 +1,10 @@
 """Flow for write tool parameter generation."""
 
+from typing import cast, Dict, Any
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.core.models import StrictBaseModel
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
 from pydantic import Field
 from .models import WriteParameters
@@ -22,7 +24,7 @@ class WriteParameterGenerationOutput(StrictBaseModel):
     parameters: WriteParameters = Field(..., description="Generated write parameters")
 
 
-@flow(name="write-parameter-generation", description="Generate parameters for write tool from task description")
+@flow(name="write-parameter-generation", description="Generate parameters for write tool from task description")  # type: ignore[arg-type]
 class WriteParameterGenerationFlow:
     """Flow for generating write tool parameters using LLM."""
     
@@ -31,20 +33,20 @@ class WriteParameterGenerationFlow:
         """Generate write parameters from task content."""
         
         # Get LLM provider
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Get prompt template
         prompt_template = resource_registry.get("write_tool_parameter_generation", WriteToolParameterGenerationPrompt)
         
         # Prepare prompt variables
-        prompt_variables = {
+        prompt_variables: Dict[str, Any] = {
             "task_content": request.task_content,
             "working_directory": request.working_directory
         }
         
         # Generate structured parameters
         parameters = await llm.generate_structured(
-            prompt=prompt_template,
+            prompt=cast(PromptTemplate, prompt_template),
             output_type=WriteParameters,
             model_name="default-model",
             prompt_variables=prompt_variables

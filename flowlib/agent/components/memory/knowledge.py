@@ -6,17 +6,18 @@ relationships. Uses the modernized agent framework patterns with config-driven p
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional, cast
 
 from pydantic import Field
 from flowlib.core.models import StrictBaseModel
+from flowlib.providers.graph.base import GraphDBProvider
 
-from ...core.errors import MemoryError, ErrorContext
+from ...core.errors import MemoryError
 from .models import (
     MemoryStoreRequest,
     MemoryRetrieveRequest,
-    MemorySearchRequest,
-    MemoryContext
+    MemorySearchRequest
 )
 # Import MemoryItem and MemorySearchResult from the proper location
 from .models import MemoryItem, MemorySearchResult
@@ -57,10 +58,10 @@ class KnowledgeMemory:
         self._config = config or KnowledgeMemoryConfig()
         
         # Provider instance (resolved during initialization)
-        self._graph_provider = None
+        self._graph_provider: Optional[GraphDBProvider] = None
         
         # Contexts tracking
-        self._contexts = set()
+        self._contexts: set[str] = set()
         self._initialized = False
         
         logger.info(f"Initialized KnowledgeMemory with config: {self._config}")
@@ -79,15 +80,16 @@ class KnowledgeMemory:
         
         try:
             # Get graph provider using config-driven approach
-            self._graph_provider = await provider_registry.get_by_config(
+            provider = await provider_registry.get_by_config(
                 self._config.graph_provider_config
             )
-            if not self._graph_provider:
+            if not provider:
                 raise MemoryError(
                     f"Graph provider not found: {self._config.graph_provider_config}",
                     operation="initialize",
                     provider_config=self._config.graph_provider_config
                 )
+            self._graph_provider = cast(GraphDBProvider, provider)
             
             self._initialized = True
             logger.info("KnowledgeMemory initialized successfully")
@@ -143,6 +145,8 @@ class KnowledgeMemory:
                 if not entity.id:
                     entity.id = request.key
                 
+                if self._graph_provider is None:
+                    raise RuntimeError("Graph provider not initialized")
                 await self._graph_provider.add_entity(entity)
                 logger.debug(f"Stored entity with ID '{entity.id}' of type '{entity.type}'")
                 return request.key
@@ -162,19 +166,26 @@ class KnowledgeMemory:
             entity_type = item_dict['type']
             
             # Get or create entity
-            entity = await self._graph_provider.get_entity(request.key)
-            
-            if not entity:
+            if self._graph_provider is None:
+                raise RuntimeError("Graph provider not initialized")
+            existing_entity = await self._graph_provider.get_entity(request.key)
+
+            if not existing_entity:
                 entity = Entity(
                     id=request.key,
                     type=entity_type,
-                    importance=self._config.default_importance
+                    importance=self._config.default_importance,
+                    source="conversation",
+                    vector_id=None
                 )
+            else:
+                entity = existing_entity
             
             # Add content as attribute
             entity.attributes['content'] = EntityAttribute(
                 name='content',
                 value=content,
+                confidence=0.9,
                 source='memory_store'
             )
             
@@ -184,6 +195,7 @@ class KnowledgeMemory:
                     entity.attributes[key] = EntityAttribute(
                         name=key,
                         value=str(value),
+                        confidence=0.9,
                         source='metadata'
                     )
             
@@ -192,6 +204,7 @@ class KnowledgeMemory:
                 entity.attributes['timestamp'] = EntityAttribute(
                     name='timestamp',
                     value=request.value.timestamp.isoformat(),
+                    confidence=1.0,
                     source='system'
                 )
             
@@ -216,6 +229,8 @@ class KnowledgeMemory:
             
         try:
             # Get entity by ID
+            if self._graph_provider is None:
+                raise RuntimeError("Graph provider not initialized")
             entity = await self._graph_provider.get_entity(request.key)
             
             if not entity:
@@ -223,22 +238,15 @@ class KnowledgeMemory:
                 return None
                 
             # Create memory item from entity
-            content = (entity.attributes['content'] if 'content' in entity.attributes else EntityAttribute(name='content', value=str(entity), source='system')).value
+            content = (entity.attributes['content'] if 'content' in entity.attributes else EntityAttribute(name='content', value=str(entity), confidence=1.0, source='system')).value
             
-            # Create typed metadata for retrieved entity
-            from .models import MemoryItemMetadata
-            metadata = MemoryItemMetadata(
-                source=entity.type,
-                item_type="knowledge_entity",
-                confidence=entity.importance,
-                related_items=entity.tags
-            )
+            # Note: MemoryItem uses default MemoryItemMetadata
                     
             item = MemoryItem(
                 key=request.key,
                 value=content,
                 context=request.context or 'knowledge',
-                metadata=metadata
+                updated_at=datetime.now()
             )
             
             logger.debug(f"Retrieved knowledge entity '{request.key}' from context '{request.context}'")
@@ -257,34 +265,29 @@ class KnowledgeMemory:
             entity_type = None
             if request.context:
                 entity_type = request.context
-            
-            search_results = []
+
+            search_results: List[MemorySearchResult] = []
             
             # Use graph provider search if available
+            if self._graph_provider is None:
+                raise RuntimeError("Graph provider not initialized")
             if hasattr(self._graph_provider, 'search_entities'):
-                entities = await self._graph_provider.search_entities(
+                search_result = await self._graph_provider.search_entities(
                     query=request.query,
                     entity_type=entity_type,
                     limit=min(request.limit or self._config.max_search_results, self._config.max_search_results)
                 )
-                
-                for entity in entities:
+
+                for entity in search_result.entities:
                     # Extract content from entity
-                    content = (entity.attributes['content'] if 'content' in entity.attributes else EntityAttribute(name='content', value=str(entity), source='system')).value
+                    content = (entity.attributes['content'] if 'content' in entity.attributes else EntityAttribute(name='content', value=str(entity), confidence=1.0, source='system')).value
                     
-                    # Create memory item with typed metadata
-                    from .models import MemoryItemMetadata
-                    metadata = MemoryItemMetadata(
-                        source=entity.type,
-                        item_type="knowledge_entity",
-                        confidence=entity.importance,
-                        related_items=entity.tags
-                    )
+                    # Create memory item
                     item = MemoryItem(
                         key=entity.id,
                         value=content,
                         context=entity_type or request.context or 'knowledge',
-                        metadata=metadata
+                        updated_at=datetime.now()
                     )
                     
                     # Calculate relevance score (simplified)
@@ -295,7 +298,7 @@ class KnowledgeMemory:
                     search_metadata = MemorySearchMetadata(
                         search_query=request.query,
                         search_type="graph_search",
-                        total_results=len(entities),
+                        total_results=len(search_result.entities),
                         result_rank=len(search_results) + 1
                     )
                     search_results.append(MemorySearchResult(
@@ -326,7 +329,11 @@ class KnowledgeMemory:
         search_request = MemorySearchRequest(
             query=query,
             context=context,
-            limit=limit
+            limit=limit,
+            threshold=None,
+            sort_by=None,
+            search_type="hybrid",
+            metadata_filter=None
         )
         
         search_results = await self.search(search_request)
@@ -347,18 +354,24 @@ class KnowledgeMemory:
             search_request = MemorySearchRequest(
                 query="*",  # Match all
                 context=context,
-                limit=10000  # Large number to get all
+                limit=10000,  # Large number to get all
+                threshold=None,
+                sort_by=None,
+                search_type="hybrid",
+                metadata_filter=None
             )
             
             results = await self.search(search_request)
-            
+
+            if self._graph_provider is None:
+                raise RuntimeError("Graph provider not initialized")
             if hasattr(self._graph_provider, 'delete_entity'):
                 for result in results:
                     await self._graph_provider.delete_entity(result.item.key)
                     
                 logger.info(f"Wiped knowledge context '{context}', removed {len(results)} entities")
             else:
-                logger.warning(f"Graph provider does not support entity deletion")
+                logger.warning("Graph provider does not support entity deletion")
             
             self._contexts.discard(context)
             
@@ -384,6 +397,8 @@ class KnowledgeMemory:
             
         try:
             # Get source entity
+            if self._graph_provider is None:
+                raise RuntimeError("Graph provider not initialized")
             source_entity = await self._graph_provider.get_entity(source_id)
             if not source_entity:
                 raise MemoryError(f"Source entity '{source_id}' not found")
@@ -418,7 +433,15 @@ class KnowledgeMemory:
             raise MemoryError("KnowledgeMemory not initialized")
             
         try:
-            return await self._graph_provider.get_entity(entity_id)
+            if self._graph_provider is None:
+                raise RuntimeError("Graph provider not initialized")
+            result = await self._graph_provider.get_entity(entity_id)
+            # Result is guaranteed to be Entity or None from graph provider
+            if result is None:
+                return None
+            if not isinstance(result, Entity):
+                raise RuntimeError(f"Graph provider returned unexpected type: {type(result)}")
+            return result
         except Exception as e:
             raise MemoryError(f"Failed to get entity '{entity_id}': {e}", operation="get_entity", key=entity_id, cause=e)
     

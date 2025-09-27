@@ -3,13 +3,10 @@ Autonomous runner for agents.
 """
 
 import logging
-import asyncio
-from typing import TYPE_CHECKING, Optional
+from typing import Optional, Any
 
-# Avoid circular import, only type hint BaseAgent
-if TYPE_CHECKING:
-    from ..core.agent import BaseAgent
-    from flowlib.agent.models.state import AgentState
+from flowlib.agent.core.base_agent import BaseAgent
+from flowlib.agent.models.state import AgentState
 
 # Import exceptions
 from ..core.errors import NotInitializedError, ExecutionError
@@ -18,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 async def run_autonomous(
-    agent: 'BaseAgent',
+    agent: BaseAgent,
     max_cycles: Optional[int] = None,
-    **kwargs
-) -> 'AgentState':
+    **kwargs: Any
+) -> AgentState:
     """Runs the agent autonomously until the task is complete or max_cycles is reached.
 
     Relies on the agent's initialized state (including task description)
@@ -54,7 +51,17 @@ async def run_autonomous(
         )
 
     # Configure the max cycles
-    cycles_limit = max_cycles or agent._engine._config.max_iterations
+    if max_cycles is not None:
+        cycles_limit = max_cycles
+    else:
+        engine_max_iterations = getattr(agent._engine, 'max_iterations', None)
+        if engine_max_iterations is not None:
+            cycles_limit = engine_max_iterations
+        else:
+            cycles_limit = 10  # Default value
+
+    if agent._state_manager.current_state is None:
+        raise RuntimeError("Agent state not initialized")
     logger.info(f"Starting autonomous run for agent '{agent.name}' (task: {agent._state_manager.current_state.task_id}), max_cycles={cycles_limit}")
 
     try:
@@ -100,7 +107,11 @@ async def run_autonomous(
                  logger.error(f"Failed to save final state after autonomous run: {save_err}")
             
         logger.info(f"Autonomous run finished for agent '{agent.name}'.")
-        return agent._state_manager.current_state # Return the final state
+
+        final_state = agent._state_manager.current_state
+        if final_state is None:
+            raise ExecutionError("Agent state is None after autonomous run")
+        return final_state
 
     except Exception as e:
         # Log and wrap the error with execution context

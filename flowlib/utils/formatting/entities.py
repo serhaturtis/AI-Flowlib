@@ -4,12 +4,12 @@ This module provides utilities for formatting entity data for display
 and for use in prompts or other contexts.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
 # Importing Entity type for type hints
-from flowlib.providers.graph.models import Entity
+from flowlib.providers.graph.models import Entity, EntityRelationship
 
 
-def format_entity_for_display(entity: 'Entity', detailed: bool = False) -> str:
+def format_entity_for_display(entity: Entity, detailed: bool = False) -> str:
     """Format an entity for human-readable display.
     
     Args:
@@ -34,7 +34,7 @@ def format_entity_for_display(entity: 'Entity', detailed: bool = False) -> str:
     if entity.relationships:
         lines.append("Relationships:")
         # Group by relation type for cleaner display
-        rel_by_type = {}
+        rel_by_type: Dict[str, List[EntityRelationship]] = {}
         for rel in entity.relationships:
             if rel.relation_type not in rel_by_type:
                 rel_by_type[rel.relation_type] = []

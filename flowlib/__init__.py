@@ -12,27 +12,29 @@ Key features:
 
 from flowlib.core.context.context import Context
 
-from .flows.base import FlowStatus, FlowSettings, Flow
-from .flows.decorators import flow, pipeline
-from .flows.registry import flow_registry
+from flowlib.flows.base import FlowStatus, FlowSettings, Flow
+from flowlib.flows.decorators import flow, pipeline
+from flowlib.flows.registry import flow_registry
 
-from .flows.models.results import FlowResult
+from flowlib.flows.models.results import FlowResult
 
-from .core.errors.errors import BaseError, ValidationError, ExecutionError, ResourceError
+from flowlib.core.errors.errors import BaseError, ValidationError, ExecutionError, ResourceError
 
-# Use clean architecture imports (no circular dependencies)
-from .core import container, get_container
+# Core models only - containers removed per architectural cleanup
 
 # Clean provider access (no circular dependencies)
-from .providers.core.clean_provider_access import provider_registry
+from flowlib.providers.core.clean_provider_access import provider_registry
+
+# Configuration loading now handled explicitly by Project system
+# No automatic discovery - applications must create Project instances
 
 # Clean constants (no enum dependencies)
 from flowlib.resources.models.constants import ResourceType
 from flowlib.providers.core.constants import PROVIDER_CATEGORIES, DEFAULT_CONFIGS
 
-# Core interfaces and decorators (no circular dependencies)
-from .core.decorators import resource, flow, llm_config, vector_db_config, config
-from .providers import Provider
+# Resource decorators - using working decorator system
+from flowlib.resources.decorators.decorators import resource, llm_config, vector_db_config, config
+from flowlib.providers import Provider
 from flowlib.providers.core.factory import create_provider
 # Note: Provider decorators will be loaded dynamically to avoid circular dependencies
 
@@ -52,9 +54,7 @@ __all__ = [
     "ExecutionError",
     "ResourceError",
     
-    # Clean architecture components
-    "container",
-    "get_container", 
+    # Provider registry
     "provider_registry",
     
     # Clean constants (no ProviderType enum)

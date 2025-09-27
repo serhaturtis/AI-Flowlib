@@ -1,18 +1,18 @@
 """Graph storage flow for knowledge base."""
 
 import logging
-from typing import List, Dict, Optional, Set
-from datetime import datetime
+from typing import Dict, Any, cast
 from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.graph.models import Entity as ProviderEntity
+from flowlib.providers.graph.models import EntityRelationship
 
 from flowlib.knowledge.models import (
     Entity,
     Relationship,
-    DocumentContent,
-    EntityType as KnowledgeEntityType,
-    RelationType as KnowledgeRelationType,
+    DocumentProcessingResult,
 )
+from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
+from flowlib.providers.graph.models import RelationshipSearchResult
 from flowlib.knowledge.graph.models import (
     GraphStoreInput,
     GraphStoreOutput,
@@ -29,11 +29,11 @@ from flowlib.knowledge.graph.models import (
 logger = logging.getLogger(__name__)
 
 
-@flow(name="graph-storage-flow", description="Store entities and relationships in graph database")
+@flow(name="graph-storage-flow", description="Store entities and relationships in graph database")  # type: ignore[arg-type]
 class GraphStorageFlow:
     """Flow for creating knowledge graph in Neo4j."""
     
-    async def stream_upsert(self, extraction_result, db_path: str) -> None:
+    async def stream_upsert(self, extraction_result: DocumentProcessingResult, db_path: str) -> None:
         """Stream upsert entities and relationships to persistent graph database."""
         
         logger.info(f"Streaming upsert: {len(extraction_result.entities)} entities, {len(extraction_result.relationships)} relationships")
@@ -45,15 +45,22 @@ class GraphStorageFlow:
         try:
             # Convert and stream entities
             if extraction_result.entities:
-                graph_entities = [self._convert_to_graph_entity(entity) for entity in extraction_result.entities]
-                await self._streaming_graph_provider.create_entities(graph_entities)
-                logger.debug(f"Streamed {len(graph_entities)} entities to graph DB")
+                # Convert knowledge entities to provider entities
+                provider_entities = [self._convert_to_provider_entity(entity) for entity in extraction_result.entities]
+                await self._streaming_graph_provider.bulk_add_entities(provider_entities)
+                logger.debug(f"Streamed {len(provider_entities)} entities to graph DB")
             
-            # Convert and stream relationships  
+            # Convert and stream relationships
             if extraction_result.relationships:
-                graph_relationships = [self._create_graph_relationship(rel) for rel in extraction_result.relationships]
-                await self._streaming_graph_provider.create_relationships(graph_relationships)
-                logger.debug(f"Streamed {len(graph_relationships)} relationships to graph DB")
+                for rel in extraction_result.relationships:
+                    provider_rel = self._convert_to_provider_relationship(rel)
+                    await self._streaming_graph_provider.add_relationship(
+                        source_id=rel.source_entity_id,
+                        target_entity=rel.target_entity_id,
+                        relation_type=rel.relationship_type.value,
+                        relationship=provider_rel
+                    )
+                logger.debug(f"Streamed {len(extraction_result.relationships)} relationships to graph DB")
                 
         except Exception as e:
             logger.error(f"Failed to stream upsert to graph DB: {e}")
@@ -68,7 +75,12 @@ class GraphStorageFlow:
             # Get final statistics
             stats = {"total_nodes": 0, "total_edges": 0}
             if hasattr(self, '_streaming_graph_provider'):
-                stats = await self._streaming_graph_provider.get_graph_stats()
+                graph_stats = await self._streaming_graph_provider.get_stats()
+                # Convert GraphStats to dict format expected by return type
+                stats = {
+                    "total_nodes": graph_stats.total_entities,
+                    "total_edges": graph_stats.total_relationships
+                }
                 
                 # Cleanup streaming provider
                 await self._streaming_graph_provider.shutdown()
@@ -84,73 +96,75 @@ class GraphStorageFlow:
             logger.error(f"Failed to finalize streaming graph: {e}")
             raise
 
-    async def _get_streaming_provider(self, db_path: str):
+    async def _get_streaming_provider(self, db_path: str) -> GraphDBProvider:
         """Get streaming-optimized graph provider with persistent connection."""
-        
+
         logger.debug(f"Initializing streaming graph provider at: {db_path}")
-        
-        # For now, use mock provider optimized for streaming
-        class StreamingMockGraphProvider:
-            def __init__(self, db_path: str):
-                self.db_path = db_path
-                self.connection_count = 0
-                self.total_entities = 0
-                self.total_relationships = 0
-                
-            async def initialize(self):
-                self.connection_count += 1
-                logger.debug(f"Streaming graph provider initialized (connection #{self.connection_count})")
-                
-            async def create_entities(self, entities: List):
-                logger.debug(f"Streaming create: {len(entities)} entities")
-                self.total_entities += len(entities)
-                # In real implementation, this would maintain persistent Neo4j connection
-                return len(entities)
-                
-            async def create_relationships(self, relationships: List):
-                logger.debug(f"Streaming create: {len(relationships)} relationships")
-                self.total_relationships += len(relationships)
-                return len(relationships)
-                
-            async def get_graph_stats(self):
-                return {
-                    "total_nodes": self.total_entities,
-                    "total_edges": self.total_relationships
-                }
-                
-            async def shutdown(self):
-                logger.debug(f"Streaming graph provider shutdown (processed {self.total_entities} entities, {self.total_relationships} relationships)")
-        
-        provider = StreamingMockGraphProvider(db_path)
+
+        # Use memory graph provider for testing/development
+        from flowlib.providers.graph.memory_graph import MemoryGraphProvider
+
+        provider = MemoryGraphProvider(
+            name="streaming_memory_graph",
+            provider_type="memory_graph",
+            settings=GraphDBProviderSettings()
+        )
         await provider.initialize()
-        
+
         return provider
 
-    async def _get_provider(self, config: GraphStoreInput):
+    async def _get_provider(self, config: GraphStoreInput) -> GraphDBProvider:
         """Get initialized graph database provider."""
         logger.info(f"Initializing graph provider: {config.graph_provider_name}")
         
-        # TODO: Update to config-driven provider access
-        logger.warning("Using mock graph provider. Update to config-driven pattern.")
-        
-        class MockGraphProvider:
-            async def initialize(self): pass
-            async def create_entities(self, entities: List[GraphEntity]): 
-                logger.info(f"Mock: Creating {len(entities)} entities")
-                return len(entities)
-            async def create_relationships(self, relationships: List[GraphRelationship]):
-                logger.info(f"Mock: Creating {len(relationships)} relationships")
-                return len(relationships)
-            async def query_entities(self, entity_type=None, limit=100):
-                return []
-            async def query_relationships(self, source_id=None, target_id=None):
-                return []
-            async def get_graph_stats(self):
-                return {"total_nodes": 0, "total_edges": 0}
-            async def shutdown(self): pass
-        
-        return MockGraphProvider()
+        # Use memory graph provider for testing/development
+        from flowlib.providers.graph.memory_graph import MemoryGraphProvider
+
+        provider = MemoryGraphProvider(
+            name="mock_memory_graph",
+            provider_type="memory_graph",
+            settings=GraphDBProviderSettings()
+        )
+        await provider.initialize()
+
+        return provider
     
+    def _convert_to_provider_entity(self, knowledge_entity: Entity) -> 'ProviderEntity':
+        """Convert knowledge Entity to provider Entity."""
+        from flowlib.providers.graph.models import Entity as ProviderEntity, EntityAttribute
+
+        # Convert entity attributes
+        attributes = {}
+        for key, value in knowledge_entity.properties.items():
+            attributes[key] = EntityAttribute(
+                name=key,
+                value=str(value),
+                confidence=knowledge_entity.confidence,
+                source="knowledge_extraction"
+            )
+
+        return ProviderEntity(
+            id=knowledge_entity.entity_id,
+            type=knowledge_entity.entity_type.value,
+            attributes=attributes,
+            relationships=[],  # Will be populated separately
+            tags=list(knowledge_entity.properties.keys()) if knowledge_entity.properties else [],
+            source="knowledge_extraction",
+            importance=knowledge_entity.confidence,
+            vector_id=None
+        )
+
+    def _convert_to_provider_relationship(self, knowledge_rel: Relationship) -> 'EntityRelationship':
+        """Convert knowledge Relationship to provider EntityRelationship."""
+        from flowlib.providers.graph.models import EntityRelationship
+
+        return EntityRelationship(
+            relation_type=knowledge_rel.relationship_type.value,
+            target_entity=knowledge_rel.target_entity_id,
+            confidence=knowledge_rel.confidence,
+            source="knowledge_extraction"
+        )
+
     def _convert_to_graph_entity(self, entity: Entity) -> GraphEntity:
         """Convert knowledge Entity to GraphEntity."""
         # Create attributes from entity properties
@@ -247,14 +261,14 @@ class GraphStorageFlow:
             # Create nodes for documents
             doc_nodes = []
             for doc in input_data.documents:
-                doc_entity = GraphEntity(
+                GraphEntity(
                     id=doc.document_id,
                     type="DOCUMENT",
                     label=doc.metadata.file_name,
                     attributes=[
                         GraphEntityAttribute(name="file_type", value=doc.metadata.file_type, type="string"),
                         GraphEntityAttribute(name="file_size", value=doc.metadata.file_size, type="integer"),
-                        GraphEntityAttribute(name="created_at", value=doc.metadata.created_at.isoformat(), type="string"),
+                        GraphEntityAttribute(name="created_date", value=doc.metadata.created_date or "", type="string"),
                         GraphEntityAttribute(name="language", value=doc.language_detected, type="string"),
                         GraphEntityAttribute(name="status", value=doc.status.value, type="string"),
                         GraphEntityAttribute(name="chunk_count", value=len(doc.chunks), type="integer"),
@@ -264,63 +278,68 @@ class GraphStorageFlow:
                 )
                 
                 doc_nodes.append(GraphNode(
-                    id=doc.document_id,
-                    type="document",
-                    label=doc.metadata.file_name,
+                    node_id=doc.document_id,
+                    node_type="document",
+                    name=doc.metadata.file_name,
                     properties={
                         "file_type": doc.metadata.file_type,
-                        "created_at": doc.metadata.created_at.isoformat()
+                        "created_date": doc.metadata.created_date or ""
                     }
                 ))
             
             # Convert and create entity nodes
             entity_nodes = []
-            graph_entities = []
+            provider_entities = []
             for entity in input_data.entities:
-                graph_entity = self._convert_to_graph_entity(entity)
-                graph_entities.append(graph_entity)
+                provider_entity = self._convert_to_provider_entity(entity)
+                provider_entities.append(provider_entity)
                 
                 entity_nodes.append(GraphNode(
-                    id=entity.entity_id,
-                    type=entity.entity_type.value,
-                    label=entity.name,
+                    node_id=entity.entity_id,
+                    node_type=entity.entity_type.value,
+                    name=entity.name,
                     properties={
                         "confidence": entity.confidence,
                         "frequency": entity.frequency
                     }
                 ))
             
-            # Create all entities in graph
-            if doc_nodes:
-                await graph_provider.create_entities([doc_entity for doc_entity in doc_nodes])
-            if graph_entities:
-                await graph_provider.create_entities(graph_entities)
+            # Create all entities in graph (skip doc_nodes as they're not Entity objects)
+            if provider_entities:
+                await graph_provider.bulk_add_entities(provider_entities)
             
             # Convert and create relationships
-            graph_relationships = []
+            provider_relationships = []
             edges = []
             for relationship in input_data.relationships:
-                graph_rel = self._create_graph_relationship(relationship)
-                graph_relationships.append(graph_rel)
+                provider_rel = self._convert_to_provider_relationship(relationship)
+                provider_relationships.append(provider_rel)
                 
                 edges.append(GraphEdge(
-                    id=relationship.relationship_id,
-                    source_id=relationship.source_entity_id,
-                    target_id=relationship.target_entity_id,
-                    type=relationship.relationship_type.value,
-                    label=relationship.description or relationship.relationship_type.value,
+                    edge_id=relationship.relationship_id,
+                    source_node_id=relationship.source_entity_id,
+                    target_node_id=relationship.target_entity_id,
+                    relationship_type=relationship.relationship_type.value,
                     properties={
                         "confidence": relationship.confidence,
-                        "frequency": relationship.frequency
+                        "frequency": relationship.frequency,
+                        "description": relationship.description or relationship.relationship_type.value
                     }
                 ))
             
             # Create relationships in graph
-            if graph_relationships:
-                await graph_provider.create_relationships(graph_relationships)
+            if provider_relationships:
+                for i, relationship in enumerate(input_data.relationships):
+                    provider_rel = provider_relationships[i]
+                    await graph_provider.add_relationship(
+                        source_id=relationship.source_entity_id,
+                        target_entity=relationship.target_entity_id,
+                        relation_type=relationship.relationship_type.value,
+                        relationship=provider_rel
+                    )
             
             # Get statistics
-            stats = await graph_provider.get_graph_stats()
+            await graph_provider.get_stats()
             
             graph_stats = GraphStatistics(
                 total_nodes=len(doc_nodes) + len(entity_nodes),
@@ -329,16 +348,14 @@ class GraphStorageFlow:
                     "documents": len(doc_nodes),
                     "entities": len(entity_nodes)
                 },
-                edge_types={rel.type: 1 for rel in edges},  # Simplified count
-                avg_node_degree=2.0 * len(edges) / max(len(entity_nodes), 1) if entity_nodes else 0
+                relationship_types={rel.relationship_type: 1 for rel in edges},  # Simplified count
+                average_degree=2.0 * len(edges) / max(len(entity_nodes), 1) if entity_nodes else 0.0
             )
             
             return GraphStoreOutput(
                 graph_name=input_data.graph_name,
                 nodes_created=len(doc_nodes) + len(entity_nodes),
                 edges_created=len(edges),
-                nodes=doc_nodes + entity_nodes,
-                edges=edges,
                 graph_stats=graph_stats
             )
             
@@ -360,63 +377,93 @@ class GraphStorageFlow:
             # Get entities by query parameters
             if input_data.query_entity_id:
                 # Get specific entity and its neighborhood
-                entities = await graph_provider.query_entities(
-                    entity_id=input_data.query_entity_id
+                entity_search_result = await graph_provider.search_entities(
+                    query=input_data.query_entity_id
                 )
                 relationships = await graph_provider.query_relationships(
-                    source_id=input_data.query_entity_id
+                    entity_id=input_data.query_entity_id
                 )
             elif input_data.query_entity_type:
                 # Get all entities of a specific type
-                entities = await graph_provider.query_entities(
+                entity_search_result = await graph_provider.search_entities(
                     entity_type=input_data.query_entity_type,
                     limit=input_data.query_limit or 100
                 )
-                relationships = []
+                # Create empty RelationshipSearchResult
+                relationships = RelationshipSearchResult(
+                    success=True,
+                    total_count=0,
+                    source_entity=None,
+                    target_entity=None,
+                    execution_time_ms=None
+                )
             else:
                 # Get a sample of the graph
-                entities = await graph_provider.query_entities(
+                entity_search_result = await graph_provider.search_entities(
                     limit=input_data.query_limit or 50
                 )
-                relationships = []
-            
+                # Create empty RelationshipSearchResult
+                relationships = RelationshipSearchResult(
+                    success=True,
+                    total_count=0,
+                    source_entity=None,
+                    target_entity=None,
+                    execution_time_ms=None
+                )
+
             # Convert to output format
-            for entity in entities:
+            for entity in entity_search_result.entities:
                 # Fail-fast approach - require essential fields
-                if "id" not in entity:
+                if not entity.id:
                     raise ValueError("Entity missing required 'id' field")
-                if "type" not in entity:
+                if not entity.type:
                     raise ValueError("Entity missing required 'type' field")
-                    
+
+                # Use type for name if no specific label available
+                entity_name = getattr(entity, 'label', entity.type)
+                if not entity_name:
+                    entity_name = entity.id
+
                 nodes.append(GraphNode(
-                    id=entity["id"],
-                    type=entity["type"],
-                    label=entity["label"] if "label" in entity else None,
-                    properties=entity["properties"] if "properties" in entity else {}
+                    node_id=entity.id,
+                    node_type=entity.type,
+                    name=entity_name,
+                    properties={"importance": entity.importance, "source": entity.source}
                 ))
             
             for rel in relationships:
+                # Ensure rel is a dictionary
+                rel_dict = cast(Dict[str, object], rel)
+
                 # Fail-fast approach - require essential relationship fields
-                if "source_id" not in rel:
+                if "source_id" not in rel_dict:
                     raise ValueError("Relationship missing required 'source_id' field")
-                if "target_id" not in rel:
+                if "target_id" not in rel_dict:
                     raise ValueError("Relationship missing required 'target_id' field")
-                    
+                if "id" not in rel_dict:
+                    raise ValueError("Relationship missing required 'id' field")
+                if "type" not in rel_dict:
+                    raise ValueError("Relationship missing required 'type' field")
+
                 edges.append(GraphEdge(
-                    id=rel["id"] if "id" in rel else None,
-                    source_id=rel["source_id"],
-                    target_id=rel["target_id"],
-                    type=rel["type"] if "type" in rel else None,
-                    label=rel["label"] if "label" in rel else None,
-                    properties=rel["properties"] if "properties" in rel else {}
+                    edge_id=str(rel_dict["id"]),
+                    source_node_id=str(rel_dict["source_id"]),
+                    target_node_id=str(rel_dict["target_id"]),
+                    relationship_type=str(rel_dict["type"]),
+                    properties=cast(Dict[str, Any], rel_dict.get("properties", {}))
                 ))
             
+            # Create basic statistics
+            basic_stats = GraphStatistics(
+                total_nodes=len(nodes),
+                total_edges=len(edges)
+            )
+
             return GraphStoreOutput(
                 graph_name=input_data.graph_name,
-                nodes_created=0,
-                edges_created=0,
-                nodes=nodes,
-                edges=edges
+                nodes_created=len(nodes),
+                edges_created=len(edges),
+                graph_stats=basic_stats
             )
             
         finally:
@@ -434,11 +481,10 @@ class GraphStorageFlow:
         graph_provider = await self._get_provider(input_data)
         
         try:
-            # Query for paths between entities
+            # Query for paths between entities - start with source entity relationships
             relationships = await graph_provider.query_relationships(
-                source_id=input_data.query_source_id,
-                target_id=input_data.query_target_id,
-                max_hops=input_data.query_max_hops or 3
+                entity_id=input_data.query_source_id,
+                direction="outgoing"
             )
             
             # Extract unique nodes and edges from paths
@@ -447,55 +493,64 @@ class GraphStorageFlow:
             seen_nodes = set()
             
             for rel in relationships:
+                # Ensure rel is a dictionary
+                rel_dict = cast(Dict[str, object], rel)
+
                 # Fail-fast approach - require essential relationship fields for path finding
-                if "source_id" not in rel:
+                if "source_id" not in rel_dict:
                     raise ValueError("Path relationship missing required 'source_id' field")
-                if "target_id" not in rel:
+                if "target_id" not in rel_dict:
                     raise ValueError("Path relationship missing required 'target_id' field")
-                    
-                source_id = rel["source_id"]
-                target_id = rel["target_id"]
+                if "id" not in rel_dict:
+                    raise ValueError("Path relationship missing required 'id' field")
+                if "type" not in rel_dict:
+                    raise ValueError("Path relationship missing required 'type' field")
+
+                source_id = str(rel_dict["source_id"])
+                target_id = str(rel_dict["target_id"])
                 
                 # Add source node if not seen
                 if source_id not in seen_nodes:
-                    source_label = rel["source_label"] if "source_label" in rel else source_id
+                    source_label = str(rel_dict.get("source_label", source_id))
                     nodes.append(GraphNode(
-                        id=source_id,
-                        type="entity",
-                        label=source_label,
+                        node_id=source_id,
+                        node_type="entity",
+                        name=source_label,
                         properties={}
                     ))
                     seen_nodes.add(source_id)
-                
+
                 # Add target node if not seen
                 if target_id not in seen_nodes:
-                    target_label = rel["target_label"] if "target_label" in rel else target_id
+                    target_label = str(rel_dict.get("target_label", target_id))
                     nodes.append(GraphNode(
-                        id=target_id,
-                        type="entity",
-                        label=target_label,
+                        node_id=target_id,
+                        node_type="entity",
+                        name=target_label,
                         properties={}
                     ))
                     seen_nodes.add(target_id)
                 
                 # Add edge
                 edges.append(GraphEdge(
-                    id=rel["id"] if "id" in rel else None,
-                    source_id=source_id,
-                    target_id=target_id,
-                    type=rel["type"] if "type" in rel else None,
-                    label=rel["label"] if "label" in rel else None,
-                    properties=rel["properties"] if "properties" in rel else {}
+                    edge_id=str(rel_dict["id"]),
+                    source_node_id=source_id,
+                    target_node_id=target_id,
+                    relationship_type=str(rel_dict["type"]),
+                    properties=cast(Dict[str, Any], rel_dict.get("properties", {}))
                 ))
             
+            # Create path statistics
+            path_stats = GraphStatistics(
+                total_nodes=len(nodes),
+                total_edges=len(edges)
+            )
+
             return GraphStoreOutput(
                 graph_name=input_data.graph_name,
-                nodes_created=0,
-                edges_created=0,
-                nodes=nodes,
-                edges=edges,
-                path_found=len(edges) > 0,
-                path_length=len(edges) if edges else None
+                nodes_created=len(nodes),
+                edges_created=len(edges),
+                graph_stats=path_stats
             )
             
         finally:

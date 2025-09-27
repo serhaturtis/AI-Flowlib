@@ -5,12 +5,12 @@ This module provides a clean way to inject providers and configuration
 into flows without polluting input models with configuration concerns.
 """
 
-from typing import Dict, Any, Optional, Protocol
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, Protocol
+from pydantic import Field
+from flowlib.core.models import StrictBaseModel
 from dataclasses import dataclass
 
 from flowlib.providers.core.registry import provider_registry
-from flowlib.resources.registry.registry import resource_registry
 
 
 class FlowProvider(Protocol):
@@ -74,7 +74,7 @@ class FlowContext:
             return "default-llm"
 
 
-class ProcessingOptions(BaseModel):
+class ProcessingOptions(StrictBaseModel):
     """Optional processing configuration that can be passed to flows.
     
     This replaces the configuration fields that were scattered throughout

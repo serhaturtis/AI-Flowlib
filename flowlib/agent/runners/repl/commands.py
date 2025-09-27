@@ -3,7 +3,7 @@
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Callable, Any
 from enum import Enum
 
 
@@ -41,7 +41,7 @@ class CommandHandler(ABC):
 class CommandRegistry:
     """Registry for command handlers and parsing."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.handlers: List[CommandHandler] = []
         self.slash_commands: Dict[str, Callable] = {}
         self.meta_commands: Dict[str, Callable] = {}
@@ -49,7 +49,7 @@ class CommandRegistry:
         # Register built-in commands
         self._register_builtin_commands()
     
-    def _register_builtin_commands(self):
+    def _register_builtin_commands(self) -> None:
         """Register built-in slash commands."""
         self.slash_commands.update({
             "help": self._show_help,
@@ -103,15 +103,15 @@ class CommandRegistry:
         # Regular user input
         return Command(CommandType.USER, "", [], user_input)
     
-    def register_handler(self, handler: CommandHandler):
+    def register_handler(self, handler: CommandHandler) -> None:
         """Register a command handler."""
         self.handlers.append(handler)
-    
-    def register_slash_command(self, name: str, handler: Callable):
+
+    def register_slash_command(self, name: str, handler: Callable) -> None:
         """Register a slash command."""
         self.slash_commands[name] = handler
-    
-    def register_meta_command(self, name: str, handler: Callable):
+
+    def register_meta_command(self, name: str, handler: Callable) -> None:
         """Register a meta command."""
         self.meta_commands[name] = handler
     

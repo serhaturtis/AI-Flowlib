@@ -5,8 +5,9 @@ This module defines the protocols and interfaces for tool execution operations.
 These are core interfaces, not agent component interfaces, so they should remain.
 """
 
-from typing import Any, Dict, Optional, Protocol, runtime_checkable
-from .models import ToolParameters, ToolResult, ToolExecutionContext, ToolMetadata
+from typing import Protocol, runtime_checkable
+from .models import ToolParameters, ToolResult, ToolExecutionContext
+from ..models import TodoItem
 
 
 @runtime_checkable
@@ -32,15 +33,23 @@ class ToolInterface(Protocol):
 @runtime_checkable
 class ToolFactory(Protocol):
     """Interface for tool factories.
-    
+
     Defines the contract for creating tool instances.
     """
-    
+
     def __call__(self) -> ToolInterface:
         """Create a tool instance.
-        
+
         Returns:
             Tool instance
+        """
+        ...
+
+    def get_description(self) -> str:
+        """Get description of the tool.
+
+        Returns:
+            Tool description
         """
         ...
 
@@ -49,7 +58,7 @@ class ToolFactory(Protocol):
 class AgentToolInterface(Protocol):
     """Interface for agent tools."""
     
-    async def execute(self, todo: Any, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, todo: TodoItem, context: ToolExecutionContext) -> ToolResult:
         """Execute tool with TODO item.
         
         Args:
@@ -63,16 +72,37 @@ class AgentToolInterface(Protocol):
 
 
 @runtime_checkable
+class AgentToolFactory(Protocol):
+    """Interface for agent tool factories that create AgentToolInterface instances."""
+
+    def __call__(self) -> AgentToolInterface:
+        """Create an agent tool instance.
+
+        Returns:
+            Agent tool instance
+        """
+        ...
+
+    def get_description(self) -> str:
+        """Get description of the tool.
+
+        Returns:
+            Tool description
+        """
+        ...
+
+
+@runtime_checkable
 class ParameterFactoryInterface(Protocol):
     """Interface for parameter factories."""
-    
-    def create_parameters(self, todo: Any, context: ToolExecutionContext) -> ToolParameters:
+
+    def create_parameters(self, todo: TodoItem, context: ToolExecutionContext) -> ToolParameters:
         """Create parameters from TODO item.
-        
+
         Args:
             todo: TODO item
             context: Execution context
-            
+
         Returns:
             Tool parameters
         """

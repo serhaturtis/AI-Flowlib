@@ -1,6 +1,6 @@
 """Models for bash tool."""
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 from pydantic import Field, field_validator
 from flowlib.core.models import StrictBaseModel
 from ...models import ToolResult, ToolStatus
@@ -10,23 +10,23 @@ class BashParameters(StrictBaseModel):
     """Parameters for bash tool execution."""
     
     command: str = Field(..., description="Shell command to execute")
-    working_directory: Optional[str] = Field(default=None, description="Working directory for command")
+    working_directory: str = Field(default=".", description="Working directory for command")
     timeout: int = Field(default=30, description="Timeout in seconds")
     capture_output: bool = Field(default=True, description="Capture stdout and stderr")
     shell: bool = Field(default=True, description="Execute through shell")
-    env_vars: Optional[Dict[str, str]] = Field(default=None, description="Environment variables to set")
+    env_vars: Dict[str, str] = Field(default_factory=dict, description="Environment variables to set")
     
     @field_validator('command')
     @classmethod
-    def validate_command(cls, v):
+    def validate_command(cls, v: str) -> str:
         """Validate command."""
         if not v or not v.strip():
             raise ValueError("Command cannot be empty")
         return v.strip()
-    
+
     @field_validator('timeout')
     @classmethod
-    def validate_timeout(cls, v):
+    def validate_timeout(cls, v: float) -> float:
         """Validate timeout."""
         if v < 0:
             raise ValueError("Timeout must be non-negative (0 means no timeout)")

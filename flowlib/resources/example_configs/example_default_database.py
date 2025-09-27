@@ -5,6 +5,8 @@ Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
 Modify the settings below for your specific setup.
 """
 
+from typing import Any
+
 from flowlib.resources.decorators.decorators import database_config
 from flowlib.resources.models.config_resource import DatabaseConfigResource
 
@@ -17,7 +19,7 @@ class ExampleDatabaseProviderConfig(DatabaseConfigResource):
     Choose one of the supported providers below.
     """
     
-    def __init__(self, name: str, type: str, **kwargs):
+    def __init__(self, name: str, type: str, **kwargs: Any) -> None:
         # === SQLITE CONFIGURATION (DEFAULT) ===
         super().__init__(
             name=name,

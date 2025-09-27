@@ -9,20 +9,22 @@ import logging
 import asyncio
 import signal
 import argparse
-import yaml
+import yaml  # type: ignore[import-untyped]
 import os
-from typing import Optional, Type, Any
+from typing import Optional
+
+from .config_models import WorkerServiceConfig
 try:
-    import aio_pika
-    from aio_pika.message import AbstractIncomingMessage
+    import aio_pika  # type: ignore[import-not-found]
+    from aio_pika.message import AbstractIncomingMessage  # type: ignore[import-not-found]
 except ImportError:
     aio_pika = None
     AbstractIncomingMessage = None
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import Field, ConfigDict
+from flowlib.core.models import StrictBaseModel
 
 # Ensure provider implementations are imported so decorators run
-from flowlib.providers.mq.rabbitmq.provider import RabbitMQProvider, RabbitMQProviderSettings
 # NOTE: Add imports for other needed providers (like Redis, Mongo, Postgres state persisters) 
 # if they aren't implicitly imported elsewhere before use.
 
@@ -37,14 +39,13 @@ from flowlib.agent.models.state import AgentState
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.runners.autonomous import run_autonomous # Reusing autonomous runner logic
 # Import the config loader
-from flowlib.agent.runners.remote.config_loader import load_remote_config, RemoteConfig 
+from flowlib.agent.runners.remote.config_loader import load_remote_config 
 # Example persister import from the new location:
-from flowlib.agent.components.persistence.adapters import RedisStatePersister 
 
 logger = logging.getLogger(__name__)
 
 
-class DefaultAgentConfigData(BaseModel):
+class DefaultAgentConfigData(StrictBaseModel):
     """Default agent configuration data model."""
     model_config = ConfigDict(extra="forbid")
     
@@ -55,7 +56,7 @@ class DefaultAgentConfigData(BaseModel):
 
 # Store loaded worker config globally within the worker process for access
 # This is a simple approach; dependency injection could be used for more complex apps
-_worker_config: Optional["WorkerServiceConfig"] = None
+_worker_config: Optional[WorkerServiceConfig] = None
 
 def load_base_agent_config() -> AgentConfig:
     """Loads the base AgentConfig from the path specified in the worker config."""
@@ -118,27 +119,25 @@ class AgentWorker:
         self._shutdown_requested = asyncio.Event()
         self._consumer_task: Optional[asyncio.Task] = None
 
-    async def _initialize_providers(self):
+    async def _initialize_providers(self) -> None:
         """Initialize Message Queue and State Persister providers."""
         try:
             logger.info("Initializing Message Queue provider...")
-            self._mq_provider = await provider_registry.get(
-                "message_queue", self.mq_provider_name
-            )
-            if not self._mq_provider or not isinstance(self._mq_provider, MQProvider):
+            provider = await provider_registry.get_by_config(self.mq_provider_name)
+            if not provider or not isinstance(provider, MQProvider):
                  raise ValueError(f"Invalid MQ provider: {self.mq_provider_name}")
+            self._mq_provider = provider
             if not self._mq_provider.initialized:
                  await self._mq_provider.initialize()
             logger.info(f"Message Queue provider '{self.mq_provider_name}' initialized.")
 
             logger.info("Initializing State Persister...")
             # Look up the pre-configured and registered StatePersister instance by name
-            self._state_persister = await provider_registry.get(
-               "state_persister", self.state_persister_name 
-            )
-            
-            if not self._state_persister or not isinstance(self._state_persister, BaseStatePersister):
+            persister = await provider_registry.get_by_config(self.state_persister_name)
+
+            if not persister or not isinstance(persister, BaseStatePersister):
                  raise ValueError(f"Registered provider '{self.state_persister_name}' is not a valid State Persister.")
+            self._state_persister = persister
             
             # Assume the persister adapter handles its own initialization if needed 
             # (e.g., initializing its underlying DB/Cache provider)
@@ -156,9 +155,9 @@ class AgentWorker:
             logger.exception(f"Failed to initialize providers: {e}")
             raise
 
-    async def handle_task_message(self, message: AbstractIncomingMessage) -> None:
+    async def handle_task_message(self, message: AbstractIncomingMessage, metadata: MessageMetadata) -> None:
         """Handles an incoming task message from the queue."""
-        logger.info(f"Received raw message. Attempting to decode Task.")
+        logger.info("Received raw message. Attempting to decode Task.")
         task_msg: Optional[AgentTaskMessage] = None
         agent: Optional[BaseAgent] = None
         status = "FAILURE"
@@ -204,7 +203,7 @@ class AgentWorker:
                 # Now, load or create the state
                 if task_msg.initial_state_id:
                     logger.info(f"Loading state for task_id: {task_msg.task_id} from state_id: {task_msg.initial_state_id}")
-                    agent_state = await self._state_persister.load(task_msg.initial_state_id)
+                    agent_state = await self._state_persister.load_state(task_msg.initial_state_id)
                     # Use the derived agent_config - state doesn't contain config info
                     logger.info(f"Loaded existing state for task '{task_msg.task_id}', using derived agent config.")
                 else:
@@ -229,7 +228,7 @@ class AgentWorker:
             if not agent_state or not agent_config:
                  raise RuntimeError(f"Failed to establish valid agent state/config for task '{task_msg.task_id}'")
                  
-            agent = BaseAgent(config=agent_config, initial_state=agent_state, state_persister=self._state_persister)
+            agent = BaseAgent(config=agent_config, task_description=task_msg.task_description, state_persister=self._state_persister)
             await agent.initialize()
             logger.info(f"Agent initialized for task '{task_msg.task_id}'.")
 
@@ -281,7 +280,8 @@ class AgentWorker:
                  final_state_id = agent._state_manager.current_state.task_id
                  try:
                       # Attempt to save state even if processing failed mid-way
-                      await self._state_persister.save(agent._state_manager.current_state) 
+                      if agent._state_manager.current_state and self._state_persister is not None:
+                          await self._state_persister.save_state(agent._state_manager.current_state) 
                  except Exception as save_err:
                       logger.error(f"Failed to save error state: {save_err}")
                  # Include partial state data in result if possible?
@@ -305,11 +305,12 @@ class AgentWorker:
             )
             target_queue = task_msg.reply_to_queue or self.results_queue_name
             try:
+                metadata = MessageMetadata(correlation_id=task_msg.correlation_id)
                 await self._mq_provider.publish(
-                    queue=target_queue,
+                    exchange="",
+                    routing_key=target_queue,
                     message=result_msg,
-                    persistent=True,
-                    correlation_id=task_msg.correlation_id # Pass correlation ID if needed by provider
+                    metadata=metadata
                 )
                 logger.info(f"Published result for task '{task_msg.task_id}' to queue '{target_queue}'. Status: {status}")
             except Exception as pub_err:
@@ -325,7 +326,7 @@ class AgentWorker:
         logger.info(f"Acknowledging task message, delivery_tag={message.delivery_tag}")
         await message.ack()
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the worker: initialize providers and begin consuming messages."""
         logger.info("Starting Agent Worker...")
         self._shutdown_requested.clear()
@@ -337,7 +338,7 @@ class AgentWorker:
              
         logger.info(f"Starting message consumption from queue: '{self.task_queue_name}'")
         self._consumer_tag = await self._mq_provider.consume(
-            queue_name=self.task_queue_name,
+            queue=self.task_queue_name,
             callback=self.handle_task_message 
         )
         logger.info(f"Message consumption started with consumer tag: {self._consumer_tag}")
@@ -345,7 +346,7 @@ class AgentWorker:
         await self._shutdown_requested.wait()
         logger.info("Shutdown requested, stopping worker...")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Request the worker to stop consuming and shut down gracefully."""
         logger.info("Requesting worker shutdown...")
         self._shutdown_requested.set()
@@ -372,7 +373,7 @@ class AgentWorker:
 
 async def run_worker_service(
     config_path: Optional[str] = None # Add argument for config file path
-):
+) -> None:
     """Main entry point to run the agent worker service."""
     global _worker_config # Allow modification of global
     
@@ -391,7 +392,7 @@ async def run_worker_service(
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
-    def _signal_handler():
+    def _signal_handler() -> None:
         logger.info("Signal received, initiating graceful shutdown...")
         stop_event.set()
 
@@ -413,12 +414,14 @@ async def run_worker_service(
         else:
              logger.warning("Worker start task finished unexpectedly.")
              # Check if the task had an exception
-             if start_task.done() and start_task.exception():
-                  raise start_task.exception()
+             if start_task.done():
+                 exc = start_task.exception()
+                 if exc is not None:
+                     raise exc
                   
     except asyncio.CancelledError:
          logger.info("Worker service run cancelled.")
-    except Exception as e:
+    except Exception:
          logger.exception("Unhandled exception in worker service run:", exc_info=True)
     finally:
          # Ensure final stop sequence is called if not already stopped

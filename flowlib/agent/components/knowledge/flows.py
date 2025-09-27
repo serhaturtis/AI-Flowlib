@@ -5,13 +5,13 @@ following flowlib's flow patterns and strict validation.
 """
 
 import logging
-from typing import Dict, Any
+from typing import cast
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.core.models import StrictBaseModel
 from pydantic import Field
 
-from .models import LearningInput, KnowledgeSet, RetrievalRequest
+from .models import KnowledgeSet, RetrievalRequest
 from .component import KnowledgeComponent
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ class AgentKnowledgeRetrievalOutput(StrictBaseModel):
 
 # Knowledge Flows
 
-@flow(
+@flow(  # type: ignore[arg-type]
     name="agent-knowledge-extraction",
     description="Extract knowledge from text for agent learning workflows",
     is_infrastructure=False
@@ -108,15 +108,15 @@ class AgentKnowledgeExtractionFlow:
         """Get knowledge component from registry."""
         # This would be injected by the flow runner
         # For now, placeholder following flowlib patterns
-        from flowlib.agent.core.registry import component_registry
+        from flowlib.agent.core.component_registry import component_registry
         component = component_registry.get("knowledge")
         if not component:
             raise RuntimeError("Knowledge component not available in registry")
-        return component
+        return cast(KnowledgeComponent, component)
 
 
-@flow(
-    name="agent-knowledge-retrieval", 
+@flow(  # type: ignore[arg-type]
+    name="agent-knowledge-retrieval",
     description="Retrieve knowledge for agent workflows",
     is_infrastructure=False
 )
@@ -171,8 +171,8 @@ class AgentKnowledgeRetrievalFlow:
         """Get knowledge component from registry."""
         # This would be injected by the flow runner
         # For now, placeholder following flowlib patterns
-        from flowlib.agent.core.registry import component_registry
+        from flowlib.agent.core.component_registry import component_registry
         component = component_registry.get("knowledge")
         if not component:
             raise RuntimeError("Knowledge component not available in registry")
-        return component
+        return cast(KnowledgeComponent, component)

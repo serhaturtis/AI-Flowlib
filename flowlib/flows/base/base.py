@@ -7,15 +7,18 @@ enhanced result handling and error management.
 from abc import ABC
 from datetime import datetime
 import inspect
-from enum import Enum
-from typing import Optional, Dict, Any, Type, Union, TypeVar, Generic, List
+from typing import Optional, Dict, Any, Type, Union, TypeVar, Generic, List, cast, Callable
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 from flowlib.core.context.context import Context
 from flowlib.core.errors.errors import ValidationError, ErrorManager, default_manager, ErrorContext, BaseError, ExecutionError
+from flowlib.core.errors.models import ValidationErrorDetail
 from flowlib.flows.models.results import FlowResult
 from flowlib.flows.models.constants import FlowStatus
-from flowlib.flows.models.models import PipelineMethodInfo, FlowInstanceInfo, FlowClassInfo
+from flowlib.flows.models.models import PipelineMethodInfo, FlowInstanceInfo
+
+# Export FlowStatus for proper module access
+__all__ = ["Flow", "FlowSettings", "FlowStatus", "FlowMetadataEntry", "StrictFlowMetadata"]
 
 
 class FlowMetadataEntry(BaseModel):
@@ -67,7 +70,7 @@ class PipelineMethodConfig(BaseModel):
     """Pipeline method configuration model."""
     model_config = ConfigDict(extra="forbid", frozen=True, validate_assignment=True, strict=True, arbitrary_types_allowed=True)
     
-    method: Any = Field(description="Pipeline method reference")
+    method: Callable[..., Any] = Field(description="Pipeline method reference")
     name: str = Field(description="Method name")
     
     @classmethod
@@ -77,13 +80,27 @@ class PipelineMethodConfig(BaseModel):
         
         if not hasattr(instance, method_name):
             raise ExecutionError(
-                f"Instance {type(instance).__name__} missing required pipeline method '{method_name}'"
+                f"Instance {type(instance).__name__} missing required pipeline method '{method_name}'",
+                ErrorContext.create(
+                    flow_name="flow_validation",
+                    error_type="MissingMethodError",
+                    error_location="validate_pipeline_method",
+                    component=type(instance).__name__,
+                    operation="method_validation"
+                )
             )
         
         method = getattr(instance, method_name)
         if not callable(method):
             raise ExecutionError(
-                f"Pipeline method '{method_name}' on {type(instance).__name__} is not callable"
+                f"Pipeline method '{method_name}' on {type(instance).__name__} is not callable",
+                ErrorContext.create(
+                    flow_name="flow_validation",
+                    error_type="NonCallableMethodError",
+                    error_location="validate_pipeline_method",
+                    component=type(instance).__name__,
+                    operation="method_validation"
+                )
             )
         
         return cls(method=method, name=method_name)
@@ -197,7 +214,7 @@ class FlowSettings(BaseModel):
         """
         return cls.model_validate(settings_dict)
     
-    def update(self, **kwargs) -> 'FlowSettings':
+    def update(self, **kwargs: Any) -> 'FlowSettings':
         """Create a new settings object with updated values.
         
         Args:
@@ -342,16 +359,30 @@ class Flow(ABC, Generic[T]):
         # Get the method from instance with strict validation
         if not hasattr(self, pipeline_method_name):
             raise ExecutionError(
-                f"Flow {type(self).__name__} missing required pipeline method '{pipeline_method_name}'"
+                f"Flow {type(self).__name__} missing required pipeline method '{pipeline_method_name}'",
+                ErrorContext.create(
+                    flow_name=type(self).__name__,
+                    error_type="MissingPipelineMethodError",
+                    error_location="_get_class_pipeline_method",
+                    component=type(self).__name__,
+                    operation="pipeline_method_lookup"
+                )
             )
         
         method = getattr(self, pipeline_method_name)
         if not callable(method):
             raise ExecutionError(
-                f"Pipeline method '{pipeline_method_name}' on {type(self).__name__} is not callable"
+                f"Pipeline method '{pipeline_method_name}' on {type(self).__name__} is not callable",
+                ErrorContext.create(
+                    flow_name=type(self).__name__,
+                    error_type="NonCallablePipelineMethodError",
+                    error_location="_get_class_pipeline_method",
+                    component=type(self).__name__,
+                    operation="pipeline_method_validation"
+                )
             )
         
-        return method
+        return cast(object, method)  # method is validated as callable, safe to cast
     
     def get_pipeline_input_model(self) -> Optional[Type[BaseModel]]:
         """Get the input model for this flow's pipeline.
@@ -365,7 +396,15 @@ class Flow(ABC, Generic[T]):
         # Check pipeline method first - strict contract
         pipeline_method = self._get_class_pipeline_method()
         if pipeline_method and hasattr(pipeline_method, '__input_model__'):
-            return pipeline_method.__input_model__
+            input_model = pipeline_method.__input_model__
+            if input_model is not None:
+                try:
+                    if issubclass(input_model, BaseModel):
+                        return cast(Type[BaseModel], input_model)
+                except TypeError:
+                    # input_model is not a class, skip it
+                    pass
+            return None
         
         # Return flow's schema if pipeline method unavailable
         return self.input_schema
@@ -382,7 +421,15 @@ class Flow(ABC, Generic[T]):
         # Check pipeline method first - strict contract
         pipeline_method = self._get_class_pipeline_method()
         if pipeline_method and hasattr(pipeline_method, '__output_model__'):
-            return pipeline_method.__output_model__
+            output_model = pipeline_method.__output_model__
+            if output_model is not None:
+                try:
+                    if issubclass(output_model, BaseModel):
+                        return cast(Type[BaseModel], output_model)
+                except TypeError:
+                    # output_model is not a class, skip it
+                    pass
+            return None
         
         # Return flow's schema if pipeline method unavailable
         return self.output_schema
@@ -414,7 +461,7 @@ class Flow(ABC, Generic[T]):
                 return attr
         return None
     
-    async def execute(self, context: Context) -> FlowResult:
+    async def execute(self, context: Context[Any]) -> FlowResult[Any]:
         """Execute the flow with given context.
         
         This is the ONLY method that should be called from outside the flow.
@@ -475,7 +522,21 @@ class Flow(ABC, Generic[T]):
                         try:
                             pipeline_input_arg = expected_input_model(**context.data)
                         except Exception as validation_err:
-                            raise ValidationError(f"Input validation failed for {expected_input_model.__name__}: {validation_err}") from validation_err
+                            raise ValidationError(
+                                f"Input validation failed for {expected_input_model.__name__}: {validation_err}",
+                                validation_errors=[ValidationErrorDetail(
+                                    location="pipeline_input",
+                                    message=str(validation_err),
+                                    error_type="PydanticValidationError"
+                                )],
+                                context=ErrorContext.create(
+                                    flow_name="pipeline_execution",
+                                    error_type="InputValidationError",
+                                    error_location="execute_pipeline",
+                                    component="BaseFlow",
+                                    operation="input_validation"
+                                )
+                            ) from validation_err
                     else:
                          raise TypeError(f"Context data type {type(context.data)} cannot be used for pipeline expecting {expected_input_model.__name__}")
                     
@@ -493,7 +554,7 @@ class Flow(ABC, Generic[T]):
                 # Execute the pipeline function
                 try:
                     pipeline_args = {}
-                    pipeline_sig = inspect.signature(pipeline_method)
+                    pipeline_sig = inspect.signature(cast(Callable[..., Any], pipeline_method))
                     
                     # Check if the pipeline expects a context parameter
                     if 'context' in pipeline_sig.parameters:
@@ -508,13 +569,13 @@ class Flow(ABC, Generic[T]):
                         
                         # If the first param isn't context/ctx, it expects the main input
                         if first_param_name not in ['context', 'ctx']:
-                            pipeline_result = await pipeline_method(pipeline_input_arg, **pipeline_args)
+                            pipeline_result = await cast(Callable[..., Any], pipeline_method)(pipeline_input_arg, **pipeline_args)
                         else:
                             # First param is context/ctx, only pass kwargs
-                            pipeline_result = await pipeline_method(**pipeline_args)
+                            pipeline_result = await cast(Callable[..., Any], pipeline_method)(**pipeline_args)
                     else:
                         # No parameters, call with kwargs only (which might be empty)
-                        pipeline_result = await pipeline_method(**pipeline_args)
+                        pipeline_result = await cast(Callable[..., Any], pipeline_method)(**pipeline_args)
                     
                     # Validate result type against output_schema if defined - no fallbacks
                     output_model = None
@@ -525,10 +586,22 @@ class Flow(ABC, Generic[T]):
                         if not isinstance(pipeline_result, output_model):
                             # Import validation error if needed
                             raise ValidationError(
-                                f"Pipeline '{pipeline_method.__name__}' must return an instance of {output_model.__name__}, got {type(pipeline_result).__name__}"
+                                f"Pipeline '{cast(Callable[..., Any], pipeline_method).__name__}' must return an instance of {output_model.__name__}, got {type(pipeline_result).__name__}",
+                                validation_errors=[ValidationErrorDetail(
+                                    location="pipeline_output",
+                                    message=f"Expected {output_model.__name__}, got {type(pipeline_result).__name__}",
+                                    error_type="TypeMismatchError"
+                                )],
+                                context=ErrorContext.create(
+                                    flow_name="pipeline_execution",
+                                    error_type="OutputValidationError",
+                                    error_location="execute_pipeline",
+                                    component="BaseFlow",
+                                    operation="output_validation"
+                                )
                             )
                     
-                    result = FlowResult(
+                    result: FlowResult[Any] = FlowResult(
                         data=pipeline_result,  # Store the model directly
                         original_type=type(pipeline_result),
                         flow_name=self.name,
@@ -553,7 +626,7 @@ class Flow(ABC, Generic[T]):
                 # Get original type - strict attribute access
                 original_type = result._original_type if hasattr(result, '_original_type') else None
                 
-                result_with_metadata = FlowResult(
+                result_with_metadata: FlowResult[Any] = FlowResult(
                     data=result.data,
                     original_type=original_type,
                     flow_name=self.name,
@@ -586,7 +659,7 @@ class Flow(ABC, Generic[T]):
                 )
 
             # Create error result
-            error_result = FlowResult(
+            error_result: FlowResult[Any] = FlowResult(
                 data={},
                 flow_name=self.name,
                 status=FlowStatus.ERROR,
@@ -614,15 +687,17 @@ class Flow(ABC, Generic[T]):
             if not isinstance(data, self.input_schema):
                 raise ValidationError(
                     f"Input must be an instance of {self.input_schema.__name__}, got {type(data).__name__}",
-                    validation_errors=[{
-                        "location": "input",
-                        "message": f"Expected {self.input_schema.__name__}, got {type(data).__name__}",
-                        "type": "type_error"
-                    }],
+                    validation_errors=[ValidationErrorDetail(
+                        location="input",
+                        message=f"Expected {self.input_schema.__name__}, got {type(data).__name__}",
+                        error_type="type_error"
+                    )],
                     context=ErrorContext.create(
                         flow_name=self.name,
-                        expected_type=self.input_schema.__name__,
-                        actual_type=type(data).__name__
+                        error_type="ValidationError",
+                        error_location="_validate_input",
+                        component="base_flow",
+                        operation="input_validation"
                     )
                 )
 
@@ -641,34 +716,38 @@ class Flow(ABC, Generic[T]):
                 # Should never directly pass dicts in the new strict mode
                 raise ValidationError(
                     f"Output must be an instance of {self.output_schema.__name__}, got dict",
-                    validation_errors=[{
-                        "location": "output",
-                        "message": f"Expected {self.output_schema.__name__}, got dict",
-                        "type": "type_error"
-                    }],
+                    validation_errors=[ValidationErrorDetail(
+                        location="output",
+                        message=f"Expected {self.output_schema.__name__}, got dict",
+                        error_type="type_error"
+                    )],
                     context=ErrorContext.create(
                         flow_name=self.name,
-                        expected_type=self.output_schema.__name__,
-                        actual_type="dict"
+                        error_type="ValidationError",
+                        error_location="_validate_output",
+                        component="base_flow",
+                        operation="output_validation"
                     )
                 )
             # If not a dict, must be an instance of the output schema
             elif not isinstance(data, self.output_schema):
                 raise ValidationError(
                     f"Output must be an instance of {self.output_schema.__name__}, got {type(data).__name__}",
-                    validation_errors=[{
-                        "location": "output",
-                        "message": f"Expected {self.output_schema.__name__}, got {type(data).__name__}",
-                        "type": "type_error"
-                    }],
+                    validation_errors=[ValidationErrorDetail(
+                        location="output",
+                        message=f"Expected {self.output_schema.__name__}, got {type(data).__name__}",
+                        error_type="type_error"
+                    )],
                     context=ErrorContext.create(
                         flow_name=self.name,
-                        expected_type=self.output_schema.__name__,
-                        actual_type=type(data).__name__
+                        error_type="ValidationError",
+                        error_location="_validate_output",
+                        component="base_flow",
+                        operation="output_type_validation"
                     )
                 )
 
-    def _prepare_input(self, context: Context) -> Any:
+    def _prepare_input(self, context: Context[Any]) -> Any:
         """Prepare input data from context.
         
         If input_schema is defined, retrieves the validated Pydantic model instance
@@ -693,22 +772,35 @@ class Flow(ABC, Generic[T]):
                      # This happens if context had no model_type initially
                      raise ValidationError(
                          f"Context does not contain a model of type {self.input_schema.__name__} needed by flow '{self.name}'",
-                         context=ErrorContext.create(flow_name=self.name, expected_type=self.input_schema.__name__)
+                         validation_errors=[ValidationErrorDetail(
+                             location="context",
+                             message=f"Missing model of type {self.input_schema.__name__}",
+                             error_type="missing_model_error"
+                         )],
+                         context=ErrorContext.create(
+                             flow_name=self.name,
+                             error_type="MissingModelError",
+                             error_location="prepare_input",
+                             component=self.name,
+                             operation="model_reconstruction"
+                         )
                      )
 
                 # Validate the reconstructed model instance type
                 if not isinstance(model_instance, self.input_schema):
                     raise ValidationError(
                         f"Expected input model of type {self.input_schema.__name__}, but context provided {type(model_instance).__name__}",
-                        validation_errors=[{
-                            "location": "input",
-                            "message": f"Expected {self.input_schema.__name__}, got {type(model_instance).__name__}",
-                            "type": "type_error"
-                        }],
+                        validation_errors=[ValidationErrorDetail(
+                            location="input",
+                            message=f"Expected {self.input_schema.__name__}, got {type(model_instance).__name__}",
+                            error_type="type_error"
+                        )],
                         context=ErrorContext.create(
                             flow_name=self.name,
-                            expected_type=self.input_schema.__name__,
-                            actual_type=type(model_instance).__name__
+                            error_type="ValidationError",
+                            error_location="_prepare_input",
+                            component="base_flow",
+                            operation="input_reconstruction_validation"
                         )
                     )
                 
@@ -722,17 +814,28 @@ class Flow(ABC, Generic[T]):
             raise
         except ValueError as ve:
             # Catch specific errors from as_model() if internal data is inconsistent
-             raise ValidationError(
-                f"Failed to reconstruct input model {self.input_schema.__name__} from context: {str(ve)}",
-                context=ErrorContext.create(flow_name=self.name),
+            schema_name = self.input_schema.__name__ if self.input_schema else "unknown"
+            raise ValidationError(
+                f"Failed to reconstruct input model {schema_name} from context: {str(ve)}",
+                validation_errors=[ValidationErrorDetail(
+                    location="context",
+                    message=f"Model reconstruction failed: {str(ve)}",
+                    error_type="reconstruction_error"
+                )],
+                context=ErrorContext.create(
+                    flow_name=self.name,
+                    error_type="ModelReconstructionError",
+                    error_location="prepare_input",
+                    component=self.name,
+                    operation="model_reconstruction"
+                ),
                 cause=ve
              )
         except Exception as e:
             # Wrap other exceptions
             # Get context data without fallbacks
-            context_data = {}
             if hasattr(context, 'data'):
-                context_data = context.data
+                pass
             
             error_context = ErrorContext.create(
                 flow_name=self.name,

@@ -1,12 +1,13 @@
 """Conversation tool implementation."""
 
-from typing import Any
+from typing import cast
 from ...models import ToolResult, ToolExecutionContext, ToolStatus
 from ...decorators import tool
 from .models import ConversationResult
+from flowlib.agent.components.task.models import TodoItem
 
 
-@tool(name="conversation", category="communication", description="Handle conversational interactions and generate responses")
+@tool(name="conversation", tool_category="generic", description="Handle conversational interactions and generate responses")
 class ConversationTool:
     """Tool for handling conversational interactions."""
     
@@ -20,7 +21,7 @@ class ConversationTool:
     
     async def execute(
         self, 
-        todo: Any,  # TodoItem with task description
+        todo: TodoItem,
         context: ToolExecutionContext  # Execution context
     ) -> ToolResult:
         """Execute conversation interaction."""
@@ -42,13 +43,16 @@ class ConversationTool:
                 message=f"Failed to generate conversation: {str(e)}"
             )
     
-    async def _generate_conversation(self, todo: Any, context: ToolExecutionContext):
+    async def _generate_conversation(self, todo: TodoItem, context: ToolExecutionContext) -> ConversationResult:
         """Generate conversation using flow."""
         from flowlib.flows.registry.registry import flow_registry
-        from .flow import ConversationInput
-        
+        from .flow import ConversationInput, ConversationFlow
+
         # Get the conversation flow class
-        flow_instance = flow_registry.get("conversation-generation")
+        flow_obj = flow_registry.get("conversation-generation")
+        if flow_obj is None:
+            raise RuntimeError("Conversation generation flow not found in registry")
+        flow_instance = cast(ConversationFlow, flow_obj)
         
         
         # Extract task content from todo
@@ -62,4 +66,5 @@ class ConversationTool:
         )
         
         # Execute flow to generate conversation
-        return await flow_instance.run_pipeline(flow_input)
+        result = await flow_instance.run_pipeline(flow_input)
+        return cast(ConversationResult, result)

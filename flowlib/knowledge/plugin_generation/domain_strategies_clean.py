@@ -324,11 +324,11 @@ class LegalComplianceDomainStrategy(BaseDomainStrategy):
 class DomainStrategyRegistry:
     """Registry for domain-specific generation strategies."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._strategies: Dict[DomainStrategy, BaseDomainStrategy] = {}
         self._register_default_strategies()
     
-    def _register_default_strategies(self):
+    def _register_default_strategies(self) -> None:
         """Register default domain strategies."""
         self._strategies[DomainStrategy.GENERIC] = GenericDomainStrategy()
         self._strategies[DomainStrategy.SOFTWARE_ENGINEERING] = SoftwareEngineeringDomainStrategy()
@@ -336,7 +336,7 @@ class DomainStrategyRegistry:
         self._strategies[DomainStrategy.BUSINESS_PROCESS] = BusinessProcessDomainStrategy()
         self._strategies[DomainStrategy.LEGAL_COMPLIANCE] = LegalComplianceDomainStrategy()
     
-    def register_strategy(self, domain: DomainStrategy, strategy: BaseDomainStrategy):
+    def register_strategy(self, domain: DomainStrategy, strategy: BaseDomainStrategy) -> None:
         """Register a custom domain strategy."""
         self._strategies[domain] = strategy
     

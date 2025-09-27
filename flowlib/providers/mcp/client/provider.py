@@ -3,15 +3,16 @@
 import asyncio
 import logging
 from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from flowlib.providers.core.base import Provider, ProviderSettings
+from flowlib.providers.core.decorators import provider
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 # Removed ProviderType import - using config-driven provider access
 from ..base import (
     BaseMCPClient, MCPTool, MCPResource, MCPTransport,
-    MCPError, MCPConnectionError, MCPToolNotFoundError
+    MCPConnectionError, MCPToolNotFoundError, MCPConnection
 )
 from flowlib.providers.mcp.transport import create_transport
 
@@ -33,10 +34,10 @@ class MCPClientSettings(ProviderSettings):
     headers: Dict[str, str] = Field(default_factory=dict, description="Additional headers")
 
 
-from flowlib.providers.core.decorators import provider
+# Decorator already imported above
 
 @provider(provider_type="mcp_client", name="mcp-client", settings_class=MCPClientSettings)
-class MCPClientProvider(Provider):
+class MCPClientProvider(Provider[MCPClientSettings]):
     """Provider that acts as MCP client to connect to external servers."""
     
     def __init__(self, name: str, provider_type: str = "mcp_client", settings: Optional[MCPClientSettings] = None):
@@ -46,7 +47,7 @@ class MCPClientProvider(Provider):
             settings=settings
         )
         self._client: Optional[BaseMCPClient] = None
-        self._connection = None
+        self._connection: Optional[MCPConnection] = None
         self._connected = False
         
     async def initialize(self) -> None:
@@ -255,7 +256,7 @@ class MCPClientProvider(Provider):
         """Check if client is connected to MCP server."""
         if not self._client:
             return False
-        return self._connected and self._client.is_connected()
+        return self._connected
     
     async def reconnect(self) -> None:
         """Reconnect to the MCP server."""
@@ -334,7 +335,7 @@ class MCPToolWrapper:
         self.description = tool.description
         self.input_schema = tool.input_schema
     
-    async def __call__(self, **kwargs) -> Any:
+    async def __call__(self, **kwargs: Any) -> Any:
         """Call the MCP tool with keyword arguments."""
         return await self.client.call_tool(self.tool.name, kwargs)
     
@@ -372,7 +373,7 @@ async def create_mcp_client(
     name: str,
     server_uri: str,
     transport: MCPTransport = MCPTransport.STDIO,
-    **kwargs
+    **kwargs: Any
 ) -> MCPClientProvider:
     """Create and initialize an MCP client provider."""
     settings = MCPClientSettings(

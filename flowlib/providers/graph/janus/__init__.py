@@ -1,26 +1,27 @@
 """JanusGraph database provider module."""
 
+from typing import Optional, Type, Any
+
 # Import availability and components
 try:
-    from .provider import JanusProvider
-    from .models import JanusProviderSettings
+    from .provider import JanusGraphProvider, JanusProviderSettings
     JANUS_AVAILABLE = True
-    
+
     # Re-export gremlin components for test compatibility
     try:
-        from gremlin_python.driver.client import Client
-        from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
-        from gremlin_python.process.anonymous_traversal import traversal
-        from gremlin_python.driver.serializer import GraphBinaryMessageSerializer
+        from gremlin_python.driver.client import Client  # type: ignore[import-untyped]
+        from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection  # type: ignore[import-untyped]
+        from gremlin_python.process.anonymous_traversal import traversal  # type: ignore[import-untyped]
+        from gremlin_python.driver.serializer import GraphBinaryMessageSerializer  # type: ignore[import-untyped]
     except ImportError:
         Client = None
         DriverRemoteConnection = None
         traversal = None
         GraphBinaryMessageSerializer = None
-        
+
 except ImportError:
-    JanusProvider = None
-    JanusProviderSettings = None
+    JanusGraphProvider: Optional[Type[Any]] = None  # type: ignore[no-redef]
+    JanusProviderSettings: Optional[Type[Any]] = None  # type: ignore[no-redef]
     JANUS_AVAILABLE = False
     Client = None
     DriverRemoteConnection = None
@@ -28,7 +29,7 @@ except ImportError:
     GraphBinaryMessageSerializer = None
 
 __all__ = [
-    "JanusProvider",
+    "JanusGraphProvider",
     "JanusProviderSettings", 
     "JANUS_AVAILABLE",
     "Client",

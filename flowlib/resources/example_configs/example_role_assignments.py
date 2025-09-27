@@ -49,7 +49,20 @@ try:
     # Cache Provider Roles - maps to example_cache_provider.py
     # role_manager.assign_role("default-cache", "example-cache-provider")
     # logger.info("Assigned role 'default-cache' to 'example-cache-provider'")
-    
+
+    # Agent Configuration Roles - maps to agent_configs.py
+    role_manager.assign_role("default-agent-config", "default-agent-config")
+    logger.info("Assigned role 'default-agent-config' to 'default-agent-config'")
+
+    # Additional agent config roles for different use cases
+    role_manager.assign_role("creative-agent", "creative-agent-config")
+    role_manager.assign_role("precise-agent", "precise-agent-config")
+    role_manager.assign_role("devops-agent", "devops-agent-config")
+    role_manager.assign_role("data-science-agent", "data-science-agent-config")
+    role_manager.assign_role("qa-agent", "qa-agent-config")
+    role_manager.assign_role("fast-agent", "fast-agent-config")
+    logger.info("Assigned specialized agent configuration roles")
+
     logger.info("Role assignments completed successfully")
     
 except Exception as e:

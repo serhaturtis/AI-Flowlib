@@ -1,7 +1,7 @@
 """Models for entity analysis flow."""
 
-from typing import List, Dict, Any, Optional
-from pydantic import Field, ConfigDict
+from typing import List, Optional
+from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 from enum import Enum
 
@@ -53,7 +53,7 @@ class LLMRelationshipExtractionResult(StrictBaseModel):
     )
 
 
-class LLMConceptResult(BaseModel):
+class LLMConceptResult(StrictBaseModel):
     """Key concept extracted by LLM."""
     concept: str = Field(description="Concept name")
     abbreviation: Optional[str] = Field(None, description="Common abbreviation")
@@ -62,7 +62,7 @@ class LLMConceptResult(BaseModel):
     related_concepts: List[str] = Field(default_factory=list, description="Related concepts")
 
 
-class LLMConceptExtractionResult(BaseModel):
+class LLMConceptExtractionResult(StrictBaseModel):
     """Result of LLM concept extraction."""
     concepts: List[LLMConceptResult] = Field(
         default_factory=list,

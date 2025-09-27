@@ -7,7 +7,7 @@ with common functionality that can be extended by specific implementations.
 
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any, TypeVar, Generic
+from typing import Dict, List, Optional, TypeVar
 
 # Import Provider and ProviderSettings
 from flowlib.providers.core.base import Provider, ProviderSettings
@@ -68,7 +68,8 @@ class BaseStatePersister(Provider[SettingsType]):
         # if not self.initialized: await self.initialize() 
             
         try:
-            state.updated_at = datetime.now()
+            # Update the model's timestamp using the proper update method
+            state._update_model(updated_at=datetime.now())
             # Use execute_with_retry from Provider base? Or handle retries here?
             # For now, directly call the implementation.
             return await self._save_state_impl(state, metadata)

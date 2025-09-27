@@ -4,11 +4,12 @@ This module provides the tool registry following flowlib architectural patterns.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Type, Callable
+from typing import Any, Dict, List, Optional, Type, Union
 
 from flowlib.core.registry.registry import BaseRegistry
-from .models import ToolParameters, ToolResult, ToolMetadata, ToolExecutionContext
-from .interfaces import ToolInterface, ToolFactory
+from .models import ToolResult, ToolMetadata, ToolExecutionContext
+from ..models import TodoItem
+from .interfaces import AgentToolFactory, AgentToolInterface
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class ToolRegistryEntry:
     Not using StrictBaseModel because it can't validate Protocol instances.
     """
     
-    def __init__(self, name: str, factory: ToolFactory, metadata: ToolMetadata, 
+    def __init__(self, name: str, factory: AgentToolFactory, metadata: ToolMetadata,
                  category: str = "general", aliases: Optional[List[str]] = None):
         self.name = name
         self.factory = factory
@@ -34,29 +35,30 @@ class ToolRegistryEntry:
         self.aliases = aliases or []
 
 
-class ToolRegistry(BaseRegistry[ToolFactory]):
+class ToolRegistry(BaseRegistry[AgentToolFactory]):
     """Tool registry for agent tool management.
     
     Inherits from BaseRegistry to provide consistent interface with
     other flowlib registries. Manages tool factories for lazy instantiation.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize tool registry."""
         self._tools: Dict[str, ToolRegistryEntry] = {}
         self._aliases: Dict[str, str] = {}  # alias -> canonical name mapping
         
-    def register(self, name: str, obj: ToolFactory, metadata: Optional[ToolMetadata] = None) -> None:
+    def register(self, name: str, obj: AgentToolFactory, metadata: Optional[ToolMetadata] = None, **kwargs: Union[str, int, bool]) -> None:
         """Register a tool factory.
-        
+
         Args:
             name: Tool name
             obj: Tool factory instance
             metadata: Tool metadata (optional, will create default if not provided)
+            **kwargs: Additional registry metadata
         """
         # Validate factory implements protocol
-        if not isinstance(obj, ToolFactory):
-            raise TypeError(f"Object must implement ToolFactory protocol, got {type(obj)}")
+        if not isinstance(obj, AgentToolFactory):
+            raise TypeError(f"Object must implement AgentToolFactory protocol, got {type(obj)}")
         
         # Use provided metadata or create default
         if metadata is None:
@@ -72,7 +74,7 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
             name=name,
             factory=obj,
             metadata=tool_metadata,
-            category=tool_metadata.category,
+            category=tool_metadata.tool_category,
             aliases=tool_metadata.aliases
         )
         
@@ -83,9 +85,9 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
         for alias in tool_metadata.aliases:
             self._aliases[alias] = name
             
-        logger.info(f"Registered tool: {name} (category: {tool_metadata.category})")
+        logger.info(f"Registered tool: {name} (category: {tool_metadata.tool_category})")
         
-    def get(self, name: str, expected_type: Optional[Type] = None) -> ToolFactory:
+    def get(self, name: str, expected_type: Optional[Type[Any]] = None) -> AgentToolFactory:
         """Get tool factory by name.
         
         Args:
@@ -175,7 +177,7 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
             
         return False
         
-    def update(self, name: str, obj: ToolFactory, metadata: Optional[ToolMetadata] = None) -> bool:
+    def update(self, name: str, obj: AgentToolFactory, metadata: Optional[ToolMetadata] = None, **kwargs: Union[str, int, bool]) -> bool:
         """Update existing tool registration.
         
         Args:
@@ -193,32 +195,34 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
             self.remove(name)
             
         # Register new/updated
-        self.register(name, obj, metadata=metadata)
+        self.register(name, obj, metadata)
         
         return exists
         
-    def register_with_aliases(self, canonical_name: str, obj: ToolFactory, 
-                             aliases: Optional[List[str]] = None, metadata: Optional[ToolMetadata] = None) -> None:
+    def register_with_aliases(self, canonical_name: str, obj: AgentToolFactory, aliases: Optional[List[str]] = None, **metadata: Any) -> None:
         """Register tool with aliases.
-        
+
         Args:
             canonical_name: Primary tool name
             obj: Tool factory
             aliases: Alternative names
-            metadata: Tool metadata
+            **metadata: Additional metadata
         """
         # Create or update metadata with aliases
-        if metadata is None:
-            metadata = ToolMetadata(
+        tool_metadata_param = metadata.get('metadata')
+        if tool_metadata_param is None:
+            tool_metadata = ToolMetadata(
                 name=canonical_name,
                 description=obj.get_description(),
                 aliases=aliases or []
             )
-        elif aliases:
-            # Update metadata aliases
-            metadata.aliases = aliases
-            
-        self.register(canonical_name, obj, metadata)
+        else:
+            tool_metadata = tool_metadata_param
+            if aliases:
+                # Update metadata aliases
+                tool_metadata.aliases = aliases
+
+        self.register(canonical_name, obj, metadata=tool_metadata)
         
     def list_aliases(self, canonical_name: str) -> List[str]:
         """List aliases for a tool.
@@ -263,7 +267,7 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
             categories.add(entry.category)
         return sorted(list(categories))
         
-    def create_tool(self, name: str, context: Optional[ToolExecutionContext] = None) -> ToolInterface:
+    def create_tool(self, name: str, context: Optional[ToolExecutionContext] = None) -> AgentToolInterface:
         """Create tool instance from factory.
         
         Args:
@@ -277,7 +281,7 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
             KeyError: If tool not found
         """
         factory = self.get(name)
-        return factory.create_tool(context)
+        return factory()
         
     def get_tool_metadata(self, name: str) -> ToolMetadata:
         """Get metadata for a specific tool.
@@ -318,7 +322,7 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
             }
         }
     
-    async def execute_todo(self, todo: Any, context: ToolExecutionContext) -> ToolResult:
+    async def execute_todo(self, todo: TodoItem, context: ToolExecutionContext) -> ToolResult:
         """Execute a todo item using its assigned tool.
         
         Args:
@@ -331,12 +335,27 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
         Raises:
             KeyError: If assigned tool not found
             ValueError: If todo has no assigned tool
+            ToolPermissionError: If agent lacks permission to use the tool
         """
         if not hasattr(todo, 'assigned_tool') or not todo.assigned_tool:
             raise ValueError(f"Todo {getattr(todo, 'id', 'unknown')} has no assigned tool")
+        
+        # Import here to avoid circular imports
+        from .tool_role_manager import tool_role_manager
+        
+        # Validate tool access permissions
+        try:
+            tool_role_manager.validate_tool_access(context.agent_role, todo.assigned_tool)
+        except Exception as e:
+            # Import ToolPermissionError here to avoid circular imports
+            from .tool_role_manager import ToolPermissionError
+            if isinstance(e, ToolPermissionError):
+                raise
+            # Re-raise other exceptions
+            raise
             
         factory = self.get(todo.assigned_tool)
-        tool = factory.create_tool(context)
+        tool = factory()
         return await tool.execute(todo, context)
     
     def list_tools(self) -> List[str]:
@@ -348,6 +367,19 @@ class ToolRegistry(BaseRegistry[ToolFactory]):
             List of tool names
         """
         return self.list()
+    
+    def list_tools_for_role(self, agent_role: Optional[str]) -> List[str]:
+        """List tools available for a specific agent role.
+
+        Args:
+            agent_role: Agent role string to filter tools for
+
+        Returns:
+            List of tool names accessible to the agent role
+        """
+        # Import here to avoid circular imports
+        from .tool_role_manager import tool_role_manager
+        return tool_role_manager.get_allowed_tools(agent_role)
 
 
 # Global registry instance (following flowlib pattern)

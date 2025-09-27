@@ -6,18 +6,15 @@ and enriches them with context for optimal processing.
 
 import logging
 import time
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
-
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ExecutionError
 from flowlib.flows.registry import flow_registry
 from .models import (
-    TaskGenerationInput, TaskGenerationOutput, GeneratedTask
+    TaskGenerationInput, TaskGenerationOutput
 )
 from flowlib.agent.models.conversation import ConversationMessage, MessageRole
+from flowlib.agent.core.context.models import ExecutionContext
 
-if TYPE_CHECKING:
-    from flowlib.agent.core.context.models import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +29,14 @@ class TaskGeneratorComponent(AgentComponent):
             name: Component name
         """
         super().__init__(name)
-        self._task_generation_flow = None
-    
+
     async def _initialize_impl(self) -> None:
         """Initialize the task generator."""
-        # Get TaskGenerationFlow from registry
-        self._task_generation_flow = flow_registry.get_flow("task-generation")
-        if not self._task_generation_flow:
+        # Verify flow exists in registry
+        flow = flow_registry.get_flow("task-generation")
+        if not flow:
             raise RuntimeError("TaskGenerationFlow not found in registry")
-        
+
         logger.info("TaskGenerator initialized")
     
     async def _shutdown_impl(self) -> None:
@@ -49,7 +45,7 @@ class TaskGeneratorComponent(AgentComponent):
     
     async def convert_message_to_task(
         self,
-        context: 'ExecutionContext'
+        context: ExecutionContext
     ) -> TaskGenerationOutput:
         """Generate enriched task definition from user message.
         
@@ -85,7 +81,10 @@ class TaskGeneratorComponent(AgentComponent):
             )
             
             # Run task generation flow
-            result = await self._task_generation_flow.run_pipeline(task_input)
+            generation_flow = flow_registry.get_flow("task-generation")
+            if generation_flow is None:
+                raise RuntimeError("TaskGenerationFlow not found in registry")
+            result = await generation_flow.run_pipeline(task_input)
             
             # Calculate processing time
             processing_time = (time.time() - start_time) * 1000

@@ -1,7 +1,9 @@
 """Task debriefing flows."""
 
+from typing import cast, Dict, Any
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
 from .models import (
     IntentAnalysisInput, IntentAnalysisOutput,
@@ -11,7 +13,7 @@ from .models import (
 )
 
 
-@flow(
+@flow(  # type: ignore[arg-type]
     name="intent-analysis",
     description="Analyze if execution results fulfill user's original intent",
     is_infrastructure=False
@@ -23,13 +25,13 @@ class IntentAnalysisFlow:
     async def run_pipeline(self, input_data: IntentAnalysisInput) -> IntentAnalysisOutput:
         """Analyze intent fulfillment."""
         # Get LLM provider
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Get prompt from registry
         prompt_instance = resource_registry.get("intent-analysis-prompt")
         
         # Prepare prompt variables
-        prompt_vars = {
+        prompt_vars: Dict[str, Any] = {
             "original_user_message": input_data.original_user_message,
             "generated_task": input_data.generated_task,
             "execution_results": input_data.execution_results,
@@ -39,17 +41,21 @@ class IntentAnalysisFlow:
         
         # Generate intent analysis using LLM
         result = await llm.generate_structured(
-            prompt=prompt_instance,
+            prompt=cast(PromptTemplate, prompt_instance),
             output_type=IntentAnalysisOutput,
             model_name="default-model",
             prompt_variables=prompt_vars
         )
-        
+
+        # Type validation following flowlib's no-fallbacks principle
+        if not isinstance(result, IntentAnalysisOutput):
+            raise ValueError(f"Expected IntentAnalysisOutput from LLM, got {type(result)}")
+
         return result
 
 
-@flow(
-    name="success-presentation", 
+@flow(  # type: ignore[arg-type]
+    name="success-presentation",
     description="Generate user-friendly presentation for successful task completion",
     is_infrastructure=False
 )
@@ -60,13 +66,13 @@ class SuccessPresentationFlow:
     async def run_pipeline(self, input_data: SuccessPresentationInput) -> SuccessPresentationOutput:
         """Generate success presentation."""
         # Get LLM provider
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Get prompt from registry
         prompt_instance = resource_registry.get("success-presentation-prompt")
         
         # Prepare prompt variables
-        prompt_vars = {
+        prompt_vars: Dict[str, Any] = {
             "original_user_message": input_data.original_user_message,
             "execution_results": input_data.execution_results,
             "user_intent_summary": input_data.intent_analysis.user_intent_summary,
@@ -76,18 +82,22 @@ class SuccessPresentationFlow:
         
         # Generate presentation using LLM
         result = await llm.generate_structured(
-            prompt=prompt_instance,
+            prompt=cast(PromptTemplate, prompt_instance),
             output_type=SuccessPresentationOutput,
             model_name="default-model",
             prompt_variables=prompt_vars
         )
-        
+
+        # Type validation following flowlib's no-fallbacks principle
+        if not isinstance(result, SuccessPresentationOutput):
+            raise ValueError(f"Expected SuccessPresentationOutput from LLM, got {type(result)}")
+
         return result
 
 
-@flow(
+@flow(  # type: ignore[arg-type]
     name="corrective-task-generation",
-    description="Generate corrective task for retry based on failure analysis", 
+    description="Generate corrective task for retry based on failure analysis",
     is_infrastructure=False
 )
 class CorrectiveTaskFlow:
@@ -97,13 +107,13 @@ class CorrectiveTaskFlow:
     async def run_pipeline(self, input_data: CorrectiveTaskInput) -> CorrectiveTaskOutput:
         """Generate corrective task."""
         # Get LLM provider
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Get prompt from registry
         prompt_instance = resource_registry.get("corrective-task-prompt")
         
         # Prepare prompt variables
-        prompt_vars = {
+        prompt_vars: Dict[str, Any] = {
             "original_user_message": input_data.original_user_message,
             "failed_task": input_data.failed_task,
             "execution_results": input_data.execution_results,
@@ -116,19 +126,23 @@ class CorrectiveTaskFlow:
         
         # Generate corrective task using LLM
         result = await llm.generate_structured(
-            prompt=prompt_instance,
+            prompt=cast(PromptTemplate, prompt_instance),
             output_type=CorrectiveTaskOutput,
             model_name="default-model",
             prompt_variables=prompt_vars
         )
-        
+
+        # Type validation following flowlib's no-fallbacks principle
+        if not isinstance(result, CorrectiveTaskOutput):
+            raise ValueError(f"Expected CorrectiveTaskOutput from LLM, got {type(result)}")
+
         return result
 
 
-@flow(
+@flow(  # type: ignore[arg-type]
     name="failure-explanation",
     description="Generate helpful explanation for task failures after max retries",
-    is_infrastructure=False  
+    is_infrastructure=False
 )
 class FailureExplanationFlow:
     """Generates helpful failure explanations."""
@@ -137,13 +151,13 @@ class FailureExplanationFlow:
     async def run_pipeline(self, input_data: FailureExplanationInput) -> FailureExplanationOutput:
         """Generate failure explanation."""
         # Get LLM provider
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Get prompt from registry
         prompt_instance = resource_registry.get("failure-explanation-prompt")
         
         # Prepare prompt variables
-        prompt_vars = {
+        prompt_vars: Dict[str, Any] = {
             "original_user_message": input_data.original_user_message,
             "execution_results": input_data.execution_results,
             "user_intent_summary": input_data.intent_analysis.user_intent_summary,
@@ -154,10 +168,14 @@ class FailureExplanationFlow:
         
         # Generate failure explanation using LLM
         result = await llm.generate_structured(
-            prompt=prompt_instance,
+            prompt=cast(PromptTemplate, prompt_instance),
             output_type=FailureExplanationOutput,
             model_name="default-model",
             prompt_variables=prompt_vars
         )
-        
+
+        # Type validation following flowlib's no-fallbacks principle
+        if not isinstance(result, FailureExplanationOutput):
+            raise ValueError(f"Expected FailureExplanationOutput from LLM, got {type(result)}")
+
         return result

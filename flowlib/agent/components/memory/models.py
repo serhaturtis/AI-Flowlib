@@ -6,13 +6,12 @@ consistent, type-safe interactions with memory systems. These models
 follow Flowlib's strict typing principles and eliminate metadata abuse.
 """
 
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Optional, Literal
 from datetime import datetime
-from pydantic import Field, model_validator, field_validator, ConfigDict
-from flowlib.core.models import StrictBaseModel, MutableStrictBaseModel
+from pydantic import Field, field_validator
+from flowlib.core.models import StrictBaseModel
 
 # Import Entity from the graph models - this is referenced by other modules
-from flowlib.providers.graph.models import Entity
 
 
 class MemoryItemMetadata(StrictBaseModel):
@@ -114,7 +113,7 @@ class MemoryStoreRequest(StrictBaseModel):
         """Clamp importance value to valid range [0.0, 1.0]."""
         return max(0.0, min(1.0, v))
     
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         # Store original importance before validation
         if 'importance' in data:
             data['original_importance'] = data['importance']
@@ -147,7 +146,7 @@ class MemorySearchResult(StrictBaseModel):
     
     item: MemoryItem = Field(..., description="The memory item found")
     score: float = Field(..., ge=0.0, le=1.0, description="Relevance score for this result")
-    metadata: MemorySearchMetadata = Field(default_factory=MemorySearchMetadata, description="Search metadata")
+    metadata: MemorySearchMetadata = Field(default_factory=lambda: MemorySearchMetadata(search_query=""), description="Search metadata")
 
 
 class MemorySearchResultCollection(StrictBaseModel):

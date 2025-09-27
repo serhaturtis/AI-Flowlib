@@ -3,8 +3,7 @@
 from enum import Enum
 from pydantic import Field
 from flowlib.core.models import StrictBaseModel
-from typing import List, Optional, Dict, Any, Set, AsyncGenerator
-from pathlib import Path
+from typing import List, Optional, Dict, Any, Set
 from datetime import datetime
 
 
@@ -92,7 +91,7 @@ class TextChunk(StrictBaseModel):
     word_count: int = 0
     char_count: int = 0
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.word_count = len(self.text.split())
         self.char_count = len(self.text)
 
@@ -332,26 +331,50 @@ class VectorStoreInput(StrictBaseModel):
     embedding_provider_name: Optional[str] = Field(None, description="Embedding provider name")
 
 
+class VectorDocument(StrictBaseModel):
+    """Document indexed in vector store."""
+    document_id: str
+    chunk_count: int
+    status: str
+    indexed_at: datetime
+
+
 class VectorStoreOutput(StrictBaseModel):
-    """Output from vector store creation."""
+    """Output from vector store operations."""
     collection_name: str
     total_vectors: int
     embeddings_created: List[VectorEmbedding] = Field(default_factory=list)
 
+    # Optional fields for search operations
+    search_results: Optional[List[VectorSearchResult]] = Field(default=None)
+    query_text: Optional[str] = Field(default=None)
+
+    # Optional fields for index/update operations
+    documents_indexed: Optional[List[VectorDocument]] = Field(default=None)
+    status: Optional[str] = Field(default=None)
+    timestamp: Optional[datetime] = Field(default=None)
+
 
 class GraphStoreInput(StrictBaseModel):
-    """Input for graph store creation."""
+    """Input for graph store creation and queries."""
     documents: List[DocumentContent]
     entities: List[Entity]
     relationships: List[Relationship]
     config: Dict[str, Any] = Field(default_factory=dict)
-    
+
     # Graph storage configuration
     graph_name: str = Field("knowledge_graph", description="Name for the graph database")
     graph_provider_name: str = Field("neo4j", description="Graph database provider")
     neo4j_uri: str = Field("bolt://localhost:7687", description="Neo4j connection URI")
     neo4j_username: str = Field("neo4j", description="Neo4j username")
     neo4j_password: str = Field("password", description="Neo4j password")
+
+    # Query fields for graph operations
+    query_entity_id: str = Field("", description="Entity ID for queries")
+    query_entity_type: str = Field("", description="Entity type for queries")
+    query_source_id: str = Field("", description="Source entity ID for path queries")
+    query_target_id: str = Field("", description="Target entity ID for path queries")
+    query_limit: int = Field(100, description="Limit for query results")
 
 
 class GraphStoreOutput(StrictBaseModel):
@@ -427,7 +450,15 @@ class ExtractionState(StrictBaseModel):
     failed_docs: Dict[str, str] = Field(default_factory=dict, description="Failed documents with error messages")
     
     # Progress tracking
-    progress: ExtractionProgress = Field(default_factory=ExtractionProgress, description="Progress information")
+    progress: ExtractionProgress = Field(default_factory=lambda: ExtractionProgress(
+        total_documents=0,
+        processed_documents=0,
+        current_document=None,
+        entities_extracted=0,
+        relationships_extracted=0,
+        chunks_created=0,
+        estimated_completion=None
+    ), description="Progress information")
     
     # Knowledge accumulation
     detected_domains: Set[str] = Field(default_factory=set, description="Detected knowledge domains")
@@ -443,7 +474,17 @@ class ExtractionState(StrictBaseModel):
     checkpoint_plugins: List[str] = Field(default_factory=list, description="Paths to exported checkpoint plugins")
     
     # Configuration
-    extraction_config: ExtractionConfig = Field(default_factory=ExtractionConfig, description="Extraction configuration")
+    extraction_config: ExtractionConfig = Field(default_factory=lambda: ExtractionConfig(
+        batch_size=5,
+        checkpoint_interval=10,
+        memory_limit_gb=8,
+        enable_resumption=True,
+        chunking_strategy=ChunkingStrategy.PARAGRAPH_AWARE,
+        max_chunk_size=1000,
+        overlap_size=200,
+        min_chunk_size=100,
+        preserve_structure=True
+    ), description="Extraction configuration")
 
 
 class CheckpointData(StrictBaseModel):
@@ -539,7 +580,17 @@ class KnowledgeExtractionRequest(StrictBaseModel):
     use_graph_db: bool = Field(True, description="Enable Neo4j graph storage")
     
     # Streaming configuration
-    extraction_config: ExtractionConfig = Field(default_factory=ExtractionConfig, description="Extraction settings")
+    extraction_config: ExtractionConfig = Field(default_factory=lambda: ExtractionConfig(
+        batch_size=5,
+        checkpoint_interval=10,
+        memory_limit_gb=8,
+        enable_resumption=True,
+        chunking_strategy=ChunkingStrategy.PARAGRAPH_AWARE,
+        max_chunk_size=1000,
+        overlap_size=200,
+        min_chunk_size=100,
+        preserve_structure=True
+    ), description="Extraction settings")
     
     # Resume configuration
     resume_from_checkpoint: bool = Field(True, description="Resume from existing checkpoint if available")
@@ -599,7 +650,17 @@ class DocumentExtractionInput(StrictBaseModel):
 class ChunkingInput(StrictBaseModel):
     """Input for smart chunking flow."""
     document: DocumentContent = Field(..., description="Document to chunk")
-    config: ExtractionConfig = Field(default_factory=ExtractionConfig, description="Chunking configuration")
+    config: ExtractionConfig = Field(default_factory=lambda: ExtractionConfig(
+        batch_size=5,
+        checkpoint_interval=10,
+        memory_limit_gb=8,
+        enable_resumption=True,
+        chunking_strategy=ChunkingStrategy.PARAGRAPH_AWARE,
+        max_chunk_size=1000,
+        overlap_size=200,
+        min_chunk_size=100,
+        preserve_structure=True
+    ), description="Chunking configuration")
 
 
 class ChunkingOutput(StrictBaseModel):

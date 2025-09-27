@@ -6,13 +6,30 @@ TODO list management, execution tracking, and agent activity integration.
 
 import asyncio
 from datetime import timedelta
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Protocol, Callable, Any
+from asyncio import Queue, Task
 
 from flowlib.agent.core.base import AgentComponent
 from ..models import (
     TodoItem, TodoList, TodoPriority, TodoStatus, TodoStatusSummary,
     TodoExecutionContext, TodoExecutionResult
 )
+
+
+class ActivityStreamProtocol(Protocol):
+    """Protocol for activity stream interface."""
+
+    def todo_create(self, content: str, priority: str) -> None:
+        """Log TODO creation."""
+        ...
+
+    def todo_update(self, todo_id: str, status: str, content: str, error: Optional[str] = None) -> None:
+        """Log TODO update."""
+        ...
+
+    def todo_status(self, summary: Dict[str, int]) -> None:
+        """Log TODO status summary."""
+        ...
 
 
 class TodoManager(AgentComponent):
@@ -22,20 +39,20 @@ class TodoManager(AgentComponent):
     dependency resolution, and activity stream integration.
     """
     
-    def __init__(self, name: str = "TodoManager", activity_stream=None):
+    def __init__(self, name: str = "TodoManager", activity_stream: Optional[ActivityStreamProtocol] = None) -> None:
         super().__init__(name)
         self.current_list: Optional[TodoList] = None
         self.saved_lists: Dict[str, TodoList] = {}
-        self.execution_queue = asyncio.Queue()
-        self.executor_task: Optional[asyncio.Task] = None
+        self.execution_queue: Queue[TodoItem] = asyncio.Queue()
+        self.executor_task: Optional[Task[None]] = None
         self.auto_execute = False
         self._activity_stream = activity_stream
     
-    async def _initialize_impl(self):
+    async def _initialize_impl(self) -> None:
         """Initialize the TODO manager."""
         self.current_list = TodoList()
     
-    async def _shutdown_impl(self):
+    async def _shutdown_impl(self) -> None:
         """Shutdown the TODO manager."""
         if self.executor_task:
             self.executor_task.cancel()
@@ -199,21 +216,29 @@ class TodoManager(AgentComponent):
     def get_todo_status_summary(self) -> TodoStatusSummary:
         """Get summary of TODO statuses."""
         if not self.current_list:
-            return TodoStatusSummary()
+            return TodoStatusSummary(
+                total=0,
+                pending=0,
+                in_progress=0,
+                completed=0,
+                cancelled=0,
+                failed=0,
+                blocked=0
+            )
         
         return self.current_list.get_status_summary()
     
-    def stream_todo_status(self):
+    def stream_todo_status(self) -> None:
         """Stream current TODO status if activity stream is available."""
         if self._activity_stream:
             status = self.get_todo_status_summary()
-            self._activity_stream.todo_status(
-                total=status.total,
-                completed=status.completed,
-                in_progress=status.in_progress
-            )
+            self._activity_stream.todo_status({
+                "total": status.total,
+                "completed": status.completed,
+                "in_progress": status.in_progress
+            })
     
-    async def execute_todo(self, todo_id: str, executor_callback) -> bool:
+    async def execute_todo(self, todo_id: str, executor_callback: Callable[[TodoItem], Any]) -> bool:
         """Execute a specific TODO using the provided callback.
         
         Args:
@@ -252,7 +277,7 @@ class TodoManager(AgentComponent):
             self.current_list.update_todo(todo_id, failed_todo)
             return False
     
-    async def start_auto_execution(self, executor_callback, delay: float = 1.0):
+    async def start_auto_execution(self, executor_callback: Callable[[TodoItem], Any], delay: float = 1.0) -> None:
         """Start automatic execution of TODOs.
         
         Args:
@@ -264,13 +289,13 @@ class TodoManager(AgentComponent):
             self._auto_executor(executor_callback, delay)
         )
     
-    def stop_auto_execution(self):
+    def stop_auto_execution(self) -> None:
         """Stop automatic execution."""
         self.auto_execute = False
         if self.executor_task:
             self.executor_task.cancel()
     
-    async def _auto_executor(self, executor_callback, delay: float):
+    async def _auto_executor(self, executor_callback: Callable[[TodoItem], Any], delay: float) -> None:
         """Auto-executor loop."""
         while self.auto_execute:
             try:

@@ -6,39 +6,46 @@ for AWS S3 and S3-compatible storage services using boto3.
 
 import os
 import logging
-from typing import Dict, List, Optional, BinaryIO, Tuple, Union
+from typing import Dict, List, Optional, BinaryIO, Tuple, Union, Any, TYPE_CHECKING
 
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.storage.base import StorageProvider, FileMetadata
-from flowlib.providers.core.base import ProviderSettings
+from flowlib.providers.storage.base import StorageProviderSettings
+from flowlib.providers.core.decorators import provider
 from pydantic import Field
 from .models import (
-    S3ObjectResponse, S3ListObjectResponse, S3ErrorContainer, 
-    S3ErrorResponse, S3ListResponse, S3UploadResponse
+    S3ObjectResponse, S3ListObjectResponse, S3ErrorContainer
 )
 
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import boto3
-    import botocore
-    from botocore.exceptions import ClientError
-    from aiobotocore.session import get_session
+    import botocore  # type: ignore[import-untyped]
+    from botocore.exceptions import ClientError  # type: ignore[import-untyped]
+    from aiobotocore.session import get_session  # type: ignore[import-not-found]
     BOTO3_AVAILABLE = True
-except ImportError:
-    logger.warning(
-        "boto3 or aiobotocore packages not found. Install with 'pip install boto3 aiobotocore'"
-    )
-    boto3 = None
-    botocore = None
-    ClientError = Exception
-    get_session = None
-    BOTO3_AVAILABLE = False
+else:
+    try:
+        import boto3
+        import botocore  # type: ignore[import-untyped]
+        from botocore.exceptions import ClientError  # type: ignore[import-untyped]
+        from aiobotocore.session import get_session  # type: ignore[import-not-found]
+        BOTO3_AVAILABLE = True
+    except ImportError:
+        logger.warning(
+            "boto3 or aiobotocore packages not found. Install with 'pip install boto3 aiobotocore'"
+        )
+        boto3 = None
+        botocore = None
+        ClientError = Exception
+        get_session = None
+        BOTO3_AVAILABLE = False
 
 
-class S3ProviderSettings(ProviderSettings):
+class S3ProviderSettings(StorageProviderSettings):
     """S3 storage provider settings - direct inheritance, only S3-specific fields.
     
     S3 requires:
@@ -77,10 +84,10 @@ class S3ProviderSettings(ProviderSettings):
     auto_content_type: bool = Field(default=True, description="Whether to automatically detect content type from file extensions")
 
 
-from flowlib.providers.core.decorators import provider
+# Decorator already imported above
 
 @provider(provider_type="storage", name="s3", settings_class=S3ProviderSettings)
-class S3Provider(StorageProvider):
+class S3Provider(StorageProvider[S3ProviderSettings]):
     """S3 implementation of the StorageProvider.
     
     This provider implements storage operations using boto3,
@@ -100,14 +107,13 @@ class S3Provider(StorageProvider):
         # Pass explicit settings to parent class
         super().__init__(name=name, settings=settings)
         
-        # Store settings for local use
-        self._settings = settings
-        self._client = None
-        self._resource = None
-        self._async_session = None
-        self._async_client = None
+        # Store settings for local use with proper type annotation
+        self._settings: S3ProviderSettings = settings
+        self._client: Optional[Any] = None
+        self._resource: Optional[Any] = None
+        self._async_session: Optional[Any] = None
     
-    def _parse_s3_error(self, client_error: 'ClientError') -> str:
+    def _parse_s3_error(self, client_error: ClientError) -> str:
         """Parse S3 error response strictly.
         
         Args:
@@ -129,7 +135,7 @@ class S3Provider(StorageProvider):
         self,
         message: str,
         operation: str,
-        cause: Exception = None
+        cause: Optional[Exception] = None
     ) -> ProviderError:
         """Create a provider error with strict context.
         
@@ -163,7 +169,7 @@ class S3Provider(StorageProvider):
             cause=cause
         )
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the S3 client and check or create the bucket."""
         if self._initialized:
             return
@@ -253,21 +259,16 @@ class S3Provider(StorageProvider):
                 cause=e
             )
             
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Close S3 client and release resources."""
         if not self._initialized:
             return
             
         try:
-            # Close async client if it exists
-            if self._async_client:
-                await self._async_client.close()
-                
             # No need to close boto3 clients, they handle their own lifecycle
             self._client = None
             self._resource = None
             self._async_session = None
-            self._async_client = None
             self._initialized = False
             logger.debug(f"{self.name} provider shut down successfully")
             
@@ -318,8 +319,8 @@ class S3Provider(StorageProvider):
                 return True
                 
             # Create bucket
-            create_bucket_kwargs = {"Bucket": bucket}
-            
+            create_bucket_kwargs: Dict[str, Union[str, Dict[str, str]]] = {"Bucket": bucket}
+
             # Add location constraint if region is specified
             if self._settings.region_name and self._settings.region_name != "us-east-1":
                 create_bucket_kwargs["CreateBucketConfiguration"] = {
@@ -613,7 +614,7 @@ class S3Provider(StorageProvider):
                 content_type = self.get_content_type(file_path)
                 
             # Prepare upload parameters
-            upload_args = {
+            upload_args: Dict[str, Union[str, Dict[str, str]]] = {
                 "Bucket": bucket,
                 "Key": object_key,
                 "Filename": file_path
@@ -737,7 +738,7 @@ class S3Provider(StorageProvider):
                 content_type = self.get_content_type(object_key)
                 
             # Prepare upload parameters
-            upload_args = {
+            upload_args: Dict[str, Union[str, bytes, BinaryIO, Dict[str, str]]] = {
                 "Bucket": bucket,
                 "Key": object_key
             }
@@ -746,9 +747,7 @@ class S3Provider(StorageProvider):
             if hasattr(data, "read"):
                 upload_args["Body"] = data
             else:
-                # Convert to bytes if not already
-                if not isinstance(data, bytes):
-                    data = bytes(data)
+                # Data must be bytes based on type annotation
                 upload_args["Body"] = data
                 
             # Add extra parameters if provided
@@ -1329,8 +1328,8 @@ class S3Provider(StorageProvider):
                 Params={"Bucket": bucket, "Key": object_key},
                 ExpiresIn=expiration
             )
-            
-            return url
+
+            return str(url)
             
         except Exception as e:
             # Wrap and re-raise errors
@@ -1354,13 +1353,13 @@ class S3Provider(StorageProvider):
             
     async def check_connection(self) -> bool:
         """Check if storage connection is active.
-        
+
         Returns:
             True if connection is active, False otherwise
         """
         if not self._initialized or not self._client:
             return False
-            
+
         try:
             # Try to list buckets
             self._client.list_buckets()
@@ -1368,20 +1367,21 @@ class S3Provider(StorageProvider):
         except Exception:
             return False
             
-    async def _ensure_bucket_exists(self):
+    async def _ensure_bucket_exists(self) -> None:
         """Ensure that the configured bucket exists, creating it if necessary."""
         bucket = self._settings.bucket
         
         try:
             # Check if bucket exists using direct client call (skip initialization check)
+            assert self._client is not None  # Method only called after initialization
             self._client.head_bucket(Bucket=bucket)
         except Exception:
             # Bucket doesn't exist, create it if requested
             if self._settings.create_bucket:
                 try:
                     # Create bucket
-                    create_bucket_kwargs = {"Bucket": bucket}
-                    
+                    create_bucket_kwargs: Dict[str, Union[str, Dict[str, str]]] = {"Bucket": bucket}
+
                     # Add location constraint if region is specified
                     if self._settings.region_name and self._settings.region_name != "us-east-1":
                         create_bucket_kwargs["CreateBucketConfiguration"] = {
@@ -1389,6 +1389,7 @@ class S3Provider(StorageProvider):
                         }
                         
                     # Create bucket using sync client (boto3)
+                    assert self._client is not None  # Method only called after initialization
                     self._client.create_bucket(**create_bucket_kwargs)
                     logger.debug(f"Created bucket: {bucket}")
                 except ClientError as e:
@@ -1452,36 +1453,37 @@ class S3Provider(StorageProvider):
                     )
                 )
                 
-    def _get_async_client(self):
+    def _get_async_client(self) -> Any:
         """Get or create an async S3 client context manager."""
         if not self._async_session:
             self._async_session = get_session()
-            
+
         # Create client config for the session
         client_kwargs = {}
-        
+
         # Add region if specified
         if self._settings.region_name:
             client_kwargs["region_name"] = self._settings.region_name
-            
+
         # Add endpoint URL for S3-compatible services
         if self._settings.endpoint_url:
             client_kwargs["endpoint_url"] = self._settings.endpoint_url
-            
+
         # Add credentials if provided
         if self._settings.access_key_id and self._settings.secret_access_key:
             client_kwargs["aws_access_key_id"] = self._settings.access_key_id
             client_kwargs["aws_secret_access_key"] = self._settings.secret_access_key
-            
+
             if self._settings.session_token:
                 client_kwargs["aws_session_token"] = self._settings.session_token
-                
+
         # Add config
         client_kwargs["config"] = botocore.config.Config(
             signature_version=self._settings.signature_version,
             s3={"addressing_style": "path" if self._settings.path_style else "auto"},
             max_pool_connections=self._settings.max_pool_connections
         )
-        
+
         # Create and return the async client context manager
+        assert self._async_session is not None  # Help mypy understand this can't be None here
         return self._async_session.create_client("s3", **client_kwargs) 

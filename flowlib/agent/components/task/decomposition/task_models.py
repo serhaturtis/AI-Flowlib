@@ -4,17 +4,19 @@ This module provides the input/output models for the task decomposition system
 that breaks down user requests into actionable TODO items.
 """
 
-from typing import List, Dict, Any, Optional
-from pydantic import Field, ConfigDict
+from typing import List, Dict, Optional
+from pydantic import Field
 from flowlib.core.models import StrictBaseModel
-from ..models import TodoPriority, TodoItem, RequestContext
+from ..models import TodoItem, RequestContext
 
 
 class TaskDecompositionInput(StrictBaseModel):
     """Input for task decomposition flow."""
-    
+
     task_description: str = Field(..., description="Task description to decompose")
     context: Optional[RequestContext] = Field(default=None, description="Request context")
+    thinking_insights: Optional[str] = Field(default=None, description="Strategic insights from thinking component")
+    relevant_memories: Optional[str] = Field(default=None, description="Retrieved relevant memories")
 
 
 class TaskDecompositionOutput(StrictBaseModel):
@@ -37,7 +39,7 @@ class TaskDecompositionOutput(StrictBaseModel):
         dependent_todos = sum(1 for todo in self.todos if todo.depends_on)
         
         # Count by priority
-        priority_counts = {}
+        priority_counts: dict[str, int] = {}
         for todo in self.todos:
             priority = todo.priority.value.title()
             priority_counts[priority] = priority_counts.get(priority, 0) + 1

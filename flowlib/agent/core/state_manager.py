@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from flowlib.agent.core.base import AgentComponent
-from flowlib.agent.core.errors import StatePersistenceError, ConfigurationError, NotInitializedError
+from flowlib.agent.core.errors import StatePersistenceError, NotInitializedError
 from flowlib.agent.models.state import AgentState, ConversationTurn
 from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.components.persistence.base import BaseStatePersister
@@ -97,7 +97,7 @@ class AgentStateManager(AgentComponent):
             state_data = await self._state_persister.load_state(task_id)
             if state_data is None:
                 raise StatePersistenceError(f"No state found for task {task_id}", "load", task_id)
-            self._current_state = AgentState(initial_state_data=state_data)
+            self._current_state = state_data
             logger.info(f"Loaded agent state for task_id: {task_id}")
             return self._current_state
         except Exception as e:
@@ -191,28 +191,28 @@ class AgentStateManager(AgentComponent):
     
     def should_auto_load(self, config: AgentConfig) -> bool:
         """Check if state should be auto-loaded.
-        
+
         Args:
             config: Agent configuration
-            
+
         Returns:
             True if auto-load is enabled and task_id is provided
         """
-        return (config.state_config and 
-                config.state_config.auto_load and 
-                config.task_id is not None)
+        return bool(config.state_config and
+                   config.state_config.auto_load and
+                   config.task_id is not None)
     
     def should_auto_save(self, config: AgentConfig) -> bool:
         """Check if state should be auto-saved.
-        
+
         Args:
             config: Agent configuration
-            
+
         Returns:
             True if auto-save is enabled
         """
-        return (config.state_config and 
-                config.state_config.auto_save)
+        return bool(config.state_config and
+                   config.state_config.auto_save)
     
     async def add_conversation_turn(self, turn: ConversationTurn) -> None:
         """Add conversation turn to session history.
@@ -228,10 +228,32 @@ class AgentStateManager(AgentComponent):
         
         # Get current model
         model = self._current_state.as_model()
-        
-        # Add turn to session conversation history
-        model.session.conversation_history.append(turn)
-        
+        if model is None:
+            raise RuntimeError("State model not available")
+
+        # Add turn to session conversation history - convert ConversationTurn to ConversationMessages
+        if model.session is None:
+            raise RuntimeError("Session not initialized")
+
+        # Import here to avoid circular imports
+        from .context.models import ConversationMessage
+
+        # Add user message
+        user_msg = ConversationMessage(
+            role="user",
+            content=turn.user_message,
+            timestamp=turn.timestamp
+        )
+        model.session.conversation_history.append(user_msg)
+
+        # Add agent response
+        agent_msg = ConversationMessage(
+            role="assistant",
+            content=turn.agent_response,
+            timestamp=turn.timestamp
+        )
+        model.session.conversation_history.append(agent_msg)
+
         # Update state with new session
         self._current_state._update_model(session=model.session)
         
@@ -251,14 +273,31 @@ class AgentStateManager(AgentComponent):
             }
         
         model = self._current_state.as_model()
-        
+        if model is None:
+            return {
+                "session_id": None,
+                "conversation_history": [],
+                "shared_context": {},
+                "working_directory": os.getcwd(),
+                "agent_name": None
+            }
+
+        if model.session is None:
+            return {
+                "session_id": None,
+                "conversation_history": [],
+                "shared_context": {},
+                "working_directory": os.getcwd(),
+                "agent_name": None
+            }
+
         # Get agent name from config manager if available
         agent_name = None
         if self._registry:
             config_manager = self._registry.get("config_manager")
             if config_manager and hasattr(config_manager, 'config'):
                 agent_name = config_manager.config.name
-        
+
         return {
             "session_id": model.session.session_id,
             "conversation_history": [
@@ -283,7 +322,12 @@ class AgentStateManager(AgentComponent):
             raise NotInitializedError("State not initialized", "update_shared_context")
         
         model = self._current_state.as_model()
-        
+        if model is None:
+            raise RuntimeError("State model not available")
+
+        if model.session is None:
+            raise RuntimeError("Session not initialized")
+
         # Update shared context
         model.session.shared_context.update(context_updates)
         

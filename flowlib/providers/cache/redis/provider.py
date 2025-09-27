@@ -3,45 +3,59 @@
 This module implements a Redis-based cache provider using the async Redis client.
 """
 
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Union, cast, TYPE_CHECKING
 import logging
 import json
 import pickle
-import time
-import asyncio
 try:
     import redis
-    from redis.connection import ConnectionPool
 except ImportError:
-    redis = None
-    ConnectionPool = None
+    pass
 
-from ..base import Provider
 from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.cache.base import CacheProvider
-from flowlib.providers.core.base import ProviderSettings
+from flowlib.providers.cache.base import CacheProvider, CacheProviderSettings
 from pydantic import Field
 from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
 
 logger = logging.getLogger(__name__)
 
-# For type annotations only
-ConnectionPool = Any
+# Type annotation fallback handled by import statements
 
-try:
-    import redis.asyncio as redis
-    from redis.asyncio.connection import ConnectionPool
-    from redis.exceptions import RedisError
-except ImportError:
-    logger.warning("redis package not found. Install with 'pip install redis'")
-    # Define a placeholder for RedisError for type checking
-    class RedisError(Exception):
-        pass
+if TYPE_CHECKING:
+    import redis.asyncio as redis_client
+    from redis.asyncio.connection import ConnectionPool as AsyncConnectionPool
+    from redis.exceptions import RedisError as RedisException
+    from redis.asyncio import Redis as RedisClient
+    REDIS_AVAILABLE = True
+else:
+    try:
+        import redis.asyncio as redis_client
+        from redis.asyncio.connection import ConnectionPool as AsyncConnectionPool
+        from redis.exceptions import RedisError as RedisException
+        from redis.asyncio import Redis as RedisClient
+        REDIS_AVAILABLE = True
+    except ImportError:
+        logger.warning("redis package not found. Install with 'pip install redis'")
+        # Define placeholders for type checking
+        class _RedisClientModule:
+            pass
+
+        class AsyncConnectionPool:  # type: ignore
+            pass
+
+        class RedisError(Exception):  # type: ignore
+            pass
+
+        class RedisClient:  # type: ignore
+            pass
+
+        redis_client = _RedisClientModule()  # type: ignore
+        REDIS_AVAILABLE = False
 
 
-class RedisCacheProviderSettings(ProviderSettings):
+class RedisCacheProviderSettings(CacheProviderSettings):
     """Redis cache provider settings - direct inheritance, only Redis-specific fields.
     
     Redis requires:
@@ -58,9 +72,7 @@ class RedisCacheProviderSettings(ProviderSettings):
     username: Optional[str] = Field(default=None, description="Redis username for ACL auth (Redis 6.0+)")
     password: Optional[str] = Field(default=None, description="Redis password (e.g., 'mySecurePassword123')")
     
-    # Cache behavior settings
-    namespace: Optional[str] = Field(default=None, description="Key namespace prefix")
-    default_ttl: Optional[int] = Field(default=None, description="Default TTL in seconds")
+    # Cache behavior settings - inherit from base CacheProviderSettings
     serialize_method: str = Field(default="json", description="Serialization method: json or pickle")
     
     # Connection pool settings
@@ -81,10 +93,9 @@ class RedisCacheProviderSettings(ProviderSettings):
     sentinel_master: Optional[str] = Field(default=None, description="Name of the Redis Sentinel master")
 
 
-from ..base import Provider
 
 @provider(provider_type="cache", name="redis-cache", settings_class=RedisCacheProviderSettings)
-class RedisCacheProvider(CacheProvider):
+class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
     """Redis implementation of the CacheProvider.
     
     This provider uses Redis for caching, supporting all standard
@@ -103,10 +114,10 @@ class RedisCacheProvider(CacheProvider):
         redis_settings = settings or RedisCacheProviderSettings()
         super().__init__(name=name, settings=redis_settings)
         self._redis_settings = redis_settings
-        self._pool = None
-        self._redis = None
+        self._pool: Optional[AsyncConnectionPool] = None
+        self._redis: Optional[RedisClient] = None
         
-    async def _initialize(self):
+    async def _initialize(self) -> None:
         """Initialize the Redis connection pool.
         
         Raises:
@@ -114,7 +125,7 @@ class RedisCacheProvider(CacheProvider):
         """
         try:
             # Create a connection pool - use settings with their validated defaults
-            self._pool = ConnectionPool(
+            self._pool = AsyncConnectionPool(
                 host=self._redis_settings.host,
                 port=self._redis_settings.port,
                 db=self._redis_settings.db,
@@ -131,7 +142,7 @@ class RedisCacheProvider(CacheProvider):
             )
             
             # Create Redis client
-            self._redis = redis.Redis(connection_pool=self._pool)
+            self._redis = redis_client.Redis(connection_pool=self._pool)
             
             # Test connection
             if not await self.check_connection():
@@ -155,7 +166,7 @@ class RedisCacheProvider(CacheProvider):
             # Mark as initialized
             logger.info(f"Redis cache provider '{self.name}' initialized successfully")
             
-        except RedisError as e:
+        except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
                 message=f"Redis initialization error: {str(e)}",
@@ -194,11 +205,11 @@ class RedisCacheProvider(CacheProvider):
                 cause=e
             )
             
-    async def _shutdown(self):
+    async def _shutdown(self) -> None:
         """Close Redis connections and release resources."""
         # Close pool
         if self._pool:
-            self._pool.disconnect()
+            await self._pool.disconnect()
             self._pool = None
             
         # Clear client
@@ -213,9 +224,13 @@ class RedisCacheProvider(CacheProvider):
         Returns:
             True if connection is active, False otherwise
         """
+        if self._redis is None:
+            return False
+
         try:
             # Simple PING command
-            return await self._redis.ping()
+            result = await self._redis.ping()
+            return bool(result)
         except Exception:
             return False
             
@@ -231,10 +246,28 @@ class RedisCacheProvider(CacheProvider):
         Raises:
             ProviderError: If retrieval fails
         """
+        if self._redis is None:
+            raise ProviderError(
+                message="Redis client not initialized",
+                context=ErrorContext.create(
+                    flow_name="redis_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="cache_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="cache",
+                    operation="cache_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Create namespaced key
             ns_key = self.make_namespaced_key(key)
-            
+
             # Get value from Redis
             value = await self._redis.get(ns_key)
             
@@ -252,7 +285,7 @@ class RedisCacheProvider(CacheProvider):
             else:
                 return value
                 
-        except RedisError as e:
+        except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
                 message=f"Redis get error: {str(e)}",
@@ -305,15 +338,34 @@ class RedisCacheProvider(CacheProvider):
         Raises:
             ProviderError: If caching fails
         """
+        if self._redis is None:
+            raise ProviderError(
+                message="Redis client not initialized",
+                context=ErrorContext.create(
+                    flow_name="redis_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="cache_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="cache",
+                    operation="cache_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Create namespaced key
             ns_key = self.make_namespaced_key(key)
-            
+
             # Set TTL to default if not specified
             if ttl is None:
                 ttl = self._redis_settings.default_ttl
                 
             # Serialize value based on serialization method
+            serialized: Union[str, bytes]
             if self._redis_settings.serialize_method == "json":
                 serialized = json.dumps(value)
             elif self._redis_settings.serialize_method == "pickle":
@@ -325,7 +377,7 @@ class RedisCacheProvider(CacheProvider):
             result = await self._redis.set(ns_key, serialized, ex=ttl)
             return result is True
             
-        except RedisError as e:
+        except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
                 message=f"Redis set error: {str(e)}",
@@ -376,15 +428,33 @@ class RedisCacheProvider(CacheProvider):
         Raises:
             ProviderError: If deletion fails
         """
+        if self._redis is None:
+            raise ProviderError(
+                message="Redis client not initialized",
+                context=ErrorContext.create(
+                    flow_name="redis_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="cache_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="cache",
+                    operation="cache_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Create namespaced key
             ns_key = self.make_namespaced_key(key)
-            
+
             # Delete value from Redis
             result = await self._redis.delete(ns_key)
-            return result > 0
+            return bool(result > 0)
             
-        except RedisError as e:
+        except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
                 message=f"Redis delete error: {str(e)}",
@@ -435,15 +505,33 @@ class RedisCacheProvider(CacheProvider):
         Raises:
             ProviderError: If check fails
         """
+        if self._redis is None:
+            raise ProviderError(
+                message="Redis client not initialized",
+                context=ErrorContext.create(
+                    flow_name="redis_provider",
+                    error_type="InitializationError",
+                    error_location=f"{self.__class__.__name__}",
+                    component=self.name,
+                    operation="cache_access"
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type="cache",
+                    operation="cache_access",
+                    retry_count=0
+                )
+            )
+
         try:
             # Create namespaced key
             ns_key = self.make_namespaced_key(key)
-            
+
             # Check if key exists in Redis
             result = await self._redis.exists(ns_key)
-            return result > 0
+            return bool(result > 0)
             
-        except RedisError as e:
+        except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
                 message=f"Redis exists error: {str(e)}",
@@ -499,8 +587,25 @@ class RedisCacheProvider(CacheProvider):
             ns_key = self.make_namespaced_key(key)
             
             # Get TTL from Redis
-            ttl = await self._redis.ttl(ns_key)
-            
+            if self._redis is None:
+                raise ProviderError(
+                    message="Redis client not initialized",
+                    context=ErrorContext.create(
+                        flow_name="redis_cache_provider",
+                        error_type="RedisError",
+                        error_location="get_ttl",
+                        component=self.name,
+                        operation="get_ttl"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="cache",
+                        operation="get_ttl",
+                        retry_count=0
+                    )
+                )
+            ttl = cast(int, await self._redis.ttl(ns_key))
+
             # Redis returns -2 if key doesn't exist, -1 if no TTL set
             if ttl == -2:
                 return None
@@ -509,7 +614,7 @@ class RedisCacheProvider(CacheProvider):
             else:
                 return ttl
                 
-        except RedisError as e:
+        except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
                 message=f"Redis TTL error: {str(e)}",
@@ -558,23 +663,41 @@ class RedisCacheProvider(CacheProvider):
             ProviderError: If clearing fails
         """
         try:
+            if self._redis is None:
+                raise ProviderError(
+                    message="Redis client not initialized",
+                    context=ErrorContext.create(
+                        flow_name="redis_cache_provider",
+                        error_type="RedisError",
+                        error_location="clear",
+                        component=self.name,
+                        operation="clear"
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type="cache",
+                        operation="clear",
+                        retry_count=0
+                    )
+                )
+
             # If a namespace is set, only clear keys in that namespace
             if self._redis_settings.namespace:
                 pattern = f"{self._redis_settings.namespace}:*"
                 # Get all keys matching the pattern
-                cursor = b'0'
+                cursor: int = 0
                 deleted_count = 0
-                
-                while cursor:
+
+                while True:
                     cursor, keys = await self._redis.scan(cursor=cursor, match=pattern, count=100)
-                    
+
                     if keys:
                         # Delete keys in batches
                         result = await self._redis.delete(*keys)
                         deleted_count += result
-                        
-                    # Exit when no more keys
-                    if cursor == b'0':
+
+                    # Exit when no more keys (cursor is 0)
+                    if cursor == 0:
                         break
                         
                 return True
@@ -583,7 +706,7 @@ class RedisCacheProvider(CacheProvider):
                 await self._redis.flushdb()
                 return True
                 
-        except RedisError as e:
+        except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
                 message=f"Redis clear error: {str(e)}",

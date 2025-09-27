@@ -4,15 +4,11 @@ Interactive command-line runner for agents.
 
 import logging
 import asyncio
-from typing import TYPE_CHECKING, Optional
+from typing import Union, Any
 
-# Avoid circular import, only type hint BaseAgent
-if TYPE_CHECKING:
-    from ..core.agent import BaseAgent
-    from flowlib.agent.models.state import AgentState # For type hint in run_autonomous
+from flowlib.agent.core.base_agent import BaseAgent
 
 # Import exceptions
-from ..core.errors import NotInitializedError, ExecutionError
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +16,10 @@ logger = logging.getLogger(__name__)
 _SENTINEL = object()
 
 async def _agent_worker(
-    agent: 'BaseAgent',
-    input_queue: asyncio.Queue,
-    output_queue: asyncio.Queue
-):
+    agent: BaseAgent,
+    input_queue: asyncio.Queue[Union[str, object]],
+    output_queue: asyncio.Queue[Any]
+) -> None:
     """Background task that processes messages from the input queue."""
     logger.info(f"Agent worker started for {agent.name}.")
     max_iterations = 1000  # Safety limit to prevent infinite loops
@@ -63,10 +59,10 @@ async def _agent_worker(
                         )
                     else:
                         logger.error("Agent has no suitable method (_handle_single_input or process_message) to handle input.")
-                        result = f"AGENT_ERROR: No suitable processing method available"
+                        result = "AGENT_ERROR: No suitable processing method available"
                 except asyncio.TimeoutError:
                     logger.error(f"Agent processing timed out for input: {input_item[:50]}...")
-                    result = f"TIMEOUT_ERROR: Agent processing took too long"
+                    result = "TIMEOUT_ERROR: Agent processing took too long"
             else:
                 logger.warning(f"Received non-string item in input queue: {type(input_item)}")
                 result = f"TYPE_ERROR: Expected string, got {type(input_item)}"
@@ -108,7 +104,7 @@ async def _agent_worker(
     
     logger.info("Agent worker finished.")
 
-async def run_interactive_session(agent: 'BaseAgent'):
+async def run_interactive_session(agent: BaseAgent) -> None:
     """Runs a standard interactive command-line session for an agent.
 
     Uses input/output queues to decouple I/O from agent processing.
@@ -122,6 +118,8 @@ async def run_interactive_session(agent: 'BaseAgent'):
         logger.error("Agent must be initialized before running interactive session.")
         return
 
+    if agent._state_manager.current_state is None:
+        raise RuntimeError("Agent state not initialized")
     task_id = agent._state_manager.current_state.task_id
     print("\n=== Interactive Agent Session ===")
     print(f"Agent: {agent.name}")
@@ -130,7 +128,7 @@ async def run_interactive_session(agent: 'BaseAgent'):
     print("Type 'exit' or 'quit' to end the session.")
 
     # Display recent history if available (modify as needed)
-    if agent._state_manager.current_state.system_messages:
+    if agent._state_manager.current_state and agent._state_manager.current_state.system_messages:
         print("\n=== Recent History ===")
         max_history = min(3, len(agent._state_manager.current_state.user_messages))
         if max_history > 0:
@@ -144,8 +142,8 @@ async def run_interactive_session(agent: 'BaseAgent'):
         print("\n======================")
 
     # Main conversation loop - Moved from dual_path_main
-    input_queue = asyncio.Queue(maxsize=100)  # Limit queue size to prevent memory issues
-    output_queue = asyncio.Queue(maxsize=100)
+    input_queue: asyncio.Queue[Union[str, object]] = asyncio.Queue(maxsize=100)  # Limit queue size to prevent memory issues
+    output_queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=100)
 
     # Start the agent worker task in the background
     worker_task = asyncio.create_task(
@@ -175,7 +173,7 @@ async def run_interactive_session(agent: 'BaseAgent'):
             except asyncio.TimeoutError:
                 logger.error("Timeout waiting for agent response")
                 result = None
-                print(f"\nAssistant: [Timeout] I'm taking too long to respond. Please try again.")
+                print("\nAssistant: [Timeout] I'm taking too long to respond. Please try again.")
 
             # Display response (prefer result, fallback to state)
             response_displayed = False
@@ -242,7 +240,10 @@ async def run_interactive_session(agent: 'BaseAgent'):
 
     # Shutdown the agent gracefully
     try:
-        logger.info(f"Saving final state for task {agent._state_manager.current_state.task_id}...")
+        if agent._state_manager.current_state:
+            logger.info(f"Saving final state for task {agent._state_manager.current_state.task_id}...")
+        else:
+            logger.info("Saving final state...")
         await agent.save_state()
         logger.info("Shutting down agent...")
         await agent.shutdown()

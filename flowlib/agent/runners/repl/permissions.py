@@ -4,10 +4,10 @@ This module implements opencode-style permissions for file operations,
 adapted to flowlib's architecture and CLAUDE.md principles.
 """
 
-import asyncio
 from enum import Enum
 from typing import Dict, Optional, Any, Protocol
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import Field, ConfigDict
+from flowlib.core.models import StrictBaseModel
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.panel import Panel
@@ -20,7 +20,7 @@ class PermissionLevel(Enum):
     DENY = "deny"
 
 
-class PermissionRequest(BaseModel):
+class PermissionRequest(StrictBaseModel):
     """Permission request model."""
     model_config = ConfigDict(extra="forbid", validate_assignment=True, strict=True)
     
@@ -33,7 +33,7 @@ class PermissionRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
-class PermissionResponse(BaseModel):
+class PermissionResponse(StrictBaseModel):
     """Permission response model."""
     model_config = ConfigDict(extra="forbid", validate_assignment=True, strict=True)
     
@@ -66,7 +66,7 @@ class InteractivePermissionHandler:
         
         # Add metadata if present
         if request.metadata:
-            content += f"[bold yellow]Metadata:[/bold yellow]\n"
+            content += "[bold yellow]Metadata:[/bold yellow]\n"
             for key, value in request.metadata.items():
                 content += f"  {key}: {value}\n"
         
@@ -123,7 +123,7 @@ class PermissionManager:
             "ls": PermissionLevel.ALLOW,
         }
     
-    def set_permission(self, operation: str, level: PermissionLevel):
+    def set_permission(self, operation: str, level: PermissionLevel) -> None:
         """Set permission level for an operation type."""
         self.permissions[operation] = level
     
@@ -150,7 +150,7 @@ class PermissionManager:
         # ASK level - request permission from handler
         return await self.handler.request_permission(request)
     
-    def set_handler(self, handler: PermissionHandler):
+    def set_handler(self, handler: PermissionHandler) -> None:
         """Set the permission handler."""
         self.handler = handler
 
@@ -196,11 +196,11 @@ async def request_permission(
     return response.granted
 
 
-def set_permission_level(operation: str, level: PermissionLevel):
+def set_permission_level(operation: str, level: PermissionLevel) -> None:
     """Set permission level for an operation type."""
     permission_manager.set_permission(operation, level)
 
 
-def set_permission_handler(handler: PermissionHandler):
+def set_permission_handler(handler: PermissionHandler) -> None:
     """Set the global permission handler."""
     permission_manager.set_handler(handler)

@@ -6,8 +6,8 @@ This module contains Pydantic models used by the agent execution engine.
 
 from __future__ import annotations
 
-from typing import Dict, Any, Optional, List, Union, Literal
-from pydantic import Field, ConfigDict
+from typing import Dict, Any, Optional, List, Literal
+from pydantic import Field
 from enum import Enum
 from datetime import datetime
 from flowlib.core.models import StrictBaseModel
@@ -70,7 +70,7 @@ class FlowInput(StrictBaseModel):
     """Typed inputs for flow execution replacing Dict[str, Any]."""
     
     # Core task data
-    task_description: Optional[str] = Field(default=None, description="Task to execute")
+    task_description: str = Field(..., description="Task to execute")
     user_message: Optional[str] = Field(default=None, description="Original user message")
     
     # Context information
@@ -155,8 +155,8 @@ class ExecutionStep(StrictBaseModel):
     
     step_id: str = Field(description="Unique step identifier")
     flow_name: str = Field(description="Name of flow executed")
-    inputs: FlowInput = Field(default_factory=FlowInput, description="Typed inputs to the flow")
-    outputs: FlowOutput = Field(default_factory=FlowOutput, description="Typed outputs from the flow")
+    inputs: FlowInput = Field(default_factory=lambda: FlowInput(task_description=""), description="Typed inputs to the flow")
+    outputs: FlowOutput = Field(default_factory=lambda: FlowOutput(success=False), description="Typed outputs from the flow")
     status: ExecutionStatus = Field(description="Step execution status")
     start_time: Optional[datetime] = Field(default=None, description="Step start time")
     end_time: Optional[datetime] = Field(default=None, description="Step end time")

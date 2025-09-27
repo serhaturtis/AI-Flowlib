@@ -5,7 +5,6 @@ from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 from .models import DomainStrategy, DomainStrategyConfig
-from ..analysis.prompts import EntityExtractionLLMPrompt, RelationshipExtractionLLMPrompt, ConceptExtractionLLMPrompt
 from flowlib.resources.models.base import ResourceBase
 from flowlib.resources.decorators.decorators import prompt
 from flowlib.providers.llm import PromptConfigOverride
@@ -280,11 +279,11 @@ class SoftwareEngineeringDomainStrategy(BaseDomainStrategy):
 class DomainStrategyRegistry:
     """Registry for domain-specific generation strategies."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._strategies: Dict[DomainStrategy, BaseDomainStrategy] = {}
         self._register_default_strategies()
     
-    def _register_default_strategies(self):
+    def _register_default_strategies(self) -> None:
         """Register built-in domain strategies."""
         self._strategies[DomainStrategy.GENERIC] = GenericDomainStrategy()
         self._strategies[DomainStrategy.SOFTWARE_ENGINEERING] = SoftwareEngineeringDomainStrategy()
@@ -308,7 +307,7 @@ class DomainStrategyRegistry:
             for domain, strategy in self._strategies.items()
         }
     
-    def register_strategy(self, domain: DomainStrategy, strategy: BaseDomainStrategy):
+    def register_strategy(self, domain: DomainStrategy, strategy: BaseDomainStrategy) -> None:
         """Register a custom domain strategy."""
         self._strategies[domain] = strategy
 

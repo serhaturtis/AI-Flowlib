@@ -5,7 +5,7 @@ This module defines the error classes used throughout the agent system.
 All agent errors now inherit from the unified core error system.
 """
 
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional, Type, Union
 from flowlib.core.errors.errors import BaseError, ErrorContext as CoreErrorContext
 
 
@@ -13,7 +13,7 @@ class ErrorContext:
     """Helper for creating error context dictionaries."""
     
     @staticmethod
-    def create(**context) -> Dict[str, Any]:
+    def create(**context: Union[str, int, bool, None]) -> Dict[str, Union[str, int, bool, None]]:
         """Create an error context dictionary."""
         return {k: v for k, v in context.items() if v is not None}
 
@@ -26,12 +26,12 @@ class AgentError(BaseError):
     """
     
     def __init__(
-        self, 
+        self,
         message: str,
         cause: Optional[Exception] = None,
         component: str = "agent",
         operation: str = "unknown",
-        **context
+        **context: Union[str, int, bool, None]
     ):
         """Initialize agent error.
         
@@ -44,7 +44,8 @@ class AgentError(BaseError):
         """
         # Create core error context
         # flow_name is optional - many errors occur outside flow context
-        flow_name = context.get("flow_name", "system")  # Use "system" as default for non-flow errors
+        flow_name_value = context.get("flow_name", "system")
+        flow_name = str(flow_name_value) if flow_name_value is not None else "system"
         error_context = CoreErrorContext.create(
             flow_name=flow_name,
             error_type=self.__class__.__name__,
@@ -56,8 +57,8 @@ class AgentError(BaseError):
         # Call parent constructor
         super().__init__(message, error_context, cause)
         
-        # Store additional context for backward compatibility
-        self.context = dict(context)
+        # Store additional context as a separate field
+        self.additional_context: Dict[str, Any] = dict(context)
     
     def __str__(self) -> str:
         """String representation - just the message for backward compatibility."""
@@ -74,7 +75,7 @@ class AgentError(BaseError):
         result = {
             "error_type": self.__class__.__name__,
             "message": self.message,
-            "context": self.context,
+            "context": self.additional_context,
         }
         
         if self.cause:
@@ -97,10 +98,10 @@ class NotInitializedError(AgentError):
     
     def __init__(
         self,
-        message: str = None,
-        component_name: str = None,
+        message: Optional[str] = None,
+        component_name: Optional[str] = None,
         operation: Optional[str] = None,
-        **context
+        **context: Union[str, int, bool, None]
     ):
         """Initialize not initialized error.
         
@@ -127,11 +128,11 @@ class NotInitializedError(AgentError):
         if not component_name:
             raise ValueError("AgentError requires component_name parameter - cannot be None or empty")
         parent_operation = operation
-        super().__init__(message, component=component_name, operation=parent_operation, **parent_context)
+        super().__init__(message, None, component_name, parent_operation, **parent_context)
         
         # Add operation back to context for backward compatibility
         if operation:
-            self.context["operation"] = operation
+            self.additional_context["operation"] = operation
 
 
 class ComponentError(AgentError):
@@ -141,12 +142,12 @@ class ComponentError(AgentError):
     """
     
     def __init__(
-        self, 
+        self,
         message: str,
         component_name: str,
         operation: Optional[str] = None,
         cause: Optional[Exception] = None,
-        **context
+        **context: Union[str, int, bool, None]
     ):
         """Initialize component error.
         
@@ -168,7 +169,7 @@ class ComponentError(AgentError):
         
         # Add operation back to context for backward compatibility
         if operation:
-            self.context["operation"] = operation
+            self.additional_context["operation"] = operation
 
 
 class ConfigurationError(AgentError):
@@ -178,13 +179,13 @@ class ConfigurationError(AgentError):
     """
     
     def __init__(
-        self, 
+        self,
         message: str,
         config_key: Optional[str] = None,
         invalid_value: Optional[Any] = None,
-        required_type: Optional[Type] = None,
+        required_type: Optional[Type[Any]] = None,
         cause: Optional[Exception] = None,
-        **context
+        **context: Union[str, int, bool, None]
     ):
         """Initialize configuration error.
         
@@ -204,8 +205,8 @@ class ConfigurationError(AgentError):
             context["invalid_value"] = str(invalid_value)
         if required_type:
             context["required_type"] = str(required_type)
-            
-        super().__init__(message, cause, **context)
+
+        super().__init__(message, cause, "config", "validation", **context)
 
 
 class ExecutionError(AgentError):
@@ -215,14 +216,14 @@ class ExecutionError(AgentError):
     """
     
     def __init__(
-        self, 
+        self,
         message: str,
         agent: Optional[str] = None,
         state: Optional[Any] = None,
         flow: Optional[str] = None,
         stage: Optional[str] = None,
         cause: Optional[Exception] = None,
-        **context
+        **context: Union[str, int, bool, None]
     ):
         """Initialize execution error.
         
@@ -253,8 +254,8 @@ class ExecutionError(AgentError):
             except Exception:
                 # Ignore any errors in state extraction
                 pass
-            
-        super().__init__(message, cause, **context)
+
+        super().__init__(message, cause, "execution", "execute", **context)
 
 
 class PlanningError(ExecutionError):
@@ -267,7 +268,7 @@ class PlanningError(ExecutionError):
         self,
         message: str,
         planning_type: str = "planning",  # "planning" or "input_generation"
-        **kwargs
+        **kwargs: Any
     ):
         """Initialize planning error.
         
@@ -292,7 +293,7 @@ class ReflectionError(ExecutionError):
     def __init__(
         self,
         message: str,
-        **kwargs
+        **kwargs: Any
     ):
         """Initialize reflection error.
         
@@ -311,13 +312,13 @@ class MemoryError(AgentError):
     """
     
     def __init__(
-        self, 
+        self,
         message: str,
         operation: Optional[str] = None,
         key: Optional[str] = None,
         context: Optional[str] = None,
         cause: Optional[Exception] = None,
-        **kwargs
+        **kwargs: Any
     ):
         """Initialize memory error.
         
@@ -344,7 +345,7 @@ class MemoryError(AgentError):
         
         # Add operation back to context for backward compatibility
         if operation:
-            self.context["operation"] = operation
+            self.additional_context["operation"] = operation
 
 
 
@@ -355,12 +356,12 @@ class StatePersistenceError(AgentError):
     """
     
     def __init__(
-        self, 
+        self,
         message: str,
         operation: str,  # "save", "load", "delete", "list"
         task_id: Optional[str] = None,
         cause: Optional[Exception] = None,
-        **context
+        **context: Union[str, int, bool, None]
     ):
         """Initialize state persistence error.
         
@@ -383,7 +384,7 @@ class StatePersistenceError(AgentError):
         super().__init__(message, cause=cause, component="persistence", operation=operation, **parent_context)
         
         # Add operation back to context for backward compatibility
-        self.context["operation"] = operation
+        self.additional_context["operation"] = operation
 
 
 class ProviderError(AgentError):
@@ -393,12 +394,12 @@ class ProviderError(AgentError):
     """
     
     def __init__(
-        self, 
+        self,
         message: str,
         provider_name: Optional[str] = None,
         operation: Optional[str] = None,
         cause: Optional[Exception] = None,
-        **kwargs
+        **kwargs: Any
     ):
         """Initialize provider error.
         
@@ -421,4 +422,4 @@ class ProviderError(AgentError):
         
         # Add operation back to context for backward compatibility
         if operation:
-            self.context["operation"] = operation 
+            self.additional_context["operation"] = operation 

@@ -4,7 +4,6 @@ This module provides examples of how to use the formatting utilities
 in various contexts within the flowlib ecosystem.
 """
 
-from typing import Dict, Any, List
 
 # Import all the formatting utilities
 from flowlib.utils.formatting import (
@@ -12,27 +11,14 @@ from flowlib.utils.formatting import (
     process_escape_sequences,
     
     # Entity formatting
-    format_entity_for_display,
-    format_entities_as_context,
-    
-    # Conversation formatting
     format_conversation,
     format_state,
     format_history,
-    format_flows,
-    
-    # JSON formatting
-    extract_json,
-    
-    # Schema formatting
-    get_model_schema_text,
-    
-    # Serialization
-    make_serializable
+    extract_json
 )
 
 
-def example_text_formatting():
+def example_text_formatting() -> None:
     """Example of text formatting usage."""
     # Process escape sequences in text
     raw_text = "This has escape sequences: \\n New line and \\t tab"
@@ -41,7 +27,7 @@ def example_text_formatting():
     print("Processed:", repr(processed))
     
 
-def example_conversation_formatting():
+def example_conversation_formatting() -> None:
     """Example of conversation formatting usage."""
     # Create sample conversation history
     conversation = [
@@ -87,7 +73,7 @@ def example_conversation_formatting():
     print(formatted_history)
 
 
-def example_json_extraction():
+def example_json_extraction() -> None:
     """Example of JSON extraction usage."""
     # Example text with embedded JSON
     text_with_json = """
@@ -108,7 +94,7 @@ def example_json_extraction():
     print(json_data)
 
 
-def run_examples():
+def run_examples() -> None:
     """Run all examples."""
     print("=== TEXT FORMATTING EXAMPLES ===")
     example_text_formatting()

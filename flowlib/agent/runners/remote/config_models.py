@@ -2,10 +2,11 @@
 Pydantic models for parsing the remote configuration YAML file (e.g., remote_config.yaml).
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import Field, ConfigDict
+from flowlib.core.models import StrictBaseModel
 from typing import Optional
 
-class WorkerServiceConfig(BaseModel):
+class WorkerServiceConfig(StrictBaseModel):
     """Configuration specific to the Agent Worker service."""
     model_config = ConfigDict(frozen=True, extra="forbid")
     
@@ -15,17 +16,26 @@ class WorkerServiceConfig(BaseModel):
     results_queue: str = Field("agent_results", description="Default name of the queue to publish results to.")
     base_agent_config_path: Optional[str] = Field("./agent_config.yaml", description="Path to the base YAML file for default agent configuration.")
 
-class CLIToolConfig(BaseModel):
+class CLIToolConfig(StrictBaseModel):
     """Configuration specific to the CLI tool."""
     model_config = ConfigDict(frozen=True, extra="forbid")
     
     mq_provider_name: str = Field("rabbitmq", description="Registered name of the MQ provider instance to use.")
     task_queue: str = Field("agent_tasks", description="Default name of the task queue to publish to.")
 
-class RemoteConfig(BaseModel):
+class RemoteConfig(StrictBaseModel):
     """Root model for the remote configuration file."""
     model_config = ConfigDict(frozen=True, extra="forbid")
     
-    worker: WorkerServiceConfig = Field(default_factory=WorkerServiceConfig)
-    cli: CLIToolConfig = Field(default_factory=CLIToolConfig)
+    worker: WorkerServiceConfig = Field(default_factory=lambda: WorkerServiceConfig(
+        mq_provider_name="rabbitmq",
+        state_persister_name="redis",
+        task_queue="agent_tasks",
+        results_queue="agent_results",
+        base_agent_config_path="./agent_config.yaml"
+    ))
+    cli: CLIToolConfig = Field(default_factory=lambda: CLIToolConfig(
+        mq_provider_name="rabbitmq",
+        task_queue="agent_tasks"
+    ))
     # Add other sections as needed (e.g., result_processor) 

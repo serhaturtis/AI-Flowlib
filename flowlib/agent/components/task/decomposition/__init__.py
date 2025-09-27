@@ -27,6 +27,10 @@ __all__ = [
     "TaskDecompositionFlow",
     "TaskDecompositionPrompt",
     
+    # Task generation components (for registration)
+    "TaskGenerationFlow",
+    "TaskGenerationPrompt",
+    
     # TODO execution models
     "TodoExecutionPlan",
     "TodoExecutionValidation",

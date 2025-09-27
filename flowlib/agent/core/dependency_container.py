@@ -1,13 +1,13 @@
 """Dependency injection container for agent components."""
 
-import asyncio
 import logging
 from typing import Type, TypeVar, Optional, List
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import Field, ConfigDict
+from flowlib.core.models import StrictBaseModel
 from collections import defaultdict
 
 from flowlib.agent.core.interfaces import ComponentInterface
-from flowlib.agent.core.errors import ComponentError, AgentError
+from flowlib.agent.core.errors import ComponentError
 from flowlib.agent.core.base import AgentComponent
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T', bound=ComponentInterface)
 
 
-class ComponentRegistration(BaseModel):
+class ComponentRegistration(StrictBaseModel):
     """Registration information for a component."""
     model_config = ConfigDict(extra="forbid", frozen=True, validate_assignment=True, strict=True, arbitrary_types_allowed=True)
     
@@ -27,12 +27,12 @@ class ComponentRegistration(BaseModel):
 class ComponentContainer:
     """Manages component lifecycle and dependencies with proper initialization order."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._components: dict[str, AgentComponent] = {}
         self._providers: dict[str, object] = {}
         self._dependencies: dict[str, List[str]] = defaultdict(list)
-        self._initialized: set = set()
-        self._initializing: set = set()
+        self._initialized: set[str] = set()
+        self._initializing: set[str] = set()
         
     async def register_component(
         self, 
@@ -139,7 +139,7 @@ class ComponentContainer:
     def _get_initialization_order(self) -> List[str]:
         """Get components in dependency order using topological sort."""
         # Kahn's algorithm for topological sorting
-        in_degree = defaultdict(int)
+        in_degree: dict[str, int] = defaultdict(int)
         all_components = set(self._components.keys())
         
         # Calculate in-degrees
@@ -232,7 +232,3 @@ class AgentComponentRegistry:
     def create_standard_container() -> ComponentContainer:
         """Create a container with standard agent components."""
         return ComponentContainer()
-    
-    
-    
-    @staticmethod

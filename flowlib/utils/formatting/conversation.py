@@ -4,7 +4,7 @@ This module provides utilities for formatting conversation data,
 including message history, state information, and flow representations.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 
 def format_conversation(conversation: List[Dict[str, str]]) -> str:
@@ -61,7 +61,7 @@ def format_history(history: List[Dict[str, Any]]) -> str:
         return "No execution history yet."
     
     # Convert from the old format to the new standardized format
-    normalized_history = []
+    normalized_history: List[Dict[str, Any]] = []
     for step in history:
         if "action" in step and step["action"] == "execute_flow":
             normalized_entry = {
@@ -177,9 +177,6 @@ def format_execution_history(history_entries: List[Dict[str, Any]]) -> str:
                 entry_text += f"\n   Reflection: {reflection}"
                     
             history_items.append(entry_text)
-        else:
-            # Handle non-dict entries (should be rare)
-            history_items.append(f"{i}. {str(entry)}")
                 
     return "\n".join(history_items)
 

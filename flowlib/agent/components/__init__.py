@@ -8,13 +8,11 @@ Each component has its own module with models, interfaces, and implementations.
 from flowlib.agent.components.memory import MemoryComponent
 from flowlib.agent.components.task.decomposition import TaskDecompositionComponent
 from flowlib.agent.components.task.execution import TaskExecutionComponent
-from flowlib.agent.components.engine import EngineComponent
 
 __all__ = [
     "MemoryComponent",
-    "TaskDecompositionComponent", 
+    "TaskDecompositionComponent",
     "TaskExecutionComponent",
-    "EngineComponent",
-    "engine", 
+    "engine",
     "memory"
 ]

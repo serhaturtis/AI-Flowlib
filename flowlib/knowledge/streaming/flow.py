@@ -4,17 +4,17 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Set, AsyncGenerator
+from typing import AsyncGenerator, cast, Any, Dict
+import yaml  # type: ignore[import-untyped]
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.knowledge.models import (
     KnowledgeExtractionRequest, KnowledgeExtractionResult,
-    ExtractionState, ExtractionConfig, ExtractionProgress,
-    DocumentContent, KnowledgeBaseStats, DocumentType
+    ExtractionState, ExtractionConfig, DocumentContent, KnowledgeBaseStats, DocumentType,
+    DocumentProcessingResult
 )
 from flowlib.knowledge.chunking.flow import SmartChunkingFlow
 from flowlib.knowledge.chunking.models import ChunkingInput
-from flowlib.knowledge.extraction.flow import DocumentExtractionFlow
 from flowlib.knowledge.analysis.flow import EntityAnalysisFlow
 from flowlib.knowledge.vector.flow import VectorStorageFlow
 from flowlib.knowledge.graph.flow import GraphStorageFlow
@@ -23,7 +23,7 @@ from flowlib.knowledge.streaming.checkpoint_manager import CheckpointManager
 logger = logging.getLogger(__name__)
 
 
-@flow(name="knowledge-extraction", description="Knowledge extraction with checkpointing and streaming support")
+@flow(name="knowledge-extraction", description="Knowledge extraction with checkpointing and streaming support")  # type: ignore[arg-type]
 class KnowledgeExtractionFlow:
     """Main orchestrator for knowledge extraction with automatic checkpointing and streaming support."""
 
@@ -133,7 +133,8 @@ class KnowledgeExtractionFlow:
         streaming_state = ExtractionState(
             extraction_config=request.extraction_config,
             streaming_vector_db_path=str(checkpoint_manager.streaming_vector_db_dir),
-            streaming_graph_db_path=str(checkpoint_manager.streaming_graph_db_dir)
+            streaming_graph_db_path=str(checkpoint_manager.streaming_graph_db_dir),
+            last_checkpoint_at=0
         )
         
         return streaming_state
@@ -231,9 +232,9 @@ class KnowledgeExtractionFlow:
         )
         
         chunking_result = await chunking_flow.run_pipeline(chunking_input)
-        return chunking_result.document
+        return cast(DocumentContent, chunking_result.document)
 
-    async def _extract_entities_relationships(self, doc_content: DocumentContent, request: KnowledgeExtractionRequest):
+    async def _extract_entities_relationships(self, doc_content: DocumentContent, request: KnowledgeExtractionRequest) -> Any:
         """Extract entities and relationships from document."""
         
         from flowlib.knowledge.models import EntityExtractionInput
@@ -242,7 +243,10 @@ class KnowledgeExtractionFlow:
         
         analysis_input = EntityExtractionInput(
             documents=[doc_content],
-            extraction_domain=request.extraction_domain
+            extraction_domain=request.extraction_domain,
+            llm_model_name="default-llm-model",
+            min_entity_frequency=2,
+            min_relationship_confidence=0.7
         )
         
         return await analysis_flow.run_pipeline(analysis_input)
@@ -261,11 +265,15 @@ class KnowledgeExtractionFlow:
             # Use regular pipeline for now
             vector_input = VectorStoreInput(
                 documents=[doc_content],
-                collection_name="streaming_knowledge"
+                collection_name="streaming_knowledge",
+                embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+                vector_dimensions=384,
+                vector_provider_name="chroma",
+                embedding_provider_name="default-embedding"
             )
             await vector_flow.run_pipeline(vector_input)
 
-    async def _stream_to_graph_db(self, extraction_result, streaming_state: ExtractionState) -> None:
+    async def _stream_to_graph_db(self, extraction_result: DocumentProcessingResult, streaming_state: ExtractionState) -> None:
         """Stream entities and relationships to persistent graph database."""
         
         from flowlib.knowledge.graph.models import GraphStoreInput
@@ -281,7 +289,16 @@ class KnowledgeExtractionFlow:
                 documents=[],  # Empty for streaming
                 entities=extraction_result.entities,
                 relationships=extraction_result.relationships,
-                graph_name="streaming_graph"
+                graph_provider_name="neo4j",
+                graph_name="streaming_graph",
+                neo4j_uri="bolt://localhost:7687",
+                neo4j_username="neo4j",
+                neo4j_password="password",
+                query_entity_id="",
+                query_entity_type="",
+                query_source_id="",
+                query_target_id="",
+                query_limit=100
             )
             await graph_flow.run_pipeline(graph_input)
 
@@ -346,7 +363,7 @@ class KnowledgeExtractionFlow:
             json.dump(relationships_data, f, indent=2, default=str)
         
         # Export empty chunks (streaming flow doesn't use chunks)
-        chunks_data = []
+        chunks_data: list[dict[str, str]] = []
         with open(data_dir / "chunks.json", 'w') as f:
             json.dump(chunks_data, f, indent=2, default=str)
         
@@ -365,9 +382,8 @@ class KnowledgeExtractionFlow:
             json.dump(metadata, f, indent=2, default=str)
         
         # Create simple manifest
-        import yaml
-        
-        manifest_data = {
+
+        manifest_data: Dict[str, Any] = {
             "name": final_plugin_name,
             "description": f"Complete knowledge base from {len(streaming_state.processed_docs)} documents",
             "version": "1.0.0",
@@ -427,13 +443,14 @@ Generated by AI-Flowlib streaming knowledge extraction.
         processing_time = (datetime.now() - start_time).total_seconds()
         
         # Count entity types
-        entity_types = {}
+        from flowlib.knowledge.models import EntityType, RelationType
+        entity_types: dict[EntityType, int] = {}
         for entity in streaming_state.accumulated_entities:
             entity_type = entity.entity_type
             entity_types[entity_type] = entity_types[entity_type] + 1 if entity_type in entity_types else 1
-        
-        # Count relationship types  
-        relationship_types = {}
+
+        # Count relationship types
+        relationship_types: dict[RelationType, int] = {}
         for rel in streaming_state.accumulated_relationships:
             rel_type = rel.relationship_type
             relationship_types[rel_type] = relationship_types[rel_type] + 1 if rel_type in relationship_types else 1

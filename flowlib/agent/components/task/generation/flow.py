@@ -4,14 +4,16 @@ This flow uses an LLM to classify user messages and enrich them with context
 for optimal task processing.
 """
 
-from typing import Dict, Any
+from typing import cast
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.agent.models.conversation import ConversationMessage
 from .models import TaskGenerationInput, TaskGenerationOutput, GeneratedTask
 
 
-@flow(
+@flow(  # type: ignore[arg-type]
     name="task-generation",
     description="Classify user messages and generate enriched task definitions with context",
     is_infrastructure=False
@@ -30,7 +32,7 @@ class TaskGenerationFlow:
             TaskGenerationOutput with classified and enriched task definition
         """
         # Get LLM provider using config-driven approach
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Get prompt from registry
         prompt_instance = resource_registry.get("task-generation-prompt")
@@ -48,10 +50,10 @@ class TaskGenerationFlow:
         
         # Generate task from user message using LLM
         result = await llm.generate_structured(
-            prompt=prompt_instance,
+            prompt=cast(PromptTemplate, prompt_instance),
             output_type=GeneratedTask,
             model_name="default-model",
-            prompt_variables=prompt_vars
+            prompt_variables=cast(dict[str, object], prompt_vars)
         )
         
         return TaskGenerationOutput(
@@ -61,7 +63,7 @@ class TaskGenerationFlow:
             llm_calls_made=1
         )
     
-    def _format_conversation_history(self, history) -> str:
+    def _format_conversation_history(self, history: list[ConversationMessage]) -> str:
         """Format conversation history for the prompt."""
         if not history:
             return "No previous conversation"

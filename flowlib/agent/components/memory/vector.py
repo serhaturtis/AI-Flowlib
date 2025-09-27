@@ -6,20 +6,22 @@ modernized agent framework patterns with config-driven providers.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from datetime import datetime
+from typing import Any, Dict, List, Optional, cast
 
 from pydantic import Field
 from flowlib.core.models import StrictBaseModel
+from flowlib.providers.vector.base import VectorDBProvider
+from flowlib.providers.embedding.base import EmbeddingProvider
 
-from ...core.errors import MemoryError, ErrorContext
+from ...core.errors import MemoryError
 from .models import (
     MemoryStoreRequest,
     MemoryRetrieveRequest,
-    MemorySearchRequest,
-    MemoryContext
+    MemorySearchRequest
 )
 # Import MemoryItem and MemorySearchResult from the proper location
-from .models import MemoryItem, MemorySearchResult
+from .models import MemoryItem, MemorySearchResult, MemorySearchMetadata
 from flowlib.providers.core.registry import provider_registry
 
 logger = logging.getLogger(__name__)
@@ -69,11 +71,11 @@ class VectorMemory:
         self._config = config or VectorMemoryConfig()
         
         # Provider instances (resolved during initialization)
-        self._vector_provider = None
-        self._embedding_provider = None
+        self._vector_provider: Optional[VectorDBProvider] = None
+        self._embedding_provider: Optional[EmbeddingProvider] = None
         
         # Contexts tracking
-        self._contexts = set()
+        self._contexts: set[str] = set()
         self._initialized = False
         
         logger.info(f"Initialized VectorMemory with config: {self._config}")
@@ -92,25 +94,27 @@ class VectorMemory:
         
         try:
             # Get providers using config-driven approach
-            self._vector_provider = await provider_registry.get_by_config(
+            vector_provider = await provider_registry.get_by_config(
                 self._config.vector_provider_config
             )
-            if not self._vector_provider:
+            if not vector_provider:
                 raise MemoryError(
                     f"Vector provider not found: {self._config.vector_provider_config}",
                     operation="initialize",
                     provider_config=self._config.vector_provider_config
                 )
-            
-            self._embedding_provider = await provider_registry.get_by_config(
+            self._vector_provider = cast(VectorDBProvider, vector_provider)
+
+            embedding_provider = await provider_registry.get_by_config(
                 self._config.embedding_provider_config
             )
-            if not self._embedding_provider:
+            if not embedding_provider:
                 raise MemoryError(
                     f"Embedding provider not found: {self._config.embedding_provider_config}",
                     operation="initialize",
                     provider_config=self._config.embedding_provider_config
                 )
+            self._embedding_provider = cast(EmbeddingProvider, embedding_provider)
             
             # Ensure collection exists
             await self._ensure_collection()
@@ -145,13 +149,17 @@ class VectorMemory:
         """Ensure the vector collection exists using standard interface methods."""
         try:
             # Use the standard index_exists method from base interface
+            if self._vector_provider is None:
+                raise RuntimeError("Vector provider not initialized")
             collection_exists = await self._vector_provider.index_exists(self._config.collection_name)
             
             if not collection_exists:
                 # Use the standard create_index method from base interface
+                # Use a default dimension if not specified (1536 is OpenAI's default)
+                dimension = self._config.embedding_dimensions if self._config.embedding_dimensions is not None else 1536
                 created = await self._vector_provider.create_index(
                     index_name=self._config.collection_name,
-                    vector_dimension=self._config.embedding_dimensions,
+                    vector_dimension=dimension,
                     metric=self._config.distance_metric
                 )
                 if created:
@@ -208,6 +216,8 @@ class VectorMemory:
                 metadata.update(request.metadata)
             
             # Store in vector database using standard interface
+            if self._vector_provider is None:
+                raise RuntimeError("Vector provider not initialized")
             await self._vector_provider.insert_batch(
                 vectors=[embedding],
                 metadatas=[metadata],
@@ -234,6 +244,8 @@ class VectorMemory:
             
         try:
             # Query by metadata filter for exact match using new standard interface
+            if self._vector_provider is None:
+                raise RuntimeError("Vector provider not initialized")
             results = await self._vector_provider.get_by_filter(
                 filter={
                     "context": request.context,
@@ -259,8 +271,8 @@ class VectorMemory:
                 item = MemoryItem(
                     key=request.key,
                     value=doc,
-                    context=request.context,
-                    metadata=user_metadata
+                    context=request.context if request.context is not None else "default",
+                    updated_at=datetime.now()
                 )
                 
                 logger.debug(f"Retrieved vector memory item '{request.key}' from context '{request.context}'")
@@ -287,6 +299,8 @@ class VectorMemory:
                 where_filter["context"] = request.context
             
             # Perform vector search using standard interface
+            if self._vector_provider is None:
+                raise RuntimeError("Vector provider not initialized")
             results = await self._vector_provider.search(
                 query_vector=query_embedding,
                 top_k=min(request.limit or self._config.max_results, self._config.max_results),
@@ -294,7 +308,7 @@ class VectorMemory:
                 index_name=self._config.collection_name
             )
             
-            search_results = []
+            search_results: List[MemorySearchResult] = []
             
             # Results are now List[SimilaritySearchResult] from standard interface
             for result in results:
@@ -316,17 +330,19 @@ class VectorMemory:
                         key=metadata['key'],
                         value=doc,
                         context=metadata['context'],
-                        metadata=metadata
+                        updated_at=datetime.now()
                     )
                     
                     search_results.append(MemorySearchResult(
                         item=item,
                         score=similarity,
-                        metadata={
-                            "search_type": "semantic",
-                            "distance": result.score,  # Use original score as distance
-                            "similarity": similarity
-                        }
+                        metadata=MemorySearchMetadata(
+                            search_query=request.query,
+                            search_type="semantic",
+                            search_time_ms=0.0,
+                            total_results=len(results),
+                            result_rank=len(search_results) + 1
+                        )
                     ))
             
             logger.debug(f"Found {len(search_results)} vector memory results for query '{request.query}'")
@@ -348,7 +364,11 @@ class VectorMemory:
         search_request = MemorySearchRequest(
             query=query,
             context=context,
-            limit=limit
+            limit=limit,
+            threshold=None,
+            sort_by=None,
+            search_type="hybrid",
+            metadata_filter=None
         )
         
         search_results = await self.search(search_request)
@@ -366,6 +386,8 @@ class VectorMemory:
             
         try:
             # Get all documents in this context using standard interface
+            if self._vector_provider is None:
+                raise RuntimeError("Vector provider not initialized")
             results = await self._vector_provider.get_by_filter(
                 filter={"context": context},
                 top_k=10000,  # Large number to get all
@@ -399,16 +421,28 @@ class VectorMemory:
         """Generate embedding for text using the embedding provider."""
         try:
             # Generate embedding
+            if self._embedding_provider is None:
+                raise RuntimeError("Embedding provider not initialized")
             embeddings = await self._embedding_provider.embed([text])
-            
+
+            # Type validation following flowlib's no-fallbacks principle
             if not embeddings or len(embeddings) == 0:
                 raise MemoryError(
                     "Embedding provider returned empty result",
                     operation="embed",
                     text_length=len(text)
                 )
-            
-            return embeddings[0]
+
+            if not isinstance(embeddings[0], list) or not all(isinstance(x, (int, float)) for x in embeddings[0]):
+                raise MemoryError(
+                    f"Embedding provider returned invalid type: expected list[float], got {type(embeddings[0])}",
+                    operation="embed",
+                    text_length=len(text)
+                )
+
+            # Explicitly cast to ensure type correctness
+            embedding: List[float] = [float(x) for x in embeddings[0]]
+            return embedding
             
         except Exception as e:
             raise MemoryError(

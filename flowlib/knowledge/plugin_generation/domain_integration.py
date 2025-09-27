@@ -1,12 +1,11 @@
 """Integration helpers for domain-aware plugin generation."""
 
 import logging
-from typing import Dict, Any, Optional, Tuple
-from pathlib import Path
+from typing import Dict, Any, Tuple
 
 from .domain_strategies import domain_strategy_registry, BaseDomainStrategy
-from .models import PluginGenerationRequest, DomainStrategy, DomainStrategyConfig
-from ..models.models import ExtractionConfig, ChunkingStrategy
+from .models import PluginGenerationRequest
+from ..models import ExtractionConfig, ChunkingStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 class DomainAwarePluginGenerator:
     """Helper class to integrate domain strategies into plugin generation."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.registry = domain_strategy_registry
     
     def get_domain_strategy(self, request: PluginGenerationRequest) -> BaseDomainStrategy:
@@ -39,6 +38,12 @@ class DomainAwarePluginGenerator:
             max_chunk_size=request.chunk_size,
             overlap_size=request.chunk_overlap,
             chunking_strategy=ChunkingStrategy.SEMANTIC_AWARE,
+            batch_size=5,
+            checkpoint_interval=10,
+            memory_limit_gb=8,
+            enable_resumption=True,
+            min_chunk_size=100,
+            preserve_structure=True
         )
         
         # Create domain-specific metadata for later use
@@ -123,7 +128,11 @@ class DomainAwarePluginGenerator:
     
     def get_available_strategies(self) -> Dict[str, Dict[str, str]]:
         """Get list of available domain strategies for UI/CLI."""
-        return self.registry.list_available_strategies()
+        strategies = self.registry.list_available_strategies()
+        return {
+            str(domain): metadata
+            for domain, metadata in strategies.items()
+        }
 
 
 # Global instance for easy access

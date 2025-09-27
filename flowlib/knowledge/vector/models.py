@@ -1,8 +1,6 @@
 """Models for vector storage flow."""
 
-from datetime import datetime
-from typing import List, Dict, Optional, Any
-from pydantic import Field
+from typing import Dict, Optional, Any
 from flowlib.core.models import StrictBaseModel
 
 from flowlib.knowledge.models import (
@@ -12,14 +10,6 @@ from flowlib.knowledge.models import (
     VectorSearchResult,
     DocumentContent
 )
-
-
-class VectorDocument(StrictBaseModel):
-    """Document indexed in vector store."""
-    document_id: str
-    chunk_count: int
-    status: str
-    indexed_at: datetime
 
 
 class SearchQuery(StrictBaseModel):
@@ -45,11 +35,10 @@ class SearchResult(StrictBaseModel):
 
 __all__ = [
     "VectorStoreInput",
-    "VectorStoreOutput", 
+    "VectorStoreOutput",
     "VectorEmbedding",
     "VectorSearchResult",
     "DocumentContent",
-    "VectorDocument",
     "SearchQuery",
     "SearchResult"
 ]

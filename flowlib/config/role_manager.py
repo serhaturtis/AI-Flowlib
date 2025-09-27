@@ -6,7 +6,7 @@ between semantic role names and canonical configuration names.
 """
 
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from flowlib.resources.registry.registry import resource_registry
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class RoleManager:
     All operations work through the resource registry's alias system.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the role manager."""
         # We don't need separate storage - the resource registry handles everything
         # This manager is just a high-level interface
@@ -171,7 +171,6 @@ class RoleManager:
         roles = {}
         
         # Get all configurations
-        all_configs = []
         try:
             # This is a bit hacky but we need to iterate through all configs
             # to find their aliases
@@ -215,7 +214,7 @@ class RoleManager:
         
         return issues
     
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> Dict[str, float]:
         """Get role assignment statistics.
         
         Returns:

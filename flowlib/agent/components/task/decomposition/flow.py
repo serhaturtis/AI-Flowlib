@@ -5,15 +5,16 @@ and breaks them down into structured, actionable TODO items with dependencies.
 """
 
 import uuid
-from typing import Dict, List, Any
+from typing import Optional, cast, Any
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
+from ..models import RequestContext
 from .task_models import TaskDecompositionInput, TaskDecompositionOutput
-from ..models import TodoItem, TodoPriority, TodoStatus
 
 
-@flow(
+@flow(  # type: ignore[arg-type]
     name="task-decomposition",
     description="Decompose user requests into structured TODO items with dependencies and tool assignments",
     is_infrastructure=False
@@ -32,13 +33,14 @@ class TaskDecompositionFlow:
             Decomposed TODO items with dependencies and execution strategy
         """
         # Get LLM provider using config-driven approach
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Get prompt from registry
         prompt_instance = resource_registry.get("task-decomposition-prompt")
         
-        # Get available tools from tool registry
-        tools_text = await self._get_available_tools_text()
+        # Get available tools filtered by agent role
+        agent_role = input_data.context.agent_role if input_data.context else None
+        tools_text = await self._get_available_tools_text(agent_role)
         
         # Format context properly
         context_text = self._format_context(input_data.context)
@@ -52,17 +54,22 @@ class TaskDecompositionFlow:
             "context": context_text,
             "available_tools": tools_text,
             "execution_history_text": execution_history_text,
-            "relevant_memories_text": "No memories retrieved"  # TODO: Add memory retrieval if needed
+            "relevant_memories_text": input_data.relevant_memories,
+            "thinking_insights": input_data.thinking_insights
         }
         
         # Generate task decomposition using LLM with proper model
         result = await llm.generate_structured(
-            prompt=prompt_instance,
+            prompt=cast(PromptTemplate, prompt_instance),
             output_type=TaskDecompositionOutput,
             model_name="default-model",
-            prompt_variables=prompt_vars
+            prompt_variables=cast(dict[str, object], prompt_vars)
         )
-        
+
+        # Type validation following flowlib's no-fallbacks principle
+        if not isinstance(result, TaskDecompositionOutput):
+            raise ValueError(f"Expected TaskDecompositionOutput from LLM, got {type(result)}")
+
         # Validate and ensure all TODOs have proper IDs and timestamps
         for todo in result.todos:
             if not todo.id:
@@ -81,22 +88,26 @@ class TaskDecompositionFlow:
         
         return result
     
-    async def _get_available_tools_text(self) -> str:
-        """Get available tools and format for prompt."""
+    async def _get_available_tools_text(self, agent_role: Optional[str] = None) -> str:
+        """Get available tools filtered by agent role and format for prompt."""
+        from flowlib.agent.components.task.execution.tool_role_manager import tool_role_manager
         from flowlib.agent.components.task.execution.registry import tool_registry
-        
-        # Get all registered tools with metadata
+
+        # Get tools allowed for this agent role using role-based filtering
+        allowed_tools = tool_role_manager.get_allowed_tools(agent_role)
+
+        # Get metadata for allowed tools
         tools_list = []
-        for tool_name in tool_registry.list_tools():
+        for tool_name in allowed_tools:
             metadata = tool_registry.get_metadata(tool_name)
             if metadata:
                 tools_list.append(f"- {tool_name}: {metadata.description}")
             else:
                 tools_list.append(f"- {tool_name}: Available tool")
-        
-        return "\n".join(tools_list) if tools_list else "No tools available"
+
+        return "\n".join(tools_list) if tools_list else "No tools available for this agent role"
     
-    def _format_context(self, context) -> str:
+    def _format_context(self, context: Optional[RequestContext]) -> str:
         """Format RequestContext for the prompt."""
         if not context:
             return "No additional context provided"
@@ -119,7 +130,7 @@ class TaskDecompositionFlow:
         
         return "\n".join(context_lines) if context_lines else "No additional context provided"
     
-    def _format_conversation_history(self, messages) -> str:
+    def _format_conversation_history(self, messages: Optional[list[Any]]) -> str:
         """Format conversation history for the prompt with actual message content."""
         if not messages or len(messages) == 0:
             return "No previous conversation"
@@ -137,3 +148,4 @@ class TaskDecompositionFlow:
                 formatted_messages.append(f"message: {str(msg)}")
         
         return "\n".join(formatted_messages)
+

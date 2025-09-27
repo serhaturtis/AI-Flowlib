@@ -2,7 +2,6 @@
 
 from typing import Optional
 from pydantic import Field
-from flowlib.core.models import StrictBaseModel
 from ...models import ToolResult, ToolStatus
 
 

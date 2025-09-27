@@ -7,20 +7,22 @@ Orchestrates interactions between different specialized memory components
 
 import logging
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
+from flowlib.agent.core.activity_stream import ActivityStream
+from flowlib.providers.knowledge.plugin_manager import KnowledgePluginManager
+from flowlib.providers.llm.base import LLMProvider
 
 from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
-from ...core.errors import MemoryError, ErrorContext
+from ...core.errors import MemoryError
 from ...core.base import AgentComponent
 from .models import (
     MemoryItem,
     MemoryStoreRequest,
     MemoryRetrieveRequest,
     MemorySearchRequest,
-    MemorySearchResult,
-    MemoryContext
+    MemorySearchResult
 )
 
 # Import modernized memory types
@@ -65,25 +67,25 @@ class MemoryComponent(AgentComponent):
     def __init__(
         self,
         config: Optional[AgentMemoryConfig] = None,
-        activity_stream=None,
-        knowledge_plugins=None
-    ):
+        activity_stream: Optional[ActivityStream] = None,
+        knowledge_plugins: Optional[KnowledgePluginManager] = None
+    ) -> None:
         """Initialize agent memory with config-driven components."""
         super().__init__("agent_memory")
         self._config = config or AgentMemoryConfig()
         
         # Memory component instances
-        self._vector_memory = None
-        self._knowledge_memory = None
-        self._working_memory = None
-        self._fusion_llm = None
+        self._vector_memory: Optional[VectorMemory] = None
+        self._knowledge_memory: Optional[KnowledgeMemory] = None
+        self._working_memory: Optional[WorkingMemory] = None
+        self._fusion_llm: Optional[LLMProvider] = None
         
         # Optional components
         self._activity_stream = activity_stream
         self._knowledge_plugins = knowledge_plugins
         
         # State tracking
-        self._contexts = set()
+        self._contexts: set[str] = set()
         self._initialized = False
         
         logger.info(f"Initialized AgentMemory with config: {self._config}")
@@ -107,6 +109,9 @@ class MemoryComponent(AgentComponent):
             self._knowledge_memory = KnowledgeMemory(self._config.knowledge_memory)
             
             # Initialize all memory components
+            if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
+                raise RuntimeError("Memory components not properly initialized")
+
             await asyncio.gather(
                 self._working_memory.initialize(),
                 self._vector_memory.initialize(),
@@ -114,9 +119,9 @@ class MemoryComponent(AgentComponent):
             )
             
             # Initialize LLM provider for fusion
-            self._fusion_llm = await provider_registry.get_by_config(
+            self._fusion_llm = cast(LLMProvider[Any], await provider_registry.get_by_config(
                 self._config.fusion_llm_config
-            )
+            ))
             if not self._fusion_llm:
                 raise MemoryError(
                     f"Fusion LLM provider not found: {self._config.fusion_llm_config}"
@@ -169,6 +174,9 @@ class MemoryComponent(AgentComponent):
         logger.debug(f"Creating context: {context_name}")
         
         # Create context in all memory components
+        if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
+            raise RuntimeError("Memory components not initialized")
+
         tasks = [
             self._working_memory.create_context(context_name, metadata),
             self._vector_memory.create_context(context_name, metadata),
@@ -213,10 +221,13 @@ class MemoryComponent(AgentComponent):
                     should_store_in_working = False
                     logger.debug(f"Skipping working memory for '{request.key}' (execution history disabled)")
             
+            if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
+                raise RuntimeError("Memory components not initialized")
+
             if should_store_in_working:
                 logger.debug(f"Storing '{request.key}' in working memory")
                 storage_tasks.append(self._working_memory.store(request))
-            
+
             # 2. Store entities in Knowledge Base
             if is_entity:
                 logger.debug(f"Storing '{request.key}' as entity in knowledge memory")
@@ -273,6 +284,17 @@ class MemoryComponent(AgentComponent):
         """
         await self.store(request)
 
+    async def retrieve_with_model(self, request: MemoryRetrieveRequest) -> Optional[MemoryItem]:
+        """Retrieve data using structured request model.
+
+        This method provides compatibility for code that expects the interface method.
+        It delegates to the main retrieve() method.
+
+        Args:
+            request: Memory retrieve request with all parameters
+        """
+        return await self.retrieve(request)
+
     async def retrieve(self, request: MemoryRetrieveRequest) -> Optional[MemoryItem]:
         """Retrieve by key, checking Working Memory first, then Knowledge Memory."""
         if not self._initialized:
@@ -280,6 +302,10 @@ class MemoryComponent(AgentComponent):
             
         # 1. Check Working Memory first (fastest access)
         logger.debug(f"Attempting to retrieve key '{request.key}' from working memory")
+
+        if self._working_memory is None:
+            raise RuntimeError("Working memory not initialized")
+
         try:
             item = await self._working_memory.retrieve(request)
             if item is not None: 
@@ -291,6 +317,10 @@ class MemoryComponent(AgentComponent):
 
         # 2. Check Knowledge Memory (for entities and structured data)
         logger.debug(f"Attempting to retrieve key '{request.key}' from knowledge memory")
+
+        if self._knowledge_memory is None:
+            raise RuntimeError("Knowledge memory not initialized")
+
         try:
             item = await self._knowledge_memory.retrieve(request)
             if item is not None:
@@ -302,6 +332,10 @@ class MemoryComponent(AgentComponent):
             
         # 3. Check Vector Memory (last resort for key-based retrieval)
         logger.debug(f"Attempting to retrieve key '{request.key}' from vector memory")
+
+        if self._vector_memory is None:
+            raise RuntimeError("Vector memory not initialized")
+
         try:
             item = await self._vector_memory.retrieve(request)
             if item is not None:
@@ -324,6 +358,9 @@ class MemoryComponent(AgentComponent):
 
         logger.debug(f"Performing fused search for query: '{request.query}'")
         
+        if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
+            raise RuntimeError("Memory components not initialized")
+
         try:
             # Execute searches across all memory components
             search_tasks = [
@@ -384,7 +421,11 @@ class MemoryComponent(AgentComponent):
         search_request = MemorySearchRequest(
             query=query,
             context=context,
-            limit=limit
+            limit=limit,
+            threshold=None,
+            sort_by=None,
+            search_type="hybrid",
+            metadata_filter=None
         )
         
         search_results = await self.search(search_request)
@@ -401,7 +442,10 @@ class MemoryComponent(AgentComponent):
             raise MemoryError("AgentMemory not initialized")
             
         logger.warning(f"Wiping memory context '{context}' across all components...")
-        
+
+        if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
+            raise RuntimeError("Memory components not initialized")
+
         wipe_tasks = [
             self._working_memory.wipe_context(context),
             self._vector_memory.wipe_context(context),

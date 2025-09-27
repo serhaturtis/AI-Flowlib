@@ -6,7 +6,7 @@ using an in-memory dictionary as the backend for caching.
 
 import logging
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 import asyncio
 from collections import OrderedDict
 from pydantic import Field
@@ -15,13 +15,12 @@ from flowlib.core.errors.errors import ProviderError, ErrorContext
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
 # Removed ProviderType import - using config-driven provider access
-from flowlib.providers.cache.base import CacheProvider
-from flowlib.providers.core.base import ProviderSettings
+from flowlib.providers.cache.base import CacheProvider, CacheProviderSettings
 
 logger = logging.getLogger(__name__)
 
 
-class InMemoryCacheProviderSettings(ProviderSettings):
+class InMemoryCacheProviderSettings(CacheProviderSettings):
     """In-memory cache provider settings - direct inheritance, only in-memory specific fields.
     
     In-memory cache requires:
@@ -37,13 +36,12 @@ class InMemoryCacheProviderSettings(ProviderSettings):
     max_size: int = Field(default=1000, description="Maximum number of items to store in memory")
     cleanup_interval: int = Field(default=300, description="Cleanup interval in seconds (5 minutes)")
     default_ttl: int = Field(default=3600, description="Default TTL in seconds (1 hour)")
-    namespace: Optional[str] = Field(default=None, description="Namespace prefix for cache keys")
+    # namespace inherited from CacheProviderSettings with default="default"
 
 
-from ..base import Provider
 
 @provider(provider_type="cache", name="memory-cache", settings_class=InMemoryCacheProviderSettings)
-class MemoryCacheProvider(CacheProvider):
+class MemoryCacheProvider(CacheProvider[InMemoryCacheProviderSettings]):
     """In-memory implementation of the CacheProvider.
     
     This provider implements a simple in-memory cache for storing
@@ -60,11 +58,11 @@ class MemoryCacheProvider(CacheProvider):
         super().__init__(name=name, settings=settings or InMemoryCacheProviderSettings())
         self._memory_settings = settings or InMemoryCacheProviderSettings()
         self._lock = asyncio.Lock()
-        self._cache = OrderedDict()  # For LRU eviction
-        self._expiry = {}  # Maps keys to expiry times
-        self._cleanup_task = None
+        self._cache: OrderedDict[str, Any] = OrderedDict()  # For LRU eviction
+        self._expiry: Dict[str, Optional[float]] = {}  # Maps keys to expiry times
+        self._cleanup_task: Optional[asyncio.Task[None]] = None
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the in-memory cache.
         
         This method sets up the cleanup task for expired keys.
@@ -77,7 +75,7 @@ class MemoryCacheProvider(CacheProvider):
         
         logger.info(f"In-memory cache provider '{self.name}' initialized successfully")
         
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Release resources and stop cleanup task."""
         # Cancel cleanup task if it exists and is running
         if self._cleanup_task is not None:
@@ -115,7 +113,7 @@ class MemoryCacheProvider(CacheProvider):
         # In-memory cache is always active if initialized
         return self.initialized
         
-    async def _cleanup_loop(self):
+    async def _cleanup_loop(self) -> None:
         """Periodically clean up expired keys."""
         try:
             while True:
@@ -135,7 +133,7 @@ class MemoryCacheProvider(CacheProvider):
                     pass
             raise
             
-    async def _cleanup_expired(self):
+    async def _cleanup_expired(self) -> None:
         """Remove expired keys from cache."""
         now = time.time()
         to_delete = []
@@ -156,7 +154,7 @@ class MemoryCacheProvider(CacheProvider):
         if to_delete:
             logger.debug(f"Cleaned up {len(to_delete)} expired keys from in-memory cache")
             
-    async def _enforce_max_size(self):
+    async def _enforce_max_size(self) -> None:
         """Enforce maximum cache size by evicting items."""
         if not self._memory_settings.max_size:
             return

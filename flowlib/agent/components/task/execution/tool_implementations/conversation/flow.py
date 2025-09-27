@@ -1,8 +1,10 @@
 """Flow for conversation tool direct response generation."""
 
+from typing import cast, Dict, Any
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.core.models import StrictBaseModel
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
 from pydantic import Field
 from .prompts import ConversationResponseGenerationPrompt
@@ -28,7 +30,7 @@ class ConversationResponseModel(StrictBaseModel):
     response: str = Field(..., description="Generated conversation response")
 
 
-@flow(name="conversation-generation", description="Generate direct response to user message")
+@flow(name="conversation-generation", description="Generate direct response to user message")  # type: ignore[arg-type]
 class ConversationFlow:
     """Flow for generating conversation response directly from user input."""
     
@@ -37,18 +39,18 @@ class ConversationFlow:
         """Generate conversation response directly from user message."""
         
         # Get LLM provider
-        llm = await provider_registry.get_by_config("default-llm")
+        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
         
         # Generate response directly using the user's message
         response_prompt = resource_registry.get("conversation_response_generation", ConversationResponseGenerationPrompt)
         
-        response_variables = {
+        response_variables: Dict[str, Any] = {
             "message": request.task_content,  # Use user input directly
             "persona": request.agent_persona  # Use agent's persona
         }
         
         response_obj = await llm.generate_structured(
-            prompt=response_prompt,
+            prompt=cast(PromptTemplate, response_prompt),
             output_type=ConversationResponseModel,
             model_name="default-model",
             prompt_variables=response_variables

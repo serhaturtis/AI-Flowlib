@@ -6,16 +6,16 @@ through the registry system. Following flowlib's architectural patterns.
 
 import logging
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, cast
 from datetime import datetime
 import uuid
 
 from flowlib.core.models import StrictBaseModel
+from pydantic import Field
 from .models import (
-    ToolParameters, ToolResult, ToolExecutionContext, ToolStatus,
-    ToolExecutionError
+    ToolResult, ToolExecutionContext, ToolStatus,
+    ToolExecutionError, ToolErrorContext
 )
-from .interfaces import ToolInterface
 from .registry import ToolRegistry, ToolNotFoundError, tool_registry
 
 logger = logging.getLogger(__name__)
@@ -27,12 +27,7 @@ class ToolExecutionRequest(StrictBaseModel):
     tool_name: str
     raw_parameters: Dict[str, Any]
     context: Optional[ToolExecutionContext] = None
-    execution_id: str = None
-    
-    def __init__(self, **data):
-        if 'execution_id' not in data or not data['execution_id']:
-            data['execution_id'] = str(uuid.uuid4())
-        super().__init__(**data)
+    execution_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
 
 class ToolExecutionResponse(StrictBaseModel):
@@ -92,32 +87,48 @@ class ToolOrchestrator:
         try:
             logger.debug(f"Executing tool: {request.tool_name} ({request.execution_id})")
             
-            # Create a simple todo object from raw parameters
-            from types import SimpleNamespace
+            # Create a proper TodoItem from raw parameters
+            from ..models import TodoItem
             # Ensure content has a default if not in raw_parameters
             raw_params = dict(request.raw_parameters)
             if 'content' not in raw_params:
                 raw_params['content'] = f"Execute {request.tool_name}"
-            
-            todo = SimpleNamespace(**raw_params)
+
+            # Add assigned tool
+            raw_params['assigned_tool'] = request.tool_name
+
+            todo = TodoItem(**raw_params)
             
             # Execute tool using new architecture (tool handles its own parameters)
-            result = await self._registry.execute_tool(
-                request.tool_name, 
-                todo, 
-                request.context or ToolExecutionContext()
+            default_context = ToolExecutionContext(
+                working_directory="/tmp",
+                agent_id="system_agent",
+                agent_persona="system",
+                execution_id=f"exec_{int(datetime.now().timestamp())}"
+            )
+            result = await self._registry.execute_todo(
+                todo,
+                request.context or default_context
             )
             
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             
-            # Check if result indicates success
-            if hasattr(result, 'is_success') and result.is_success():
-                status = ToolStatus.SUCCESS
-            elif hasattr(result, 'is_error') and result.is_error():
-                status = ToolStatus.ERROR
-            else:
-                # Default to success if result doesn't have status methods
-                status = ToolStatus.SUCCESS
+            # Check if result indicates success using safe method calls
+            status = ToolStatus.SUCCESS  # Default to success
+            try:
+                # Try is_success method first
+                if result.is_success():
+                    status = ToolStatus.SUCCESS
+                else:
+                    status = ToolStatus.ERROR
+            except (AttributeError, TypeError):
+                # Try is_error method if is_success doesn't exist
+                try:
+                    if result.is_error():
+                        status = ToolStatus.ERROR
+                except (AttributeError, TypeError):
+                    # Neither method exists, keep default success status
+                    pass
             
             return ToolExecutionResponse(
                 execution_id=request.execution_id,
@@ -167,7 +178,7 @@ class ToolOrchestrator:
                 )
                 final_responses.append(error_response)
             else:
-                final_responses.append(response)
+                final_responses.append(cast(ToolExecutionResponse, response))
         
         return final_responses
     
@@ -216,9 +227,9 @@ class ToolOrchestrator:
         Returns:
             List of tool names in the category
         """
-        return self._registry.list_tools({"category": category})
+        return self._registry.list({"category": category})
     
-    def get_tools_by_capability(self, **capabilities: Any) -> List[str]:
+    def get_tools_by_capability(self, **capabilities: Union[str, int, bool]) -> List[str]:
         """Get tools by capabilities.
         
         Args:
@@ -232,10 +243,11 @@ class ToolOrchestrator:
     
     def create_execution_context(
         self,
+        agent_id: str,
+        agent_persona: str,
         working_directory: str = ".",
-        agent_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        task_id: Optional[str] = None,
+        session_id: str = "",
+        task_id: str = "",
         **kwargs: Any
     ) -> ToolExecutionContext:
         """Create a tool execution context.
@@ -253,6 +265,7 @@ class ToolOrchestrator:
         return ToolExecutionContext(
             working_directory=working_directory,
             agent_id=agent_id,
+            agent_persona=agent_persona,
             session_id=session_id,
             task_id=task_id,
             execution_id=str(uuid.uuid4()),
@@ -272,7 +285,10 @@ class ToolOrchestrator:
         error = ToolExecutionError(
             error_type=error_type,
             error_message=error_message,
-            context={"tool_name": request.tool_name}
+            context=ToolErrorContext(
+                operation="tool_execution",
+                attempted_values={"tool_name": request.tool_name}
+            )
         )
         
         return ToolExecutionResponse(

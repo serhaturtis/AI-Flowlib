@@ -4,8 +4,8 @@ No fallbacks, no defaults, no optional fields unless explicitly required.
 """
 
 from datetime import datetime
-from typing import Dict, Any, Optional
-from pydantic import Field, ConfigDict
+from typing import Dict, Optional
+from pydantic import Field
 from flowlib.core.models import StrictBaseModel
 
 

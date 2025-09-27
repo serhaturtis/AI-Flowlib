@@ -6,17 +6,18 @@ that were previously in BaseAgent.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import NotInitializedError
+from flowlib.agent.core.activity_stream import ActivityStream
+from flowlib.providers.knowledge.plugin_manager import KnowledgePluginManager
 from .component import MemoryComponent, AgentMemoryConfig
-from .working import WorkingMemory, WorkingMemoryConfig
-from .vector import VectorMemory, VectorMemoryConfig
-from .knowledge import KnowledgeMemory, KnowledgeMemoryConfig
+from .working import WorkingMemoryConfig
+from .vector import VectorMemoryConfig
+from .knowledge import KnowledgeMemoryConfig
 from .models import MemoryStoreRequest, MemoryRetrieveRequest, MemorySearchRequest
 from flowlib.providers.core.registry import provider_registry
-from flowlib.providers.knowledge.plugin_manager import KnowledgePluginManager
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +102,8 @@ class AgentMemoryManager(AgentComponent):
         # Instantiate comprehensive memory
         self._memory = MemoryComponent(
             config=agent_memory_config,
-            activity_stream=self.get_component("activity_stream"),
-            knowledge_plugins=self.get_component("knowledge_plugins")
+            activity_stream=cast(Optional[ActivityStream], self.get_component("activity_stream")),
+            knowledge_plugins=cast(Optional[KnowledgePluginManager], self.get_component("knowledge_plugins"))
         )
         # AgentMemory no longer uses parent relationships
         
@@ -113,7 +114,6 @@ class AgentMemoryManager(AgentComponent):
         try:
             await self._memory.create_context(
                 context_name="agent_execution",
-                parent=None,
                 metadata={"builtin": True, "description": "Context for agent execution cycles"}
             )
             logger.debug("Created agent_execution memory context")
@@ -122,7 +122,7 @@ class AgentMemoryManager(AgentComponent):
         
         return self._memory
     
-    async def store_memory(self, key: str, value: Any, **kwargs) -> None:
+    async def store_memory(self, key: str, value: Any, **kwargs: Any) -> None:
         """Store a value in memory.
         
         Args:
@@ -153,7 +153,7 @@ class AgentMemoryManager(AgentComponent):
         
         await self._memory.store_with_model(request)
     
-    async def retrieve_memory(self, key: str, **kwargs) -> Any:
+    async def retrieve_memory(self, key: str, **kwargs: Any) -> Any:
         """Retrieve a value from memory.
         
         Args:
@@ -185,7 +185,7 @@ class AgentMemoryManager(AgentComponent):
         
         return await self._memory.retrieve_with_model(request)
     
-    async def search_memory(self, query: str, **kwargs) -> List[Any]:
+    async def search_memory(self, query: str, **kwargs: Any) -> List[Any]:
         """Search memory for relevant information.
         
         Args:
