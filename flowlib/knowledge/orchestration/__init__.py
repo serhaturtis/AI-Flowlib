@@ -2,9 +2,9 @@
 
 from flowlib.knowledge.orchestration.flow import KnowledgeOrchestrationFlow
 from flowlib.knowledge.orchestration.models import (
+    OrchestrationProgress,
     OrchestrationRequest,
     OrchestrationResult,
-    OrchestrationProgress
 )
 
 __all__ = [

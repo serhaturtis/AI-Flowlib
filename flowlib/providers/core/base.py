@@ -5,13 +5,16 @@ configuration, initialization, and error handling.
 """
 
 import asyncio
-from typing import Any, Dict, Optional, TypeVar, Union, Callable, cast
-from pydantic import Field
-from flowlib.core.models import StrictBaseModel
 import logging
-from .provider_base import ProviderBase
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from typing import Any, Callable, Dict, Optional, TypeVar, Union, cast
+
+from pydantic import Field
+
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
+from flowlib.core.models import StrictBaseModel
+
+from .provider_base import ProviderBase
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +30,18 @@ class ProviderSettings(StrictBaseModel):
     directly to provider classes that need them.
     """
     # Inherits strict configuration from StrictBaseModel
-    
+
     # Common timeout and retry settings (apply to all providers)
     timeout: float = Field(default=300.0, description="Operation timeout in seconds (5 minutes default)")
-    max_retries: int = Field(default=3, description="Maximum number of retry attempts on failure") 
+    max_retries: int = Field(default=3, description="Maximum number of retry attempts on failure")
     retry_delay_seconds: float = Field(default=1.0, description="Delay between retry attempts in seconds")
-    
+
     # Common logging settings
     verbose: bool = Field(default=False, description="Enable verbose logging for debugging")
-    
+
     # Advanced settings for customization
     custom_settings: Dict[str, Any] = Field(default_factory=dict, description="Custom provider-specific settings")
-    
+
     def merge(self, other: Union['ProviderSettings', Dict[str, Any]]) -> 'ProviderSettings':
         """Merge with another settings object.
         
@@ -53,10 +56,10 @@ class ProviderSettings(StrictBaseModel):
             other_settings = self.__class__(**other)
         else:
             other_settings = other
-            
+
         # Start with current settings
         merged_dict = self.model_dump()
-        
+
         # Update with other settings (only non-None values)
         for key, value in other_settings.model_dump().items():
             if value is not None:
@@ -65,9 +68,9 @@ class ProviderSettings(StrictBaseModel):
                     merged_dict["custom_settings"].update(value)
                 else:
                     merged_dict[key] = value
-        
+
         return self.__class__(**merged_dict)
-    
+
     def with_overrides(self, **kwargs: Any) -> 'ProviderSettings':
         """Create new settings with overrides.
         
@@ -141,12 +144,12 @@ class Provider(ProviderBase[T]):
         self._initialized = False
         self._setup_lock = asyncio.Lock()
         logger.debug(f"Created provider: {name} ({self.provider_type}) with settings: {self.settings}")
-    
+
     @property
     def initialized(self) -> bool:
         """Check if provider is initialized."""
         return self._initialized
-    
+
     def _default_settings(self) -> ProviderSettings:
         """Create default settings instance.
         
@@ -162,7 +165,7 @@ class Provider(ProviderBase[T]):
             if not isinstance(settings_instance, ProviderSettings):
                 raise TypeError(f"Settings class must return ProviderSettings instance, got {type(settings_instance)}")
             return settings_instance
-        
+
         # Look through the MRO to find a class that inherits from Provider with generic args
         for base in self.__class__.__mro__:
             if hasattr(base, '__orig_bases__'):
@@ -192,7 +195,7 @@ class Provider(ProviderBase[T]):
                                             if not isinstance(settings_instance, ProviderSettings):
                                                 raise TypeError(f"Settings type must return ProviderSettings instance, got {type(settings_instance)}")
                                             return settings_instance
-        
+
         # If no settings type found, raise helpful error
         raise TypeError(
             f"Provider class {self.__class__.__name__} must specify settings type.\n"
@@ -200,7 +203,7 @@ class Provider(ProviderBase[T]):
             f"class {self.__class__.__name__}(Provider[{self.__class__.__name__}Settings])\n"
             f"This enforces single source of truth for provider configuration."
         )
-    
+
     async def initialize(self) -> None:
         """Initialize the provider.
         
@@ -219,7 +222,7 @@ class Provider(ProviderBase[T]):
             # Double-checked locking pattern
             if self._initialized:
                 return  # type: ignore[unreachable]
-                
+
             try:
                 await self._initialize()
                 self._initialized = True
@@ -243,7 +246,7 @@ class Provider(ProviderBase[T]):
                     ),
                     cause=e
                 )
-    
+
     async def shutdown(self) -> None:
         """Close provider resources.
         
@@ -254,7 +257,7 @@ class Provider(ProviderBase[T]):
         """
         if not self._initialized:
             return
-            
+
         try:
             await self._shutdown()
             self._initialized = False
@@ -262,7 +265,7 @@ class Provider(ProviderBase[T]):
         except Exception as e:
             logger.error(f"Error shutting down provider '{self.name}': {str(e)}")
             # We don't re-raise the error to allow graceful shutdown
-    
+
     async def _initialize(self) -> None:
         """Concrete initialization logic implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement _initialize().")
@@ -273,7 +276,7 @@ class Provider(ProviderBase[T]):
         Default implementation does nothing.
         """
         pass
-    
+
     def update_settings(self, new_settings: Dict[str, Any]) -> None:
         """Update provider settings using flowlib's functional pattern.
         
@@ -290,20 +293,20 @@ class Provider(ProviderBase[T]):
         """
         if not new_settings:
             return
-        
+
         try:
             # Create new settings using the functional pattern
             updated_settings = self.settings.with_overrides(**new_settings)
-            
+
             # Use object.__setattr__ to bypass frozen constraint on self
             object.__setattr__(self, 'settings', updated_settings)
-            
+
             logger.debug(f"Updated settings for provider '{self.name}': {new_settings}")
-            
+
         except Exception as e:
             logger.error(f"Failed to update settings for provider '{self.name}': {e}")
             raise ValueError(f"Failed to update provider settings: {e}") from e
-        
+
     async def execute_with_retry(
         self,
         operation: Callable[..., Any],
@@ -338,15 +341,15 @@ class Provider(ProviderBase[T]):
             retry_delay=retry_delay,
             timeout=timeout
         )
-        
+
         # Ensure provider is initialized
         if not self._initialized:
             await self.initialize()
-        
+
         # Execute with retries
         attempt = 0
         last_error: Optional[Exception] = None
-        
+
         while attempt <= retry_config.max_retries:
             try:
                 # Execute with timeout if specified
@@ -357,16 +360,16 @@ class Provider(ProviderBase[T]):
                     )
                 else:
                     return await operation(*args, **kwargs)
-                    
+
             except asyncio.TimeoutError as e:
                 logger.warning(f"Provider {self.name} operation timed out after {retry_config.timeout_seconds}s")
                 last_error = e
                 break  # Don't retry on timeout
-                
+
             except Exception as e:
                 attempt += 1
                 last_error = e
-                
+
                 if attempt <= retry_config.max_retries:
                     logger.warning(
                         f"Provider {self.name} operation failed (attempt {attempt}/{retry_config.max_retries}): {str(e)}"
@@ -376,11 +379,11 @@ class Provider(ProviderBase[T]):
                 else:
                     # Max retries reached
                     break
-        
+
         # If we get here, all retries failed or timed out
         error_msg = f"Provider operation failed after {attempt} attempt(s)"
         logger.error(f"{error_msg}: {str(last_error)}")
-        
+
         # Create strict error context
         error_context = ErrorContext.create(
             flow_name="provider_operation",
@@ -389,21 +392,21 @@ class Provider(ProviderBase[T]):
             component=self.name,
             operation="execute_with_retry"
         )
-        
+
         provider_context = ProviderErrorContext(
             provider_name=self.name,
             provider_type=self.provider_type,
             operation="execute_with_retry",
             retry_count=attempt
         )
-        
+
         raise ProviderError(
             message=error_msg,
             context=error_context,
             provider_context=provider_context,
             cause=last_error
         )
-    
+
     async def test_connection(self) -> Dict[str, Any]:
         """Test the provider connection and return connection status.
         
@@ -429,12 +432,12 @@ class Provider(ProviderBase[T]):
             "provider_name": self.name,
             "error_details": None
         }
-        
+
         try:
             # Ensure provider is initialized
             if not self._initialized:
                 await self.initialize()
-            
+
             # Check if provider implements check_connection
             if not hasattr(self, 'check_connection'):
                 raise ProviderError(
@@ -453,10 +456,10 @@ class Provider(ProviderBase[T]):
                         retry_count=0
                     )
                 )
-            
+
             # Call provider-specific connection check
             is_connected = await self.check_connection()
-            
+
             if is_connected:
                 result.update({
                     "success": True,
@@ -466,12 +469,12 @@ class Provider(ProviderBase[T]):
                 result.update({
                     "message": f"Connection to {self.provider_type} provider '{self.name}' failed - connection is not active"
                 })
-                
+
         except Exception as e:
             logger.error(f"Connection test failed for provider {self.name}: {str(e)}")
             result.update({
                 "message": f"Connection test failed for {self.provider_type} provider '{self.name}': {str(e)}",
                 "error_details": str(e)
             })
-        
+
         return result

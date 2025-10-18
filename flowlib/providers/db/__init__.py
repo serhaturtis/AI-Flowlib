@@ -5,8 +5,8 @@ interface for working with different database systems.
 """
 
 from .base import DBProvider, DBProviderSettings
-from .postgres.provider import PostgreSQLProvider, PostgreSQLProviderSettings
 from .mongodb.provider import MongoDBProvider, MongoDBProviderSettings
+from .postgres.provider import PostgreSQLProvider, PostgreSQLProviderSettings
 from .sqlite.provider import SQLiteDBProvider, SQLiteProviderSettings
 
 __all__ = [
@@ -18,4 +18,4 @@ __all__ = [
     "MongoDBProviderSettings",
     "SQLiteDBProvider",
     "SQLiteProviderSettings"
-] 
+]

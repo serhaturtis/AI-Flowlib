@@ -19,7 +19,7 @@ class StrictBaseModel(BaseModel):
     
     These settings ensure fail-fast behavior and eliminate silent errors.
     """
-    
+
     model_config = ConfigDict(
         strict=True,              # No type coercion - fail fast on wrong types
         extra="forbid",           # No extra fields - fail fast on unknown config
@@ -38,10 +38,10 @@ class MutableStrictBaseModel(BaseModel):
     Use this ONLY when mutability is explicitly required.
     Still enforces all validation rules except frozen=False.
     """
-    
+
     model_config = ConfigDict(
         strict=True,
-        extra="forbid", 
+        extra="forbid",
         validate_assignment=True,
         frozen=False,             # Allow mutations when explicitly needed
         validate_default=True,

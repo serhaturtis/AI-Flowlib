@@ -1,1 +1,1 @@
-# Makes pinecone a package 
+# Makes pinecone a package

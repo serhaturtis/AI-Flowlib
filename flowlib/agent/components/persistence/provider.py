@@ -7,11 +7,13 @@ interface, allowing for flexible storage backends.
 
 import logging
 from typing import Dict, List, Optional, cast
+
 from pydantic import Field
-from flowlib.providers.core.base import ProviderSettings
 
 from flowlib.agent.core.errors import StatePersistenceError
 from flowlib.agent.models.state import AgentState
+from flowlib.providers.core.base import ProviderSettings
+
 from .base import BaseStatePersister
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class ProviderStatePersisterSettings(ProviderSettings):
     """Settings for ProviderStatePersister."""
-    
+
     provider_name: str = Field(..., min_length=1, description="Name of the provider to use")
 
 
@@ -28,7 +30,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
     
     Uses a registered provider to store and retrieve agent states.
     """
-    
+
     def __init__(self, provider_name: Optional[str] = None, name: str = "provider_state_persister", settings: Optional[ProviderStatePersisterSettings] = None):
         """Initialize provider state persister.
         
@@ -42,10 +44,10 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
             settings = ProviderStatePersisterSettings(provider_name=provider_name)
         elif settings is None:
             raise ValueError("Either provider_name or settings must be provided")
-            
+
         super().__init__(name=name, settings=settings)
         self._provider: Optional[BaseStatePersister] = None
-    
+
     async def _initialize(self) -> None:
         """Initialize persister by getting the provider from registry."""
         try:
@@ -69,7 +71,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
                 operation="initialize",
                 cause=e
             )
-    
+
     async def _save_state_impl(
         self,
         state: AgentState,
@@ -90,10 +92,10 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
 
             # Save state directly - the provider handles conversion
             await self._provider.save_state(state, metadata)
-            
+
             logger.debug(f"State saved using provider: {state.task_id}")
             return True
-            
+
         except Exception as e:
             error_msg = f"Error saving state using provider: {str(e)}"
             logger.error(error_msg)
@@ -103,7 +105,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
                 task_id=state.task_id,
                 cause=e
             )
-    
+
     async def _load_state_impl(
         self,
         task_id: str
@@ -129,7 +131,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
                 return None
 
             return state
-            
+
         except Exception as e:
             error_msg = f"Error loading state using provider: {str(e)}"
             logger.error(error_msg)
@@ -139,7 +141,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
                 task_id=task_id,
                 cause=e
             )
-    
+
     async def _delete_state_impl(
         self,
         task_id: str
@@ -158,10 +160,10 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
 
             # Delete state from provider
             await self._provider.delete_state(task_id)
-            
+
             logger.debug(f"State deleted using provider: {task_id}")
             return True
-            
+
         except Exception as e:
             error_msg = f"Error deleting state using provider: {str(e)}"
             logger.error(error_msg)
@@ -171,7 +173,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
                 task_id=task_id,
                 cause=e
             )
-    
+
     async def _list_states_impl(
         self,
         filter_criteria: Optional[Dict[str, str]] = None
@@ -213,7 +215,7 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
                 validated_result.append(validated_item)
 
             return validated_result
-            
+
         except Exception as e:
             error_msg = f"Error listing states using provider: {str(e)}"
             logger.error(error_msg)
@@ -221,4 +223,4 @@ class ProviderStatePersister(BaseStatePersister[ProviderStatePersisterSettings])
                 message=error_msg,
                 operation="list",
                 cause=e
-            ) 
+            )

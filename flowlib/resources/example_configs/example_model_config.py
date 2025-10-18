@@ -5,13 +5,12 @@ Role assignments are handled separately in ~/.flowlib/roles/assignments.py.
 Modify the settings below for your specific setup.
 """
 
-from flowlib.resources.decorators.decorators import model_config
 from flowlib.providers.llm.models import LlamaModelConfig
+from flowlib.resources.decorators.decorators import model_config
 
 
 @model_config("phi4-model", provider_type="llamacpp", config={
     "path": "/path/to/models/phi-4-q8_0.gguf",
-    "model_type": "phi4",
     "n_ctx": 16384,
     "use_gpu": True,
     "n_gpu_layers": 32,

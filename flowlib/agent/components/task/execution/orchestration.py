@@ -4,26 +4,31 @@ This module provides the orchestration layer that coordinates tool execution
 through the registry system. Following flowlib's architectural patterns.
 """
 
-import logging
 import asyncio
-from typing import Any, Dict, List, Optional, Union, cast
-from datetime import datetime
+import logging
 import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union, cast
+
+from pydantic import Field
 
 from flowlib.core.models import StrictBaseModel
-from pydantic import Field
+
 from .models import (
-    ToolResult, ToolExecutionContext, ToolStatus,
-    ToolExecutionError, ToolErrorContext
+    ToolErrorContext,
+    ToolExecutionContext,
+    ToolExecutionError,
+    ToolResult,
+    ToolStatus,
 )
-from .registry import ToolRegistry, ToolNotFoundError, tool_registry
+from .registry import ToolNotFoundError, ToolRegistry, tool_registry
 
 logger = logging.getLogger(__name__)
 
 
 class ToolExecutionRequest(StrictBaseModel):
     """Request for tool execution through orchestration."""
-    
+
     tool_name: str
     raw_parameters: Dict[str, Any]
     context: Optional[ToolExecutionContext] = None
@@ -32,7 +37,7 @@ class ToolExecutionRequest(StrictBaseModel):
 
 class ToolExecutionResponse(StrictBaseModel):
     """Response from tool execution orchestration."""
-    
+
     execution_id: str
     tool_name: str
     status: ToolStatus
@@ -40,7 +45,7 @@ class ToolExecutionResponse(StrictBaseModel):
     error: Optional[ToolExecutionError] = None
     execution_time_ms: Optional[float] = None
     timestamp: datetime
-    
+
     def get_display_content(self) -> str:
         """Get displayable content from the execution response."""
         if self.result:
@@ -48,11 +53,11 @@ class ToolExecutionResponse(StrictBaseModel):
         elif self.error:
             return f"Error: {self.error.error_message}"
         return f"Tool {self.tool_name} execution {self.status.value}"
-    
+
     def is_success(self) -> bool:
         """Check if execution was successful."""
         return self.status == ToolStatus.SUCCESS
-    
+
     def is_error(self) -> bool:
         """Check if execution failed."""
         return self.status == ToolStatus.ERROR
@@ -68,11 +73,11 @@ class ToolOrchestrator:
     - Error handling and reporting
     - Execution tracking
     """
-    
+
     def __init__(self, registry: Optional[ToolRegistry] = None):
         self._registry = registry or tool_registry
         logger.debug("Tool orchestrator initialized")
-    
+
     async def execute_tool(self, request: ToolExecutionRequest) -> ToolExecutionResponse:
         """Execute a tool through orchestration.
         
@@ -83,10 +88,10 @@ class ToolOrchestrator:
             Tool execution response with result or error
         """
         start_time = datetime.now()
-        
+
         try:
             logger.debug(f"Executing tool: {request.tool_name} ({request.execution_id})")
-            
+
             # Create a proper TodoItem from raw parameters
             from ..models import TodoItem
             # Ensure content has a default if not in raw_parameters
@@ -98,21 +103,23 @@ class ToolOrchestrator:
             raw_params['assigned_tool'] = request.tool_name
 
             todo = TodoItem(**raw_params)
-            
+
             # Execute tool using new architecture (tool handles its own parameters)
+            from .models import ToolExecutionSharedData
             default_context = ToolExecutionContext(
                 working_directory="/tmp",
                 agent_id="system_agent",
                 agent_persona="system",
-                execution_id=f"exec_{int(datetime.now().timestamp())}"
+                execution_id=f"exec_{int(datetime.now().timestamp())}",
+                shared_data=ToolExecutionSharedData()
             )
             result = await self._registry.execute_todo(
                 todo,
                 request.context or default_context
             )
-            
+
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
-            
+
             # Check if result indicates success using safe method calls
             status = ToolStatus.SUCCESS  # Default to success
             try:
@@ -129,7 +136,7 @@ class ToolOrchestrator:
                 except (AttributeError, TypeError):
                     # Neither method exists, keep default success status
                     pass
-            
+
             return ToolExecutionResponse(
                 execution_id=request.execution_id,
                 tool_name=request.tool_name,
@@ -138,21 +145,21 @@ class ToolOrchestrator:
                 execution_time_ms=execution_time,
                 timestamp=datetime.now()
             )
-            
+
         except (ToolNotFoundError, KeyError) as e:
             logger.error(f"Tool not found: {request.tool_name}")
             return self._create_error_response(
                 request, str(e), "tool_not_found", start_time
             )
-        
+
         except Exception as e:
             logger.error(f"Tool execution failed: {request.tool_name} - {str(e)}", exc_info=True)
             return self._create_error_response(
                 request, str(e), "execution_error", start_time
             )
-    
+
     async def execute_multiple_tools(
-        self, 
+        self,
         requests: List[ToolExecutionRequest]
     ) -> List[ToolExecutionResponse]:
         """Execute multiple tools concurrently.
@@ -164,11 +171,11 @@ class ToolOrchestrator:
             List of tool execution responses in same order
         """
         logger.debug(f"Executing {len(requests)} tools concurrently")
-        
+
         # Execute all tools concurrently
         tasks = [self.execute_tool(request) for request in requests]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Handle any exceptions that weren't caught
         final_responses = []
         for i, response in enumerate(responses):
@@ -179,9 +186,9 @@ class ToolOrchestrator:
                 final_responses.append(error_response)
             else:
                 final_responses.append(cast(ToolExecutionResponse, response))
-        
+
         return final_responses
-    
+
     def get_available_tools(self) -> List[str]:
         """Get list of available tools from registry.
         
@@ -189,7 +196,7 @@ class ToolOrchestrator:
             List of available tool names
         """
         return self._registry.list_tools()
-    
+
     def get_tool_schema(self, tool_name: str) -> Dict[str, Any]:
         """Get parameter schema for a specific tool.
         
@@ -206,7 +213,7 @@ class ToolOrchestrator:
         if not self._registry.contains(tool_name):
             raise ToolNotFoundError(f"Tool not found: {tool_name}")
         return {"type": "object", "properties": {"content": {"type": "string"}}}
-    
+
     def get_all_schemas(self) -> Dict[str, Dict[str, Any]]:
         """Get parameter schemas for all available tools.
         
@@ -217,7 +224,7 @@ class ToolOrchestrator:
         for tool_name in self._registry.list_tools():
             schemas[tool_name] = self.get_tool_schema(tool_name)
         return schemas
-    
+
     def get_tools_by_category(self, category: str) -> List[str]:
         """Get tools by category.
         
@@ -228,7 +235,7 @@ class ToolOrchestrator:
             List of tool names in the category
         """
         return self._registry.list({"category": category})
-    
+
     def get_tools_by_capability(self, **capabilities: Union[str, int, bool]) -> List[str]:
         """Get tools by capabilities.
         
@@ -240,7 +247,7 @@ class ToolOrchestrator:
         """
         # For now, return all tools - capability filtering not implemented
         return self._registry.list_tools()
-    
+
     def create_execution_context(
         self,
         agent_id: str,
@@ -251,17 +258,23 @@ class ToolOrchestrator:
         **kwargs: Any
     ) -> ToolExecutionContext:
         """Create a tool execution context.
-        
+
         Args:
             working_directory: Working directory for tool execution
             agent_id: ID of the executing agent
             session_id: Agent session ID
             task_id: Current task ID
             **kwargs: Additional context data
-            
+
         Returns:
             Tool execution context
         """
+        from .models import ToolExecutionSharedData
+
+        # Ensure shared_data is provided - either from kwargs or create new
+        if 'shared_data' not in kwargs:
+            kwargs['shared_data'] = ToolExecutionSharedData()
+
         return ToolExecutionContext(
             working_directory=working_directory,
             agent_id=agent_id,
@@ -271,7 +284,7 @@ class ToolOrchestrator:
             execution_id=str(uuid.uuid4()),
             **kwargs
         )
-    
+
     def _create_error_response(
         self,
         request: ToolExecutionRequest,
@@ -281,7 +294,7 @@ class ToolOrchestrator:
     ) -> ToolExecutionResponse:
         """Create an error response for failed tool execution."""
         execution_time = (datetime.now() - start_time).total_seconds() * 1000
-        
+
         error = ToolExecutionError(
             error_type=error_type,
             error_message=error_message,
@@ -290,7 +303,7 @@ class ToolOrchestrator:
                 attempted_values={"tool_name": request.tool_name}
             )
         )
-        
+
         return ToolExecutionResponse(
             execution_id=request.execution_id,
             tool_name=request.tool_name,

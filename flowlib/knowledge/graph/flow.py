@@ -1,30 +1,27 @@
 """Graph storage flow for knowledge base."""
 
 import logging
-from typing import Dict, Any, cast
-from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.providers.graph.models import Entity as ProviderEntity
-from flowlib.providers.graph.models import EntityRelationship
+from typing import Any, Dict, cast
 
-from flowlib.knowledge.models import (
-    Entity,
-    Relationship,
-    DocumentProcessingResult,
-)
-from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
-from flowlib.providers.graph.models import RelationshipSearchResult
+from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.knowledge.graph.models import (
-    GraphStoreInput,
-    GraphStoreOutput,
-    GraphNode,
     GraphEdge,
-    GraphStatistics,
-)
-from flowlib.knowledge.graph.models import (
     GraphEntity,
     GraphEntityAttribute,
+    GraphNode,
     GraphRelationship,
+    GraphStatistics,
+    GraphStoreInput,
+    GraphStoreOutput,
 )
+from flowlib.knowledge.models import (
+    DocumentProcessingResult,
+    Entity,
+    Relationship,
+)
+from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
+from flowlib.providers.graph.models import Entity as ProviderEntity
+from flowlib.providers.graph.models import EntityRelationship, RelationshipSearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +29,16 @@ logger = logging.getLogger(__name__)
 @flow(name="graph-storage-flow", description="Store entities and relationships in graph database")  # type: ignore[arg-type]
 class GraphStorageFlow:
     """Flow for creating knowledge graph in Neo4j."""
-    
+
     async def stream_upsert(self, extraction_result: DocumentProcessingResult, db_path: str) -> None:
         """Stream upsert entities and relationships to persistent graph database."""
-        
+
         logger.info(f"Streaming upsert: {len(extraction_result.entities)} entities, {len(extraction_result.relationships)} relationships")
-        
+
         # Get provider (reuse connection if available)
         if not hasattr(self, '_streaming_graph_provider'):
             self._streaming_graph_provider = await self._get_streaming_provider(db_path)
-        
+
         try:
             # Convert and stream entities
             if extraction_result.entities:
@@ -49,7 +46,7 @@ class GraphStorageFlow:
                 provider_entities = [self._convert_to_provider_entity(entity) for entity in extraction_result.entities]
                 await self._streaming_graph_provider.bulk_add_entities(provider_entities)
                 logger.debug(f"Streamed {len(provider_entities)} entities to graph DB")
-            
+
             # Convert and stream relationships
             if extraction_result.relationships:
                 for rel in extraction_result.relationships:
@@ -61,16 +58,16 @@ class GraphStorageFlow:
                         relationship=provider_rel
                     )
                 logger.debug(f"Streamed {len(extraction_result.relationships)} relationships to graph DB")
-                
+
         except Exception as e:
             logger.error(f"Failed to stream upsert to graph DB: {e}")
             raise
 
     async def finalize_streaming_graph(self, db_path: str) -> dict:
         """Finalize streaming graph database."""
-        
+
         logger.info("Finalizing streaming graph database")
-        
+
         try:
             # Get final statistics
             stats = {"total_nodes": 0, "total_edges": 0}
@@ -81,17 +78,17 @@ class GraphStorageFlow:
                     "total_nodes": graph_stats.total_entities,
                     "total_edges": graph_stats.total_relationships
                 }
-                
+
                 # Cleanup streaming provider
                 await self._streaming_graph_provider.shutdown()
                 delattr(self, '_streaming_graph_provider')
-            
+
             return {
                 "status": "finalized",
                 "db_path": db_path,
                 "statistics": stats
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to finalize streaming graph: {e}")
             raise
@@ -116,7 +113,7 @@ class GraphStorageFlow:
     async def _get_provider(self, config: GraphStoreInput) -> GraphDBProvider:
         """Get initialized graph database provider."""
         logger.info(f"Initializing graph provider: {config.graph_provider_name}")
-        
+
         # Use memory graph provider for testing/development
         from flowlib.providers.graph.memory_graph import MemoryGraphProvider
 
@@ -128,10 +125,11 @@ class GraphStorageFlow:
         await provider.initialize()
 
         return provider
-    
+
     def _convert_to_provider_entity(self, knowledge_entity: Entity) -> 'ProviderEntity':
         """Convert knowledge Entity to provider Entity."""
-        from flowlib.providers.graph.models import Entity as ProviderEntity, EntityAttribute
+        from flowlib.providers.graph.models import Entity as ProviderEntity
+        from flowlib.providers.graph.models import EntityAttribute
 
         # Convert entity attributes
         attributes = {}
@@ -169,41 +167,41 @@ class GraphStorageFlow:
         """Convert knowledge Entity to GraphEntity."""
         # Create attributes from entity properties
         attributes = []
-        
+
         # Add basic attributes
         attributes.append(GraphEntityAttribute(
             name="entity_type",
             value=entity.entity_type.value,
             type="string"
         ))
-        
+
         if entity.description:
             attributes.append(GraphEntityAttribute(
                 name="description",
                 value=entity.description,
                 type="string"
             ))
-        
+
         # Add confidence and frequency
         attributes.append(GraphEntityAttribute(
             name="confidence",
             value=entity.confidence,
             type="float"
         ))
-        
+
         attributes.append(GraphEntityAttribute(
             name="frequency",
             value=entity.frequency,
             type="integer"
         ))
-        
+
         # Add document count
         attributes.append(GraphEntityAttribute(
             name="document_count",
             value=len(entity.documents),
             type="integer"
         ))
-        
+
         # Add source documents as comma-separated list
         if entity.documents:
             attributes.append(GraphEntityAttribute(
@@ -211,10 +209,10 @@ class GraphStorageFlow:
                 value=",".join(entity.documents[:5]),  # Limit to first 5
                 type="string"
             ))
-        
+
         # Convert tags to list
         tags = list(entity.properties.keys()) if entity.properties else []
-        
+
         return GraphEntity(
             id=entity.entity_id,
             type=entity.entity_type.value,
@@ -223,7 +221,7 @@ class GraphStorageFlow:
             relationships=[],  # Will be populated separately
             tags=tags
         )
-    
+
     def _create_graph_relationship(self, relationship: Relationship) -> GraphRelationship:
         """Create graph relationship from knowledge relationship."""
         # Calculate confidence string
@@ -234,7 +232,7 @@ class GraphStorageFlow:
             confidence_str = "medium"
         else:
             confidence_str = "low"
-        
+
         return GraphRelationship(
             id=relationship.relationship_id,
             source_id=relationship.source_entity_id,
@@ -249,14 +247,14 @@ class GraphStorageFlow:
             },
             confidence=confidence
         )
-    
+
     async def _build_graph(self, input_data: GraphStoreInput) -> GraphStoreOutput:
         """Build knowledge graph from entities and relationships."""
         logger.info(f"Building graph with {len(input_data.entities)} entities and {len(input_data.relationships)} relationships")
-        
+
         # Get provider
         graph_provider = await self._get_provider(input_data)
-        
+
         try:
             # Create nodes for documents
             doc_nodes = []
@@ -276,7 +274,7 @@ class GraphStorageFlow:
                     ],
                     tags=["document", doc.metadata.file_type.lower()]
                 )
-                
+
                 doc_nodes.append(GraphNode(
                     node_id=doc.document_id,
                     node_type="document",
@@ -286,14 +284,14 @@ class GraphStorageFlow:
                         "created_date": doc.metadata.created_date or ""
                     }
                 ))
-            
+
             # Convert and create entity nodes
             entity_nodes = []
             provider_entities = []
             for entity in input_data.entities:
                 provider_entity = self._convert_to_provider_entity(entity)
                 provider_entities.append(provider_entity)
-                
+
                 entity_nodes.append(GraphNode(
                     node_id=entity.entity_id,
                     node_type=entity.entity_type.value,
@@ -303,18 +301,18 @@ class GraphStorageFlow:
                         "frequency": entity.frequency
                     }
                 ))
-            
+
             # Create all entities in graph (skip doc_nodes as they're not Entity objects)
             if provider_entities:
                 await graph_provider.bulk_add_entities(provider_entities)
-            
+
             # Convert and create relationships
             provider_relationships = []
             edges = []
             for relationship in input_data.relationships:
                 provider_rel = self._convert_to_provider_relationship(relationship)
                 provider_relationships.append(provider_rel)
-                
+
                 edges.append(GraphEdge(
                     edge_id=relationship.relationship_id,
                     source_node_id=relationship.source_entity_id,
@@ -326,7 +324,7 @@ class GraphStorageFlow:
                         "description": relationship.description or relationship.relationship_type.value
                     }
                 ))
-            
+
             # Create relationships in graph
             if provider_relationships:
                 for i, relationship in enumerate(input_data.relationships):
@@ -337,10 +335,10 @@ class GraphStorageFlow:
                         relation_type=relationship.relationship_type.value,
                         relationship=provider_rel
                     )
-            
+
             # Get statistics
             await graph_provider.get_stats()
-            
+
             graph_stats = GraphStatistics(
                 total_nodes=len(doc_nodes) + len(entity_nodes),
                 total_edges=len(edges),
@@ -351,29 +349,29 @@ class GraphStorageFlow:
                 relationship_types={rel.relationship_type: 1 for rel in edges},  # Simplified count
                 average_degree=2.0 * len(edges) / max(len(entity_nodes), 1) if entity_nodes else 0.0
             )
-            
+
             return GraphStoreOutput(
                 graph_name=input_data.graph_name,
                 nodes_created=len(doc_nodes) + len(entity_nodes),
                 edges_created=len(edges),
                 graph_stats=graph_stats
             )
-            
+
         finally:
             # Always shutdown provider
             await graph_provider.shutdown()
-    
+
     async def _query_graph(self, input_data: GraphStoreInput) -> GraphStoreOutput:
         """Query existing graph and extract subgraphs."""
         logger.info(f"Querying graph: {input_data.graph_name}")
-        
+
         # Get provider
         graph_provider = await self._get_provider(input_data)
-        
+
         try:
             nodes = []
             edges = []
-            
+
             # Get entities by query parameters
             if input_data.query_entity_id:
                 # Get specific entity and its neighborhood
@@ -430,7 +428,7 @@ class GraphStorageFlow:
                     name=entity_name,
                     properties={"importance": entity.importance, "source": entity.source}
                 ))
-            
+
             for rel in relationships:
                 # Ensure rel is a dictionary
                 rel_dict = cast(Dict[str, object], rel)
@@ -452,7 +450,7 @@ class GraphStorageFlow:
                     relationship_type=str(rel_dict["type"]),
                     properties=cast(Dict[str, Any], rel_dict.get("properties", {}))
                 ))
-            
+
             # Create basic statistics
             basic_stats = GraphStatistics(
                 total_nodes=len(nodes),
@@ -465,33 +463,33 @@ class GraphStorageFlow:
                 edges_created=len(edges),
                 graph_stats=basic_stats
             )
-            
+
         finally:
             # Always shutdown provider
             await graph_provider.shutdown()
-    
+
     async def _find_connections(self, input_data: GraphStoreInput) -> GraphStoreOutput:
         """Find connections between entities."""
         if not input_data.query_source_id or not input_data.query_target_id:
             raise ValueError("Both source and target entity IDs required")
-        
+
         logger.info(f"Finding connections between {input_data.query_source_id} and {input_data.query_target_id}")
-        
+
         # Get provider
         graph_provider = await self._get_provider(input_data)
-        
+
         try:
             # Query for paths between entities - start with source entity relationships
             relationships = await graph_provider.query_relationships(
                 entity_id=input_data.query_source_id,
                 direction="outgoing"
             )
-            
+
             # Extract unique nodes and edges from paths
             nodes = []
             edges = []
             seen_nodes = set()
-            
+
             for rel in relationships:
                 # Ensure rel is a dictionary
                 rel_dict = cast(Dict[str, object], rel)
@@ -508,7 +506,7 @@ class GraphStorageFlow:
 
                 source_id = str(rel_dict["source_id"])
                 target_id = str(rel_dict["target_id"])
-                
+
                 # Add source node if not seen
                 if source_id not in seen_nodes:
                     source_label = str(rel_dict.get("source_label", source_id))
@@ -530,7 +528,7 @@ class GraphStorageFlow:
                         properties={}
                     ))
                     seen_nodes.add(target_id)
-                
+
                 # Add edge
                 edges.append(GraphEdge(
                     edge_id=str(rel_dict["id"]),
@@ -539,7 +537,7 @@ class GraphStorageFlow:
                     relationship_type=str(rel_dict["type"]),
                     properties=cast(Dict[str, Any], rel_dict.get("properties", {}))
                 ))
-            
+
             # Create path statistics
             path_stats = GraphStatistics(
                 total_nodes=len(nodes),
@@ -552,11 +550,11 @@ class GraphStorageFlow:
                 edges_created=len(edges),
                 graph_stats=path_stats
             )
-            
+
         finally:
             # Always shutdown provider
             await graph_provider.shutdown()
-    
+
     @pipeline(input_model=GraphStoreInput, output_model=GraphStoreOutput)
     async def run_pipeline(self, input_data: GraphStoreInput) -> GraphStoreOutput:
         """Execute graph storage pipeline."""

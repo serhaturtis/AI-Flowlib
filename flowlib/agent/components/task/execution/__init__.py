@@ -4,43 +4,45 @@ This module provides clean tool execution without decomposition concerns.
 Following flowlib's single source of truth and no backward compatibility principles.
 
 Architecture:
-- TaskExecutionFlow: Executes pre-decomposed TODO batches
-- ToolOrchestrator: Single orchestration approach  
+- ToolOrchestrator: Single orchestration approach
 - Tool Registry: Discovery and instantiation
 - Protocol interfaces: Clean contracts
 
 Usage:
-    from flowlib.agent.components.task_execution import TaskExecutionFlow
-    
-    # Execute pre-decomposed TODOs
-    flow = TaskExecutionFlow()
-    result = await flow.execute_todo_batch(todos, context)
+    from flowlib.agent.components.task.execution import tool_registry
+
+    # Execute tool directly
+    result = await tool_registry.execute_todo(todo, context)
 """
 
 # Core system
-from .models import (
-    ToolParameters,
-    ToolResult, 
-    ToolExecutionContext,
-    ToolStatus,
-    ToolMetadata,
-    ToolExecutionError,
-    AgentTaskRequest,
-    TaskExecutionResult,
-)
-from .interfaces import ToolInterface, ToolFactory, AgentToolInterface, AgentToolFactory
-from .registry import ToolRegistry, tool_registry
-from .decorators import tool
-
-# Tool orchestration
-from .orchestration import ToolOrchestrator, tool_orchestrator, ToolExecutionRequest, ToolExecutionResponse
-
-# Import clean execution flows and coordinators
-from .execution_flow import TaskExecutionFlow
-from .component import TaskExecutionComponent
-
 # Import tool implementations to trigger registration
 from . import tool_implementations
+from .decorators import tool
+
+# Import interfaces
+from .interfaces import AgentToolFactory, AgentToolInterface, ToolFactory, ToolInterface
+from .models import (
+    AgentTaskRequest,
+    TaskExecutionResult,
+    TodoExecutionContext,
+    TodoExecutionResult,
+    ToolExecutionContext,
+    ToolExecutionError,
+    ToolMetadata,
+    ToolParameters,
+    ToolResult,
+    ToolStatus,
+)
+
+# Tool orchestration
+from .orchestration import (
+    ToolExecutionRequest,
+    ToolExecutionResponse,
+    ToolOrchestrator,
+    tool_orchestrator,
+)
+from .registry import ToolRegistry, tool_registry
 
 __all__ = [
     # Tool implementations (imported for registration)
@@ -48,36 +50,32 @@ __all__ = [
 
     # Core models
     "ToolParameters",
-    "ToolResult", 
+    "ToolResult",
     "ToolExecutionContext",
     "ToolStatus",
     "ToolMetadata",
     "ToolExecutionError",
     "AgentTaskRequest",
     "TaskExecutionResult",
-    
+    "TodoExecutionContext",
+    "TodoExecutionResult",
+
     # Core interfaces
     "ToolInterface",
     "ToolFactory",
     "AgentToolInterface",
     "AgentToolFactory",
-    
+
     # Registry system
-    "ToolRegistry", 
+    "ToolRegistry",
     "tool_registry",
-    
+
     # Decorator
     "tool",
-    
-    # Flows
-    "TaskExecutionFlow",
-    
-    # Executors
-    "TaskExecutionComponent",
-    
+
     # Orchestration
     "ToolOrchestrator",
-    "tool_orchestrator", 
+    "tool_orchestrator",
     "ToolExecutionRequest",
     "ToolExecutionResponse",
 ]

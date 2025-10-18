@@ -4,17 +4,19 @@ This module provides a concrete implementation of the MQProvider
 for RabbitMQ messaging using aio-pika.
 """
 
-import logging
 import json
-from typing import Any, Dict, List, Optional, Callable
+import logging
 import uuid
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import Field
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.mq.base import MQProvider, MQProviderSettings, MessageMetadata
 from flowlib.providers.core.decorators import provider
+from flowlib.providers.mq.base import MessageMetadata, MQProvider, MQProviderSettings
+
 # Removed ProviderType import - using config-driven provider access
 
 logger = logging.getLogger(__name__)
@@ -36,15 +38,15 @@ class RabbitMQProviderSettings(MQProviderSettings):
     3. Exchange and queue configuration
     4. SSL and reliability settings
     """
-    
+
     # RabbitMQ-specific connection settings
     connection_string: Optional[str] = Field(default=None, description="Connection string (overrides host/port if provided)")
     connection_timeout: float = Field(default=10.0, description="Connection timeout in seconds")
-    
+
     # SSL settings
     ssl: bool = Field(default=False, description="Whether to use SSL")
     ssl_options: Optional[Dict[str, Any]] = Field(default=None, description="SSL options")
-    
+
     # Exchange and queue settings
     exchange_name: Optional[str] = Field(default=None, description="Exchange name")
     exchange_type: str = Field(default="topic", description="Exchange type (direct, fanout, topic, headers)")
@@ -52,7 +54,7 @@ class RabbitMQProviderSettings(MQProviderSettings):
     queue_durable: bool = Field(default=True, description="Whether queues are durable")
     queue_auto_delete: bool = Field(default=False, description="Whether queues are auto-deleted")
     delivery_mode: int = Field(default=2, description="Delivery mode (1 = non-persistent, 2 = persistent)")
-    
+
     # Additional connection arguments
     connect_args: Dict[str, Any] = Field(default_factory=dict, description="Additional connection arguments")
 
@@ -64,7 +66,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
     This provider implements message queue operations using aio_pika,
     an asynchronous client for RabbitMQ.
     """
-    
+
     def __init__(self, name: str = "rabbitmq", settings: Optional[RabbitMQProviderSettings] = None):
         """Initialize RabbitMQ provider.
         
@@ -82,14 +84,14 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
         super().__init__(name=name, settings=settings)
         if not isinstance(self.settings, RabbitMQProviderSettings):
             raise TypeError(f"settings must be a RabbitMQProviderSettings instance, got {type(self.settings)}")
-        
+
         self._connection: Optional[aio_pika.Connection] = None
         self._channel: Optional[aio_pika.Channel] = None
         self._exchange: Optional[aio_pika.Exchange] = None
         self._queues: Dict[str, aio_pika.Queue] = {}
         self._consumer_tags: set[str] = set()
         self._tag_to_queue_map: Dict[str, str] = {}
-        
+
     async def _initialize(self) -> None:
         """Initialize RabbitMQ connection.
         
@@ -108,27 +110,27 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
             else:
                 # Construct connection URL
                 connection_url = f"amqp://{self.settings.username}:{self.settings.password}@{self.settings.host}:{self.settings.port}/{self.settings.virtual_host}"
-                
+
                 # Connect to RabbitMQ
                 self._connection = await aio_pika.connect_robust(
                     connection_url,
                     timeout=self.settings.connection_timeout,
                     **self.settings.connect_args
                 )
-            
+
             # Create channel
             self._channel = await self._connection.channel()
-            
+
             # Create exchange
             self._exchange = await self._channel.declare_exchange(
                 name=self.settings.exchange_name or self.name,
                 type=self.settings.exchange_type,
                 durable=self.settings.exchange_durable
             )
-            
+
             logger.info(f"Connected to RabbitMQ: {self.settings.host}:{self.settings.port}/{self.settings.virtual_host}")
             logger.debug(f"RabbitMQ channel successfully created: {self._channel}")
-            
+
         except Exception as e:
             self._connection = None
             self._channel = None
@@ -150,7 +152,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def _shutdown(self) -> None:
         """Close RabbitMQ connection."""
         try:
@@ -161,7 +163,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                         await self._channel.cancel(consumer_tag)
                 except Exception as e:
                     logger.warning(f"Error canceling consumer {consumer_tag}: {str(e)}")
-            
+
             # Close connection
             if self._connection:
                 await self._connection.close()
@@ -174,7 +176,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                 logger.info(f"Closed RabbitMQ connection: {self.settings.host}:{self.settings.port}")
         except Exception as e:
             logger.error(f"Error during RabbitMQ connection shutdown: {str(e)}")
-    
+
     async def publish(self,
                      exchange: str,
                      routing_key: str,
@@ -196,7 +198,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
         """
         if not self._connection or not self._channel or not self._exchange:
             await self.initialize()
-            
+
         try:
             # Serialize message
             if isinstance(message, (dict, list)):
@@ -254,7 +256,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
 
             logger.debug(f"Published message to {routing_key} via exchange {exchange or 'default'}")
             return True
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to publish message: {str(e)}",
@@ -273,7 +275,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def consume(self,
                      queue: str,
                      callback: Callable[[Any, MessageMetadata], Any],
@@ -324,14 +326,14 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
 
             # Store queue
             self._queues[queue] = amqp_queue
-            
+
             # Define message handler
             async def message_handler(message: AbstractIncomingMessage) -> None:
                 async with message.process(ignore_processed=True): # Use ignore_processed for safety
                     try:
                         # Get message body
                         body = message.body
-                        
+
                         # Parse message based on content type
                         if message.content_type == "application/json":
                             try:
@@ -341,7 +343,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                                 data = body # Pass raw bytes if decode fails
                         else:
                             data = body
-                        
+
                         # Extract metadata from aio_pika message
                         meta = MessageMetadata(
                             message_id=message.message_id,
@@ -352,12 +354,12 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                             content_type=message.content_type,
                             headers=dict(message.headers) if message.headers else {},
                             # Add delivery_tag for potential manual ack/nack outside callback
-                            delivery_tag=message.delivery_tag 
+                            delivery_tag=message.delivery_tag
                         )
-                        
+
                         # Call the user-provided callback
                         await callback(data, meta)
-                        
+
                         # Manual Ack needed (always manual in base interface)
                         await message.ack()
 
@@ -374,11 +376,11 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
             tag = await amqp_queue.consume(message_handler, consumer_tag=consumer_tag, no_ack=False)
             self._consumer_tags.add(tag)
             # Store mapping from tag to queue name for cancellation
-            self._tag_to_queue_map[tag] = queue 
-            
+            self._tag_to_queue_map[tag] = queue
+
             logger.info(f"Started consuming from queue '{queue}' with consumer tag '{tag}'")
             return tag  # Return the consumer tag
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to start consuming from queue '{queue}': {str(e)}",
@@ -397,7 +399,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def stop_consuming(self, consumer_tag: str) -> None:
         """Stop consuming messages associated with a specific consumer tag.
         
@@ -409,15 +411,15 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
         """
         if not self._connection or not self._channel:
             logger.warning(f"Cannot stop consumer '{consumer_tag}': Not connected to RabbitMQ")
-            return 
-            
+            return
+
         if consumer_tag not in self._consumer_tags:
              logger.warning(f"Consumer tag '{consumer_tag}' not found or already stopped.")
              # Clean up map just in case
              if consumer_tag in self._tag_to_queue_map:
                   del self._tag_to_queue_map[consumer_tag]
              return
-             
+
         # Find the queue object associated with the tag
         queue_name = self._tag_to_queue_map.get(consumer_tag)
         if not queue_name:
@@ -425,7 +427,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
              # Clean up tag set
              self._consumer_tags.discard(consumer_tag)
              return
-             
+
         queue = self._queues.get(queue_name)
         if not queue:
             logger.error(f"Could not find queue object for name '{queue_name}' (tag: '{consumer_tag}'). Cannot cancel.")
@@ -433,7 +435,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
             self._consumer_tags.discard(consumer_tag)
             del self._tag_to_queue_map[consumer_tag]
             return
-            
+
         try:
             # Call cancel on the queue object, passing the tag
             await queue.cancel(consumer_tag)
@@ -463,9 +465,9 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
             self._consumer_tags.discard(consumer_tag)
             if consumer_tag in self._tag_to_queue_map:
                  del self._tag_to_queue_map[consumer_tag]
-    
-    async def create_queue(self, 
-                          queue_name: str, 
+
+    async def create_queue(self,
+                          queue_name: str,
                           routing_keys: Optional[List[str]] = None,
                           durable: Optional[bool] = None,
                           auto_delete: Optional[bool] = None) -> None:
@@ -482,12 +484,12 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
         """
         if not self._connection or not self._channel or not self._exchange:
             await self.initialize()
-            
+
         try:
             # Use provided values or defaults from settings
             queue_durable = durable if durable is not None else self.settings.queue_durable
             queue_auto_delete = auto_delete if auto_delete is not None else self.settings.queue_auto_delete
-            
+
             # Declare queue
             if not self._channel:
                 raise ProviderError(
@@ -511,17 +513,17 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                 durable=queue_durable,
                 auto_delete=queue_auto_delete
             )
-            
+
             # Bind queue to exchange with routing keys
             if routing_keys:
                 for routing_key in routing_keys:
                     await queue.bind(self._exchange, routing_key=routing_key)
-            
+
             # Store queue
             self._queues[queue_name] = queue
-            
+
             logger.info(f"Created queue {queue_name}")
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to create queue: {str(e)}",
@@ -540,7 +542,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def delete_queue(self, queue_name: str) -> None:
         """Delete a queue.
         
@@ -552,7 +554,7 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
         """
         if not self._connection or not self._channel:
             await self.initialize()
-            
+
         try:
             # Delete queue
             if not self._channel:
@@ -573,13 +575,13 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                     )
                 )
             await self._channel.queue_delete(queue_name)
-            
+
             # Remove queue from tracked queues
             if queue_name in self._queues:
                 del self._queues[queue_name]
-            
+
             logger.info(f"Deleted queue {queue_name}")
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to delete queue: {str(e)}",
@@ -597,4 +599,4 @@ class RabbitMQProvider(MQProvider[RabbitMQProviderSettings]):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )

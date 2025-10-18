@@ -8,7 +8,7 @@ as all provider access is now config-driven.
 # Provider categories (used internally by the registry)
 PROVIDER_CATEGORIES = {
     "llm",
-    "vector_db", 
+    "vector_db",
     "database",
     "cache",
     "storage",
@@ -26,7 +26,7 @@ PROVIDER_CATEGORIES = {
 DEFAULT_CONFIGS = {
     "default-llm": "llm",
     "default-vector-db": "vector_db",
-    "default-graph-db": "graph_db", 
+    "default-graph-db": "graph_db",
     "default-cache": "cache",
     "default-embedding": "embedding",
     "default-database": "database"
@@ -37,7 +37,7 @@ PROVIDER_TYPE_MAP = {
     "llamacpp": "llm",
     "google_ai": "llm",
     "postgres": "database",
-    "mongodb": "database", 
+    "mongodb": "database",
     "sqlite": "database",
     "chroma": "vector_db",
     "pinecone": "vector_db",

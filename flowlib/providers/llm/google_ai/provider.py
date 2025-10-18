@@ -4,20 +4,34 @@ This module implements a provider for Google's Gemini models using the
 google-genai library.
 """
 
-import logging
+import asyncio
 import inspect
 import json
+import logging
 import time
-import asyncio
-from typing import Dict, Optional, Type, cast, Any, TYPE_CHECKING, TypeVar, Callable, Awaitable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Optional,
+    Type,
+    TypeVar,
+    cast,
+)
+
 from pydantic import Field
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
-from flowlib.providers.llm.base import LLMProvider, LLMProviderSettings, ModelType
-from flowlib.providers.llm.base import PromptTemplate
-from flowlib.agent.core.resilience import ResilienceManager, RateLimiter
+from flowlib.providers.llm.base import (
+    LLMProvider,
+    LLMProviderSettings,
+    ModelType,
+    PromptTemplate,
+)
 
 T = TypeVar('T')
 
@@ -56,25 +70,25 @@ class GoogleAISettings(LLMProviderSettings):
     
     No host/port needed - it's cloud-managed API.
     """
-    
+
     # Google AI authentication (API-specific fields)
     api_key: str = Field(default="", description="Google AI API key (e.g., 'AIzaSyBJDV...', get from Google AI Studio)")
     api_base: Optional[str] = Field(default=None, description="Custom API base URL (optional)")
-    
+
     # Google AI safety controls
     safety_settings: Optional[Dict[str, object]] = Field(
-        default=None, 
+        default=None,
         description="Safety settings for content generation filtering"
     )
-    
+
     # Google AI API rate limiting (inherits timeout from ProviderSettings)
     max_concurrent_requests: int = Field(default=10, description="API rate limiting")
-    
+
     # Rate limiting configuration (conservative defaults to avoid 429 errors)
     requests_per_minute: int = Field(default=5, description="Max requests per minute (conservative default)")
     enable_rate_limiting: bool = Field(default=True, description="Enable built-in rate limiting")
     min_request_interval: float = Field(default=12.0, description="Minimum seconds between requests (conservative)")
-    
+
     # 429 retry configuration
     rate_limit_retry_attempts: int = Field(default=8, description="Extra retries for 429 errors")
     rate_limit_backoff_factor: float = Field(default=1.5, description="Backoff multiplier for 429 retries")
@@ -89,19 +103,17 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
     1. Text generation with various Gemini models.
     2. Structured output generation using Gemini's tool/function calling.
     """
-    
+
     def __init__(self, name: str, provider_type: str, settings: Optional[GoogleAISettings] = None, **kwargs: object):
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         if not isinstance(self.settings, GoogleAISettings):
             raise TypeError(f"settings must be a GoogleAISettings instance, got {type(self.settings)}")
-        
+
         self._settings = self.settings  # Already type-checked above
         self._client: Optional[genai.Client] = None  # Will store genai.Client instance
         self._models: Dict[str, Dict[str, object]] = {} # Stores model configs
 
         # Rate limiting infrastructure
-        self._resilience_manager = ResilienceManager()
-        self._rate_limiter: Optional[RateLimiter] = None
         self._last_request_time: Optional[float] = None
 
         if not GOOGLE_AI_AVAILABLE:
@@ -120,14 +132,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation="package_check"
                 )
-            
+
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="package_check",
                 retry_count=0
             )
-            
+
             raise ProviderError(
                 message="google-genai package not installed.",
                 context=error_context,
@@ -142,31 +154,26 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation="api_key_check"
                 )
-                
+
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="api_key_check",
                     retry_count=0
                 )
-                
+
                 raise ProviderError(
                     message="Google AI API key not configured.",
                     context=error_context,
                     provider_context=provider_context
                 )
-            # Create Google AI client with the API key  
+            # Create Google AI client with the API key
             self._client = genai.Client(api_key=self._settings.api_key)
-            
-            # Initialize rate limiting if enabled
+
+            # Rate limiting is handled through min_request_interval tracking
             if self._settings.enable_rate_limiting:
-                self._rate_limiter = self._resilience_manager.get_rate_limiter(
-                    name=f"googleai_{self.name}",
-                    max_calls=self._settings.requests_per_minute,
-                    time_window=60.0  # 1 minute
-                )
                 logger.info(f"Rate limiting enabled: {self._settings.requests_per_minute} requests/minute, {self._settings.min_request_interval}s minimum interval")
-            
+
             self._initialized = True
             logger.info("GoogleAIProvider initialized with client.")
         except Exception as e:
@@ -177,14 +184,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                 component="GoogleAIProvider",
                 operation="configure_api"
             )
-            
+
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="configure_api",
                 retry_count=0
             )
-            
+
             raise ProviderError(
                 message=f"Failed to initialize Google AI provider: {str(e)}",
                 context=error_context,
@@ -199,7 +206,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
         if not self._initialized:
             # This typically shouldn't be hit if initialize() is called externally as intended
             logger.warning("GoogleAIProvider._initialize() called but provider not yet initialized. Call initialize() first.")
-            await self.initialize() 
+            await self.initialize()
 
 
     def _get_or_cache_model_config(self, model_name: str, model_config: Dict[str, object]) -> str:
@@ -208,12 +215,12 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
             # Model ID must come from model config (no provider default)
             if 'model_id' not in model_config:
                 raise ValueError(f"Model configuration for '{model_name}' must specify 'model_id' (e.g., 'gemini-2.0-flash-001')")
-            
+
             self._models[model_name] = {
                 "model_id": model_config['model_id'],
                 "config": model_config
             }
-        
+
         return str(self._models[model_name]["model_id"])
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
@@ -231,14 +238,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                 self._settings.rate_limit_backoff_factor ** attempt,
                 self._settings.rate_limit_max_backoff
             )
-            
+
             logger.warning(
                 f"Rate limit hit for {operation_name} (attempt {attempt + 1}/{self._settings.rate_limit_retry_attempts}), "
                 f"backing off for {backoff_delay:.1f}s"
             )
-            
+
             await asyncio.sleep(backoff_delay)
-            
+
             try:
                 result = await operation(*args, **kwargs)
                 self._last_request_time = time.time()
@@ -253,15 +260,11 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     # Final attempt failed
                     logger.error(f"Rate limit retry exhausted for {operation_name} after {self._settings.rate_limit_retry_attempts} attempts")
                     raise e
-        
+
         raise original_error
 
     async def _execute_with_rate_limiting(self, operation_name: str, operation: Any, *args: Any, **kwargs: Any) -> Any:
         """Execute operation with rate limiting and 429-specific retry logic."""
-        # Apply rate limiter if enabled
-        if self._rate_limiter:
-            await self._rate_limiter.acquire()
-        
         # Add minimum interval between requests
         if self._last_request_time is not None:
             time_since_last = time.time() - self._last_request_time
@@ -269,7 +272,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                 sleep_time = self._settings.min_request_interval - time_since_last
                 logger.debug(f"Rate limiting: sleeping {sleep_time:.1f}s before {operation_name}")
                 await asyncio.sleep(sleep_time)
-        
+
         try:
             result = await operation(*args, **kwargs)
             self._last_request_time = time.time()
@@ -286,7 +289,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
         self._models = {}
         self._initialized = False
         logger.info("GoogleAIProvider shutdown, model cache cleared.")
-        
+
     def _create_generation_config(self, model_config: Dict[str, object]) -> 'types.GenerateContentConfig':
         """Create generation config for Google AI from model config."""
         # Build config with proper types - no fallbacks, explicit requirements
@@ -332,7 +335,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
             # Remove additionalProperties at this level
             if 'additionalProperties' in schema:
                 del schema['additionalProperties']
-            
+
             # Recursively clean nested objects
             for key, value in schema.items():
                 if isinstance(value, dict):
@@ -351,14 +354,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                 component="GoogleAIProvider",
                 operation="check_initialization"
             )
-            
+
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="check_initialization",
                 retry_count=0
             )
-            
+
             raise ProviderError(
                 message="Provider not initialized",
                 context=error_context,
@@ -380,21 +383,21 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
 
         # Get model ID from config
         gemini_model_id = self._get_or_cache_model_config(model_name, model_registry_config)
-        
+
         # Extract prompt config overrides
         prompt_config = self._extract_prompt_config(prompt)
-        
+
         # Merge model defaults with prompt overrides
         merged_config = self._merge_generation_config(model_registry_config, prompt_config)
 
         if not hasattr(prompt, 'template'):
             raise TypeError(f"prompt must be a template object with 'template' attribute, got {type(prompt).__name__}")
-        
+
         template_str = prompt.template
         formatted_prompt_text = template_str
         if prompt_variables:
             formatted_prompt_text = self.format_template(template_str, {"variables": prompt_variables})
-        
+
         final_prompt_content = formatted_prompt_text
         generation_config = self._create_generation_config(merged_config)
 
@@ -429,7 +432,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     contents=final_prompt_content,
                     config=generation_config
                 )
-            
+
             response = await self._execute_with_rate_limiting(
                 f"generate_{model_name}",
                 _generation_operation
@@ -444,14 +447,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation="safety_check"
                 )
-                
+
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="safety_check",
                     retry_count=0
                 )
-                
+
                 raise ProviderError(
                     message=f"Prompt blocked by Google AI safety filters: {response.prompt_feedback.block_reason_message}",
                     context=error_context,
@@ -473,21 +476,21 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation=f"generate_with_{model_name}"
                 )
-            
+
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation=f"generate_with_{model_name}",
                 retry_count=0
             )
-            
+
             raise ProviderError(
                 message=f"Google AI generation failed: {str(e)}",
                 context=error_context,
                 provider_context=provider_context,
                 cause=e
             )
-            
+
     async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> ModelType:
         if not self._initialized or not self._client:
             error_context = ErrorContext.create(
@@ -497,14 +500,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                 component="GoogleAIProvider",
                 operation="check_initialization"
             )
-            
+
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="check_initialization",
                 retry_count=0
             )
-            
+
             raise ProviderError(
                 message="Provider not initialized",
                 context=error_context,
@@ -528,10 +531,10 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
 
         # Get model ID from config
         gemini_model_id = self._get_or_cache_model_config(model_name, model_registry_config)
-        
+
         # Extract prompt config overrides
         prompt_config = self._extract_prompt_config(prompt)
-        
+
         # Merge model defaults with prompt overrides
         merged_config = self._merge_generation_config(model_registry_config, prompt_config)
 
@@ -544,18 +547,18 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
             formatted_prompt_text = self.format_template(template_str, {"variables": prompt_variables})
 
         final_prompt_content = formatted_prompt_text
-        
+
         # Create generation config with structured output
         generation_config = self._create_generation_config(merged_config)
-        
+
         # Configure for structured output using the new API
         generation_config.response_mime_type = 'application/json'
-        
+
         # Get JSON schema and clean it for Google AI compatibility
         schema = output_type.model_json_schema()
         self._clean_schema_for_google_ai(schema)
         generation_config.response_schema = schema
-        
+
         logger.info(f"Generating structured output with Gemini model '{gemini_model_id}' (registry: '{model_name}')")
         logger.info(f"  Response Model: {output_type.__name__}")
         logger.debug(f"Generation Config: {generation_config}")
@@ -570,7 +573,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     contents=final_prompt_content,
                     config=generation_config
                 )
-            
+
             response = await self._execute_with_rate_limiting(
                 f"generate_structured_{model_name}",
                 _structured_generation_operation
@@ -585,14 +588,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation="safety_check"
                 )
-                
+
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="safety_check",
                     retry_count=0
                 )
-                
+
                 raise ProviderError(
                     message=f"Prompt blocked by Google AI safety filters: {response.prompt_feedback.block_reason_message}",
                     context=error_context,
@@ -607,14 +610,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                                         component="GoogleAIProvider",
                                         operation=f"structured_generation_with_{model_name}"
                                     )
-                
+
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation=f"structured_generation_with_{model_name}",
                     retry_count=0
                 )
-                
+
                 raise ProviderError(
                     message="No content generated by Gemini model for structured output.",
                     context=error_context,
@@ -632,20 +635,20 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation="parse_response_text"
                 )
-                
+
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="parse_response_text",
                     retry_count=0
                 )
-                
+
                 raise ProviderError(
                     message="Empty response text from Gemini, cannot parse for structured output.",
                     context=error_context,
                     provider_context=provider_context
                 )
-            
+
             # Clean the text if it's wrapped in markdown ```json ... ```
             if generated_text.strip().startswith("```json"):
                 generated_text = generated_text.strip()[7:-3].strip()
@@ -664,14 +667,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation=f"parse_json_for_{model_name}"
                 )
-                
+
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation=f"parse_json_for_{model_name}",
                     retry_count=0
                 )
-                
+
                 raise ProviderError(
                     message=f"Failed to parse structured response: {parse_err}",
                     context=error_context,
@@ -692,14 +695,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                         component="GoogleAIProvider",
                         operation=f"validate_response_for_{output_type.__name__}"
                     )
-                 
+
                  provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation=f"validate_response_for_{output_type.__name__}",
                     retry_count=0
                 )
-                 
+
                  raise ProviderError(
                     message=f"Failed to validate Google AI response against model {output_type.__name__}: {str(e)}",
                     context=error_context,
@@ -713,14 +716,14 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                     component="GoogleAIProvider",
                     operation=f"structured_generation_with_{model_name}"
                 )
-            
+
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation=f"structured_generation_with_{model_name}",
                 retry_count=0
             )
-            
+
             raise ProviderError(
                 message=f"Google AI structured generation failed: {str(e)}",
                 context=error_context,
@@ -728,7 +731,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
                 cause=e
             )
 
-    def _format_prompt(self, prompt: str, model_type: str = "gemini", output_type: Optional[Type[ModelType]] = None) -> str:
+    def _format_prompt(self, prompt: str, chat_format: str = "gemini", output_type: Optional[Type[ModelType]] = None) -> str:
         """Format a prompt for Gemini.
         
         Gemini models generally don't require strict special tokens like Llama.
@@ -736,7 +739,7 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
         
         Args:
             prompt: The main prompt text.
-            model_type: A string indicating "gemini", "gemini_structured", etc. (currently not strictly used for different templates).
+            chat_format: A string indicating "gemini", "gemini_structured", etc. (currently not strictly used for different templates).
             output_type: Optional Pydantic model for structured output guidance.
             
         Returns:
@@ -744,16 +747,16 @@ class GoogleAIProvider(LLMProvider[GoogleAISettings]):
         """
         # Let the base class add JSON structure information if output_type is provided.
         # This can serve as a textual hint to the model.
-        prompt_with_json_guidance = super()._format_prompt(prompt, model_type, output_type)
-        
+        prompt_with_json_guidance = super()._format_prompt(prompt, chat_format, output_type)
+
         # For Gemini, specific pre/post prompts like Llama2's [INST] are not typically needed.
         # If certain Gemini models or use cases benefit from specific instructions,
         # they could be added here based on `model_type`.
         # For now, the base class formatting (which adds schema description) is sufficient.
-        
-        # Example: if model_type == "gemini_chat_optimized"
+
+        # Example: if chat_format == "gemini_chat_optimized"
         # return f"USER: {prompt_with_json_guidance}\nMODEL:\n"
-        
+
         return prompt_with_json_guidance
 
     # _get_model_templates is not needed as Gemini doesn't rely on these like Llama.cpp models.

@@ -5,7 +5,8 @@ attribute-based access, snapshot capabilities, and clean validation.
 """
 
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, TypeVar, Generic, Type, Union
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
+
 from flowlib.core.models import StrictBaseModel
 
 T = TypeVar('T', bound=StrictBaseModel)
@@ -19,13 +20,13 @@ class Context(Generic[T]):
     3. A defined Pydantic model type associated with the context.
     4. Deep copying for isolation.
     """
-    
+
     def __init__(
         self,
         # Accept an optional StrictBaseModel instance or dict for backward compatibility
         data: Optional[Union[T, Dict[str, Any]]] = None,
         # Model type can be inferred from data, or passed if data is None initially
-        model_type: Optional[Type[T]] = None 
+        model_type: Optional[Type[T]] = None
     ):
         """Initialize context with an optional Pydantic model instance or dict.
         
@@ -63,17 +64,17 @@ class Context(Generic[T]):
             # No data provided, initialize empty
             self._data = {}
             # Use provided model_type if given, otherwise None
-            self._model_type = model_type 
+            self._model_type = model_type
 
         # Initial validation using _validate method is redundant if data is validated above
         # if self._model_type and self._data:
         #    self._validate(self._data)
-    
+
     @property
     def data(self) -> Dict[str, Any]:
         """Get the internal data dictionary (a dump of the model state)."""
         return self._data
-        
+
     @property
     def model_type(self) -> Optional[Type[T]]:
         """Get the Pydantic model type associated with this context, if any."""
@@ -116,13 +117,13 @@ class Context(Generic[T]):
 
     def keys(self) -> List[str]:
         return list(self._data.keys())
-        
-    # --- Methods requiring careful consideration under the new model --- 
-    
+
+    # --- Methods requiring careful consideration under the new model ---
+
     # OPTION 1: Keep set/update but add validation (more complex)
     # OPTION 2: Remove/Deprecate set/update to enforce immutability via model re-creation (stricter)
     # Let's go with OPTION 2 for stricter adherence to the user's request for rigidity.
-    
+
     # @deprecated("Directly setting arbitrary keys bypasses model validation. Modify the underlying model and re-create Context if needed.")
     def set(self, key: str, value: Any) -> 'Context[T]':
         """(DEPRECATED) Set a value in the internal context dictionary. Bypasses model validation."""
@@ -142,10 +143,10 @@ class Context(Generic[T]):
         self._data.update(data)
         # We cannot easily re-validate the whole model here without reconstructing it.
         return self
-        
+
     # _validate is less useful now if set/update are discouraged/removed.
     # It was primarily for validating incoming dicts on init/update. Pydantic handles init validation.
-    # def _validate(self, data: Dict[str, Any]) -> None: ... 
+    # def _validate(self, data: Dict[str, Any]) -> None: ...
 
     # Snapshots/Rollback operate on the internal dictionary representation.
     def create_snapshot(self) -> int:
@@ -182,7 +183,7 @@ class Context(Generic[T]):
                  print(f"Warning: Failed to reconstruct model during copy: {e}")
                  # Fallback: copy the dict, but the new Context won't have a valid model payload
                  return Context(data=None, model_type=None) # Or raise error?
-                     
+
         # If we successfully created a new model instance, use it
         if new_data_instance:
              return Context(data=new_data_instance)
@@ -204,7 +205,7 @@ class Context(Generic[T]):
             # Re-create the model instance from the current internal dictionary state
             return self._model_type(**self._data)
         except Exception as e:
-            # This indicates the internal _data dictionary has become invalid 
+            # This indicates the internal _data dictionary has become invalid
             # with respect to the _model_type, likely due to using set/update.
             raise ValueError(f"Failed to convert context data to {self._model_type.__name__}: {str(e)}. Internal data may be inconsistent.")
 
@@ -214,8 +215,8 @@ class Context(Generic[T]):
         return f"Context(model_type={model_name}, data_keys={list(self._data.keys())}, snapshots={len(self._snapshots)})"
 
     def __contains__(self, key: str) -> bool:
-        return key in self._data 
-    
+        return key in self._data
+
     def merge(self, other: 'Context[T]') -> 'Context[T]':
         """Merge this context with another context, returning a new context.
         
@@ -228,6 +229,6 @@ class Context(Generic[T]):
         # Create merged data
         merged_data = self._data.copy()
         merged_data.update(other._data)
-        
+
         # Create new context with merged data, preserving model type
         return Context(data=merged_data, model_type=self._model_type)

@@ -1,16 +1,27 @@
 """Prompts for write tool."""
 
-from typing import ClassVar
+from pydantic import Field
+
 from flowlib.resources.decorators.decorators import prompt
 from flowlib.resources.models.base import ResourceBase
-
 
 @prompt("write_tool_parameter_generation")
 class WriteToolParameterGenerationPrompt(ResourceBase):
     """Prompt for generating write tool parameters."""
-    
-    template: ClassVar[str] = """Extract write parameters from this task: {{task_content}}
 
-Working directory: {{working_directory}}
+    template: str = Field(default="""Extract write parameters from this context.
 
-Extract the file path and content to write from the task description."""
+# Full Context
+
+{{full_context}}
+
+# Working Directory
+
+{{working_directory}}
+
+**IMPORTANT**: The context above contains the ORIGINAL USER REQUEST and CONVERSATION HISTORY.
+Extract parameters from the ORIGINAL USER REQUEST when available, using conversation context for additional clarity.
+
+# Guidelines
+
+Extract the file path and content to write from the task description.""")

@@ -1,8 +1,9 @@
 """MCP-aware decorators for flows."""
 
 import logging
-from typing import Optional, Dict, Any, Callable, TypeVar, Type, cast, List
 from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, cast
+
 from flowlib.providers.mcp.client.provider import MCPClientProvider
 
 from .decorators import flow, pipeline
@@ -43,7 +44,7 @@ def mcp_tool(
         })
 
         return flow_cls
-    
+
     return decorator
 
 
@@ -78,7 +79,7 @@ def mcp_resource(
         })
 
         return flow_cls
-    
+
     return decorator
 
 
@@ -90,15 +91,15 @@ def mcp_client_aware(client_name: str) -> Callable[[FlowClass], FlowClass]:
     """
     def decorator(cls: FlowClass) -> FlowClass:
         original_init = cls.__init__
-        
+
         @wraps(original_init)
         def __init__(self: FlowClass, *args: Any, **kwargs: Any) -> None:
             original_init(self, *args, **kwargs)
             self._mcp_client_name = client_name
             self._mcp_client = None
-        
+
         cls.__init__ = __init__
-        
+
         # Add method to get MCP client
         async def get_mcp_client(self: Any) -> Optional['MCPClientProvider']:
             """Get the MCP client instance."""
@@ -113,7 +114,7 @@ def mcp_client_aware(client_name: str) -> Callable[[FlowClass], FlowClass]:
                     logger.warning(f"Failed to get MCP client '{self._mcp_client_name}': {e}")
 
             return cast(Optional['MCPClientProvider'], self._mcp_client)
-        
+
         cls.get_mcp_client = get_mcp_client
 
         # Add method to call MCP tools
@@ -126,7 +127,7 @@ def mcp_client_aware(client_name: str) -> Callable[[FlowClass], FlowClass]:
                 raise RuntimeError(f"MCP client '{self._mcp_client_name}' not available")
 
         cls.call_mcp_tool = call_mcp_tool
-        
+
         # Add method to read MCP resources
         async def read_mcp_resource(self: Any, resource_uri: str) -> Any:
             """Read an MCP resource through the client."""
@@ -135,11 +136,11 @@ def mcp_client_aware(client_name: str) -> Callable[[FlowClass], FlowClass]:
                 return await client.read_resource(resource_uri)
             else:
                 raise RuntimeError(f"MCP client '{self._mcp_client_name}' not available")
-        
+
         cls.read_mcp_resource = read_mcp_resource
-        
+
         return cls
-    
+
     return decorator
 
 
@@ -147,13 +148,13 @@ def mcp_client_aware(client_name: str) -> Callable[[FlowClass], FlowClass]:
 def get_mcp_metadata(flow_class: Any) -> Dict[str, Any]:
     """Get MCP metadata from a flow class."""
     metadata = {}
-    
+
     if hasattr(flow_class, '__mcp_metadata__'):
         metadata.update(flow_class.__mcp_metadata__)
-    
+
     if hasattr(flow_class, '__mcp_resource_metadata__'):
         metadata.update(flow_class.__mcp_resource_metadata__)
-    
+
     return metadata
 
 
@@ -177,24 +178,24 @@ def is_mcp_resource(flow_class: Any) -> bool:
 if __name__ == "__main__":
     # Example of MCP tool flow
     from pydantic import BaseModel
-    
+
     class AnalysisInput(BaseModel):
         text: str
         sentiment_analysis: bool = True
         entity_extraction: bool = False
-    
+
     class AnalysisOutput(BaseModel):
         sentiment: str
         entities: list = []
         confidence: float
-    
+
     @mcp_tool(
         name="analyze_text",
         description="Analyze text for sentiment and entities",
         expose_by_default=True
     )
     class TextAnalysisFlow:
-        
+
         @pipeline(input_model=AnalysisInput, output_model=AnalysisOutput)
         async def analyze(self, input_data: AnalysisInput) -> AnalysisOutput:
             # Analysis logic here
@@ -203,7 +204,7 @@ if __name__ == "__main__":
                 entities=[],
                 confidence=0.85
             )
-    
+
     # Example of MCP resource flow
     @mcp_resource(
         uri="memory://recent_conversations",
@@ -211,15 +212,15 @@ if __name__ == "__main__":
         description="Access to recent conversation history"
     )
     class ConversationHistoryFlow:
-        
+
         async def get_conversations(self) -> Dict[str, List[Dict[str, Any]]]:
             # Return conversation data
             return {"conversations": []}
-    
+
     # Example of MCP client-aware flow
     @mcp_client_aware("github_client")
     class GitHubIntegrationFlow:
-        
+
         async def create_issue(self, title: str, body: str) -> Any:
             # Use MCP client to create GitHub issue
             result = await self.call_mcp_tool("create_issue", {  # type: ignore[attr-defined]

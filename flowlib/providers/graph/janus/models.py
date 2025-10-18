@@ -4,14 +4,16 @@ No fallbacks, no defaults, no optional fields unless explicitly required.
 """
 
 from typing import Any, Dict, List
+
 from pydantic import Field
+
 from flowlib.core.models import StrictBaseModel
 
 
 class JanusAttributeData(StrictBaseModel):
     """Strict JanusGraph attribute data model."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     name: str = Field(..., description="Attribute name")
     value: str = Field(..., description="Attribute value")
     confidence: float = Field(..., description="Confidence score")
@@ -27,7 +29,7 @@ class JanusEntityData(StrictBaseModel):
     source: str = Field(..., description="Entity source")
     importance: float = Field(..., description="Entity importance score")
     last_updated: str = Field(..., description="Last update timestamp")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -38,7 +40,7 @@ class JanusRelationshipData(StrictBaseModel):
     confidence: float = Field(..., description="Relationship confidence")
     source: str = Field(..., description="Relationship source")
     timestamp: str = Field(..., description="Timestamp")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -47,7 +49,7 @@ class JanusVertexData(StrictBaseModel):
     id: str = Field(..., description="Vertex ID")
     label: str = Field(..., description="Vertex label")
     properties: Dict[str, Any] = Field(..., description="Vertex properties")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -58,7 +60,7 @@ class JanusEdgeData(StrictBaseModel):
     source_id: str = Field(..., description="Source vertex ID")
     target_id: str = Field(..., description="Target vertex ID")
     properties: Dict[str, Any] = Field(..., description="Edge properties")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -68,7 +70,7 @@ class JanusQueryResult(StrictBaseModel):
     edges: List[JanusEdgeData] = Field(..., description="Result edges")
     total_count: int = Field(..., description="Total result count")
     query_time: float = Field(..., description="Query execution time")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -76,7 +78,7 @@ class JanusTraversalResult(StrictBaseModel):
     """Strict JanusGraph traversal result model."""
     result_data: List[Dict[str, Any]] = Field(..., description="Traversal result data")
     execution_time: float = Field(..., description="Execution time in milliseconds")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -86,5 +88,5 @@ class JanusConnectionInfo(StrictBaseModel):
     graph_name: str = Field(..., description="Graph name")
     traversal_source: str = Field(..., description="Traversal source name")
     connection_pool_size: int = Field(..., description="Connection pool size")
-    
+
     # Inherits strict configuration from StrictBaseModel

@@ -3,9 +3,8 @@
 # BaseAgent removed from init to avoid circular imports
 # Import BaseAgent directly: from flowlib.agent.core.base_agent import BaseAgent
 
-# Import debriefing components to trigger decorator registration
-from flowlib.agent.components.task.debriefing import flows, prompts
-
+# New unified launcher system
+from flowlib.agent.launcher import AgentLauncher
 
 # Create utils alias for test compatibility
 try:
@@ -19,6 +18,5 @@ except ImportError:
 
 __all__ = [
     "utils",
-    "flows",
-    "prompts",
+    "AgentLauncher",
 ]

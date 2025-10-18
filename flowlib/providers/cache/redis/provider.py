@@ -3,20 +3,23 @@
 This module implements a Redis-based cache provider using the async Redis client.
 """
 
-from typing import Any, Dict, List, Optional, Union, cast, TYPE_CHECKING
-import logging
 import json
+import logging
 import pickle
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, cast
+
 try:
     import redis
 except ImportError:
     pass
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from pydantic import Field
+
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.cache.base import CacheProvider, CacheProviderSettings
-from pydantic import Field
 from flowlib.providers.core.decorators import provider
+
 # Removed ProviderType import - using config-driven provider access
 
 logger = logging.getLogger(__name__)
@@ -25,16 +28,16 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import redis.asyncio as redis_client
+    from redis.asyncio import Redis as RedisClient
     from redis.asyncio.connection import ConnectionPool as AsyncConnectionPool
     from redis.exceptions import RedisError as RedisException
-    from redis.asyncio import Redis as RedisClient
     REDIS_AVAILABLE = True
 else:
     try:
         import redis.asyncio as redis_client
+        from redis.asyncio import Redis as RedisClient
         from redis.asyncio.connection import ConnectionPool as AsyncConnectionPool
         from redis.exceptions import RedisError as RedisException
-        from redis.asyncio import Redis as RedisClient
         REDIS_AVAILABLE = True
     except ImportError:
         logger.warning("redis package not found. Install with 'pip install redis'")
@@ -64,29 +67,29 @@ class RedisCacheProviderSettings(CacheProviderSettings):
     3. Connection pooling configuration
     4. Redis-specific features (sentinel, encoding)
     """
-    
+
     # Connection settings
     host: str = Field(default="localhost", description="Redis server host (e.g., 'localhost', 'redis.example.com')")
     port: int = Field(default=6379, description="Redis server port (default: 6379)")
     db: int = Field(default=0, description="Redis database number (0-15, default: 0)")
     username: Optional[str] = Field(default=None, description="Redis username for ACL auth (Redis 6.0+)")
     password: Optional[str] = Field(default=None, description="Redis password (e.g., 'mySecurePassword123')")
-    
+
     # Cache behavior settings - inherit from base CacheProviderSettings
     serialize_method: str = Field(default="json", description="Serialization method: json or pickle")
-    
+
     # Connection pool settings
     pool_size: int = Field(default=10, description="Maximum connection pool size")
     socket_timeout: Optional[float] = Field(default=None, description="Socket timeout in seconds")
     socket_connect_timeout: Optional[float] = Field(default=None, description="Socket connection timeout in seconds")
     socket_keepalive: bool = Field(default=False, description="Whether to use socket keepalive")
     socket_keepalive_options: Optional[Dict[int, Union[int, bytes]]] = Field(default=None, description="Socket keepalive options")
-    
+
     # Redis encoding settings
     encoding: str = Field(default="utf-8", description="Redis response encoding")
     encoding_errors: str = Field(default="strict", description="How to handle encoding errors")
     decode_responses: bool = Field(default=False, description="Whether to decode responses to strings")
-    
+
     # Redis Sentinel settings (for high availability)
     sentinel_kwargs: Dict[str, Any] = Field(default_factory=dict, description="Additional options for Redis Sentinel")
     sentinel: Optional[List[str]] = Field(default=None, description="List of Redis Sentinel nodes")
@@ -102,7 +105,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
     cache operations with TTL support, atomic operations, and
     distributed locking mechanisms.
     """
-    
+
     def __init__(self, name: str = "redis-cache", settings: Optional[RedisCacheProviderSettings] = None):
         """Initialize Redis cache provider.
         
@@ -116,7 +119,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
         self._redis_settings = redis_settings
         self._pool: Optional[AsyncConnectionPool] = None
         self._redis: Optional[RedisClient] = None
-        
+
     async def _initialize(self) -> None:
         """Initialize the Redis connection pool.
         
@@ -140,10 +143,10 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 decode_responses=self._redis_settings.decode_responses,
                 max_connections=self._redis_settings.pool_size,
             )
-            
+
             # Create Redis client
             self._redis = redis_client.Redis(connection_pool=self._pool)
-            
+
             # Test connection
             if not await self.check_connection():
                 raise ProviderError(
@@ -162,10 +165,10 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                         retry_count=0
                     )
                 )
-                
+
             # Mark as initialized
             logger.info(f"Redis cache provider '{self.name}' initialized successfully")
-            
+
         except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
@@ -204,20 +207,20 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 ),
                 cause=e
             )
-            
+
     async def _shutdown(self) -> None:
         """Close Redis connections and release resources."""
         # Close pool
         if self._pool:
             await self._pool.disconnect()
             self._pool = None
-            
+
         # Clear client
         self._redis = None
-        
+
         # Mark as not initialized
         logger.info(f"Redis cache provider '{self.name}' shut down")
-        
+
     async def check_connection(self) -> bool:
         """Check if Redis connection is active.
         
@@ -233,7 +236,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
             return bool(result)
         except Exception:
             return False
-            
+
     async def get(self, key: str) -> Optional[Any]:
         """Get a value from Redis.
         
@@ -270,11 +273,11 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
 
             # Get value from Redis
             value = await self._redis.get(ns_key)
-            
+
             # Return None if not found
             if value is None:
                 return None
-                
+
             # Deserialize value based on serialization method
             if self._redis_settings.serialize_method == "json":
                 if isinstance(value, bytes):
@@ -284,7 +287,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 return pickle.loads(value)
             else:
                 return value
-                
+
         except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
@@ -323,7 +326,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 ),
                 cause=e
             )
-            
+
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """Set a value in Redis.
         
@@ -363,7 +366,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
             # Set TTL to default if not specified
             if ttl is None:
                 ttl = self._redis_settings.default_ttl
-                
+
             # Serialize value based on serialization method
             serialized: Union[str, bytes]
             if self._redis_settings.serialize_method == "json":
@@ -372,11 +375,11 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 serialized = pickle.dumps(value)
             else:
                 serialized = value
-                
+
             # Set value in Redis with TTL
             result = await self._redis.set(ns_key, serialized, ex=ttl)
             return result is True
-            
+
         except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
@@ -415,7 +418,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 ),
                 cause=e
             )
-            
+
     async def delete(self, key: str) -> bool:
         """Delete a value from Redis.
         
@@ -453,7 +456,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
             # Delete value from Redis
             result = await self._redis.delete(ns_key)
             return bool(result > 0)
-            
+
         except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
@@ -492,7 +495,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 ),
                 cause=e
             )
-            
+
     async def exists(self, key: str) -> bool:
         """Check if a key exists in Redis.
         
@@ -530,7 +533,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
             # Check if key exists in Redis
             result = await self._redis.exists(ns_key)
             return bool(result > 0)
-            
+
         except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
@@ -569,7 +572,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 ),
                 cause=e
             )
-            
+
     async def ttl(self, key: str) -> Optional[int]:
         """Get the remaining TTL for a key.
         
@@ -585,7 +588,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
         try:
             # Create namespaced key
             ns_key = self.make_namespaced_key(key)
-            
+
             # Get TTL from Redis
             if self._redis is None:
                 raise ProviderError(
@@ -613,7 +616,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 return -1  # No expiration
             else:
                 return ttl
-                
+
         except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
@@ -652,7 +655,7 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                 ),
                 cause=e
             )
-            
+
     async def clear(self) -> bool:
         """Clear all values from the cache with the current namespace.
         
@@ -699,13 +702,13 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                     # Exit when no more keys (cursor is 0)
                     if cursor == 0:
                         break
-                        
+
                 return True
             else:
                 # Clear all keys (dangerous!)
                 await self._redis.flushdb()
                 return True
-                
+
         except RedisException as e:
             # Wrap Redis errors
             raise ProviderError(
@@ -743,4 +746,4 @@ class RedisCacheProvider(CacheProvider[RedisCacheProviderSettings]):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )

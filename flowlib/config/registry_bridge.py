@@ -7,16 +7,21 @@ environment switching without restart.
 
 import logging
 from typing import Any, Dict, List, Optional, cast
-from flowlib.resources.models.base import ResourceBase
 
-from flowlib.resources.registry.registry import resource_registry
-from flowlib.resources.models.constants import ResourceType
+from flowlib.resources.models.base import ResourceBase
 from flowlib.resources.models.config_resource import (
-    LLMConfigResource, DatabaseConfigResource, VectorDBConfigResource,
-    CacheConfigResource, StorageConfigResource, EmbeddingConfigResource,
-    GraphDBConfigResource, MessageQueueConfigResource
+    CacheConfigResource,
+    DatabaseConfigResource,
+    EmbeddingConfigResource,
+    GraphDBConfigResource,
+    LLMConfigResource,
+    MessageQueueConfigResource,
+    StorageConfigResource,
+    VectorDBConfigResource,
 )
+from flowlib.resources.models.constants import ResourceType
 from flowlib.resources.models.model_resource import ModelResource
+from flowlib.resources.registry.registry import resource_registry
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +33,13 @@ class RegistryBridge:
     GUI configuration system into the flowlib registry system, enabling
     runtime environment switching and configuration management.
     """
-    
+
     def __init__(self) -> None:
         """Initialize the registry bridge."""
         # Track environment resources for cleanup
         self._environment_resources: Dict[str, List[tuple]] = {}
         self._current_environment: Optional[str] = None
-    
+
     def load_environment(self, environment: str, repository_data: Dict[str, Any]) -> None:
         """Load all configurations for an environment from repository data.
         
@@ -63,28 +68,28 @@ class RegistryBridge:
         """
         if "role_assignments" not in repository_data or "configurations" not in repository_data:
             raise ValueError("Repository data must contain 'role_assignments' and 'configurations'")
-        
+
         # Clear existing environment
         if self._current_environment:
             self.clear_environment(self._current_environment)
-        
+
         role_assignments = repository_data["role_assignments"]
         configurations = repository_data["configurations"]
-        
+
         logger.info(f"Loading environment '{environment}' with {len(role_assignments)} role assignments")
-        
+
         # Load each role assignment
         for role_name, config_id in role_assignments.items():
             if config_id not in configurations:
                 logger.warning(f"Configuration '{config_id}' not found for role '{role_name}'")
                 continue
-            
+
             config_data = configurations[config_id]
             self._register_config_from_data(environment, role_name, config_id, config_data)
-        
+
         self._current_environment = environment
         logger.info(f"Successfully loaded environment '{environment}'")
-    
+
     def _register_config_from_data(self, environment: str, role_name: str, canonical_name: str, config_data: Dict[str, Any]) -> None:
         """Register a configuration from repository data with proper role assignment.
         
@@ -98,18 +103,18 @@ class RegistryBridge:
             if "type" not in config_data:
                 raise ValueError(f"Configuration for role '{role_name}' missing required 'type' field")
             config_type = config_data["type"]
-            
+
             # Create resource object based on type
             resource_obj = self._create_resource_from_config(config_data, canonical_name)
-            
+
             # Determine resource type for registry
             resource_type = self._map_config_type_to_resource_type(config_type)
-            
+
             # Determine aliases - if role_name differs from canonical_name, it's an alias
             aliases = []
             if role_name != canonical_name:
                 aliases = [role_name]
-            
+
             # Register with resource registry using canonical name and role alias
             resource_registry.register_with_aliases(
                 canonical_name=canonical_name,
@@ -117,25 +122,25 @@ class RegistryBridge:
                 aliases=aliases,
                 resource_type=resource_type
             )
-            
+
             # Track both canonical and alias for environment cleanup
             canonical_key = (resource_type, canonical_name)
             if environment not in self._environment_resources:
                 self._environment_resources[environment] = []
             self._environment_resources[environment].append(canonical_key)
-            
+
             if aliases:
                 # Also track alias keys for cleanup (they use separate storage)
                 for alias in aliases:
-                    alias_key = (resource_type, alias)  
+                    alias_key = (resource_type, alias)
                     self._environment_resources[environment].append(alias_key)
-            
+
             logger.debug(f"Registered {config_type} configuration '{canonical_name}' with role '{role_name}' for environment '{environment}'")
-            
+
         except Exception as e:
             logger.error(f"Failed to register configuration '{role_name}': {e}")
             raise
-    
+
     def _create_resource_from_config(self, config_data: Dict[str, Any], canonical_name: str) -> Any:
         """Create a resource object from configuration data.
         
@@ -156,7 +161,7 @@ class RegistryBridge:
         if "settings" not in config_data:
             raise KeyError("Required 'settings' missing from config_data")
         settings = config_data["settings"]
-        
+
         # If we have configuration file content, extract settings from it
         content = config_data["content"] if "content" in config_data else None
         if content and content.strip():
@@ -169,13 +174,13 @@ class RegistryBridge:
             except Exception as e:
                 logger.warning(f"Failed to extract settings from content for {config_type}: {e}")
                 # Fall back to using just the settings dict
-        
+
         # UNIFIED SETTINGS EXTRACTION: All provider types use the same pattern
         # Extract nested settings dict if present (from AST parsing with Field(default_factory=lambda: {...}))
         nested_settings = settings['settings'] if 'settings' in settings else {}
         # Merge with any top-level settings, but nested settings take precedence
         final_settings = {**{k: v for k, v in settings.items() if k not in ['provider_type', 'settings']}, **nested_settings}
-        
+
         # Create appropriate resource type - all use unified constructor pattern
         if config_type == "llm_config":
             return LLMConfigResource(
@@ -196,11 +201,11 @@ class RegistryBridge:
             # Model configuration - dynamically determine the correct model class
             # Remove provider_type from settings to avoid duplicate if it exists
             model_settings = {k: v for k, v in settings.items() if k not in ['provider_type', 'name', 'type']}
-            
+
             # Use provider_type to determine the correct model class dynamically
             provider_type = settings.get('provider_type', 'unknown')
             model_class = self._get_model_class_for_provider(provider_type)
-            
+
             if model_class:
                 # Create model instance using the proper model class
                 try:
@@ -295,7 +300,7 @@ class RegistryBridge:
             )
         else:
             raise ValueError(f"Unsupported configuration type: {config_type}")
-    
+
     def _get_model_class_for_provider(self, provider_type: str) -> Optional[type]:
         """Get the appropriate model class for a provider type.
         
@@ -311,11 +316,11 @@ class RegistryBridge:
             'google_ai': 'flowlib.providers.llm.models.GoogleAIModelConfig',
             # Add more mappings as needed
         }
-        
+
         class_path = provider_to_model_class.get(provider_type)
         if not class_path:
             return None
-        
+
         try:
             # Dynamically import the model class
             module_path, class_name = class_path.rsplit('.', 1)
@@ -325,7 +330,7 @@ class RegistryBridge:
         except (ImportError, AttributeError) as e:
             logger.warning(f"Failed to import model class for provider '{provider_type}': {e}")
             return None
-    
+
     def _extract_settings_from_content(self, content: str, config_type: str) -> Dict[str, Any]:
         """Extract configuration settings from Python file content.
         
@@ -337,13 +342,13 @@ class RegistryBridge:
             Dictionary of extracted settings
         """
         import ast
-        
+
         settings = {}
-        
+
         try:
             # Parse the Python content
             parsed = ast.parse(content)
-            
+
             # Find the configuration class
             for node in ast.walk(parsed):
                 if isinstance(node, ast.ClassDef):
@@ -354,34 +359,34 @@ class RegistryBridge:
                             decorator_name = decorator.func.id
                             expected_decorators = {
                                 'llm_config': 'llm_config',
-                                'model_config': 'model_config', 
+                                'model_config': 'model_config',
                                 'vector_db_config': 'vector_db_config',
                                 'embedding_config': 'embedding_config'
                             }
                             if decorator_name in expected_decorators.values():
                                 has_config_decorator = True
                                 break
-                    
+
                     if not has_config_decorator:
                         continue
-                    
+
                     # Extract field definitions from the class
                     for item in node.body:
                         if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
                             field_name = item.target.id
-                            
+
                             # Extract default value if present
                             if item.value:
                                 try:
                                     if isinstance(item.value, ast.Call):
                                         # Handle Field() calls
-                                        if (isinstance(item.value.func, ast.Name) and 
+                                        if (isinstance(item.value.func, ast.Name) and
                                             item.value.func.id == 'Field'):
-                                            
+
                                             # Look for default value as first positional arg
                                             if item.value.args:
                                                 settings[field_name] = ast.literal_eval(item.value.args[0])
-                                            
+
                                             # Look for default_factory in keywords
                                             for keyword in item.value.keywords:
                                                 if keyword.arg == 'default_factory':
@@ -397,21 +402,21 @@ class RegistryBridge:
                                     else:
                                         # Direct value assignment
                                         settings[field_name] = ast.literal_eval(item.value)
-                                        
+
                                 except (ValueError, TypeError):
                                     # Can't evaluate the value, skip it
                                     pass
-            
+
             # For model configs, keep config dict separate (don't merge into main settings)
             # The config dict should be passed as-is to ModelResource.config field
-            
+
             logger.debug(f"Extracted {len(settings)} settings from content: {list(settings.keys())}")
             return settings
-            
+
         except Exception as e:
             logger.warning(f"Failed to parse configuration content: {e}")
             return {}
-    
+
     def _map_config_type_to_resource_type(self, config_type: str) -> str:
         """Map configuration type to resource type.
         
@@ -432,12 +437,12 @@ class RegistryBridge:
             "graph_db_config": ResourceType.GRAPH_DB_CONFIG,
             "message_queue_config": ResourceType.MESSAGE_QUEUE_CONFIG,
         }
-        
+
         if config_type not in mapping:
             raise ValueError(f"Unknown config type: {config_type}")
-        
+
         return mapping[config_type]
-    
+
     def clear_environment(self, environment: str) -> None:
         """Clear resources registered for a specific environment.
         
@@ -447,9 +452,9 @@ class RegistryBridge:
         if environment not in self._environment_resources:
             logger.debug(f"No resources found for environment '{environment}'")
             return
-        
+
         keys_to_clear = self._environment_resources[environment]
-        
+
         for key in keys_to_clear:
             resource_type, resource_name = key
             try:
@@ -458,15 +463,15 @@ class RegistryBridge:
                 logger.debug(f"Removed resource '{resource_name}' from environment '{environment}'")
             except Exception as e:
                 logger.warning(f"Failed to remove resource '{resource_name}': {e}")
-        
+
         # Clear environment tracking
         del self._environment_resources[environment]
-        
+
         if self._current_environment == environment:
             self._current_environment = None
-        
+
         logger.info(f"Cleared environment '{environment}'")
-    
+
     def switch_environment(self, new_environment: str, repository_data: Dict[str, Any]) -> None:
         """Switch to a different environment.
         
@@ -475,14 +480,14 @@ class RegistryBridge:
             repository_data: Repository data for the new environment
         """
         logger.info(f"Switching from '{self._current_environment}' to '{new_environment}'")
-        
+
         # Clear current environment
         if self._current_environment:
             self.clear_environment(self._current_environment)
-        
+
         # Load new environment
         self.load_environment(new_environment, repository_data)
-    
+
     def get_current_environment(self) -> Optional[str]:
         """Get the currently loaded environment.
         
@@ -490,7 +495,7 @@ class RegistryBridge:
             Name of the current environment, or None if no environment is loaded
         """
         return self._current_environment
-    
+
     def list_environment_resources(self, environment: str) -> List[str]:
         """List resources registered for an environment.
         
@@ -502,10 +507,10 @@ class RegistryBridge:
         """
         if environment not in self._environment_resources:
             return []
-        
+
         return [name for _, name in self._environment_resources[environment]]
-    
-    async def register_configuration(self, config_id: str, config_type: str, 
+
+    async def register_configuration(self, config_id: str, config_type: str,
                                    provider_type: str, settings: Dict[str, Any],
                                    environment: str) -> None:
         """Register a configuration with the flowlib registry.
@@ -523,20 +528,20 @@ class RegistryBridge:
                 "provider_type": provider_type,
                 "settings": settings
             }
-            
+
             # Additional validation for model configurations
             if config_type == "model_config":
                 await self._validate_model_config_registration(config_id, config_data, environment)
-            
+
             # Use config_type as role_name and config_id as canonical_name
             role_name = config_type.replace('_', '-')
             self._register_config_from_data(environment, role_name, config_id, config_data)
             logger.info(f"Registered {config_type} configuration {config_id} for environment {environment}")
-            
+
         except Exception as e:
             logger.error(f"Failed to register configuration {config_id}: {e}")
             raise
-    
+
     async def _validate_model_config_registration(self, config_id: str, config_data: Dict[str, Any], environment: str) -> None:
         """Validate model configuration before registration.
         
@@ -548,16 +553,16 @@ class RegistryBridge:
         if "provider_type" not in config_data:
             raise ValueError(f"Model configuration '{config_id}' must specify provider_type")
         provider_type = config_data["provider_type"]
-        
+
         # Check if required model settings are present
         settings = config_data["settings"] if "settings" in config_data else {}
         if "model_path" not in settings and "model_name" not in settings:
             logger.warning(
                 f"Model configuration '{config_id}' should specify either model_path or model_name"
             )
-        
+
         logger.debug(f"Validated model configuration '{config_id}' for provider type '{provider_type}'")
-    
+
     def get_environment_configurations(self, environment: str) -> Dict[str, Dict[str, Any]]:
         """Get all configurations for a specific environment.
         
@@ -568,10 +573,10 @@ class RegistryBridge:
             Dictionary mapping config names to their data, categorized by provider and model configs
         """
         configurations: Dict[str, Dict[str, Any]] = {}
-        
+
         if environment not in self._environment_resources:
             return configurations
-        
+
         # Get all resource names for this environment
         for resource_type, resource_name in self._environment_resources[environment]:
             try:
@@ -584,24 +589,24 @@ class RegistryBridge:
                         "provider_type": resource.provider_type if hasattr(resource, 'provider_type') else "unknown",
                         "settings": self._extract_settings_from_resource(resource)
                     }
-                    
+
                     # Add category for better organization
                     if resource_type == "model_config":
                         config_data["category"] = "model"
-                    elif resource_type in ["llm_config", "database_config", "vector_db_config", 
+                    elif resource_type in ["llm_config", "database_config", "vector_db_config",
                                           "cache_config", "storage_config", "embedding_config",
                                           "graph_db_config", "message_queue_config"]:
                         config_data["category"] = "provider"
                     else:
                         config_data["category"] = "other"
-                    
+
                     configurations[resource_name] = config_data
-                    
+
             except Exception as e:
                 logger.warning(f"Failed to get configuration for {resource_name}: {e}")
-        
+
         return configurations
-    
+
     def _extract_settings_from_resource(self, resource: ResourceBase) -> Dict[str, Any]:
         """Extract settings from a resource object.
         
@@ -612,11 +617,11 @@ class RegistryBridge:
             Settings dictionary
         """
         settings = {}
-        
+
         try:
             # Get all attributes except standard pydantic/metadata fields
             skip_fields = {'name', 'type', 'provider_type', '__dict__', '__class__'}
-            
+
             if hasattr(resource, 'model_dump'):
                 # Pydantic v2 model
                 data = resource.model_dump()
@@ -624,18 +629,18 @@ class RegistryBridge:
             elif hasattr(resource, '__dict__'):
                 # Regular object
                 settings = {k: v for k, v in resource.__dict__.items() if k not in skip_fields and not k.startswith('_')}
-            
+
             # Special handling for model resources
             if hasattr(resource, 'get_model_settings'):
                 # ModelResource has a specialized method
                 model_settings = resource.get_model_settings()
                 settings.update(model_settings)
-                
+
         except Exception as e:
             logger.warning(f"Failed to extract settings from resource: {e}")
-        
+
         return settings
-    
+
     async def update_role_assignments(self, environment: str, assignments: Dict[str, Any]) -> None:
         """Update role assignments for an environment.
         
@@ -646,13 +651,13 @@ class RegistryBridge:
         try:
             # Clear existing assignments for this environment
             self.clear_environment(environment)
-            
+
             # Rebuild assignment data in expected format
             repository_data = {
                 "role_assignments": {role_id: assignment.config_id for role_id, assignment in assignments.items()},
                 "configurations": {}
             }
-            
+
             # For each assignment, we need the configuration data
             for role_id, assignment in assignments.items():
                 config_id = assignment.config_id
@@ -664,16 +669,16 @@ class RegistryBridge:
                     "provider_type": "unknown",
                     "settings": {}
                 }
-            
+
             # Load the environment with new assignments
             self.load_environment(environment, repository_data)
-            
+
             logger.info(f"Updated role assignments for environment {environment}")
-            
+
         except Exception as e:
             logger.error(f"Failed to update role assignments for {environment}: {e}")
             raise
-    
+
     def get_role_assignments(self, environment: str) -> Dict[str, str]:
         """Get role assignments for an environment.
         
@@ -684,16 +689,16 @@ class RegistryBridge:
             Dictionary mapping role names to config IDs
         """
         assignments: dict[str, str] = {}
-        
+
         if environment not in self._environment_resources:
             return assignments
-        
+
         # Convert resource tracking back to role assignments
         for resource_type, resource_name in self._environment_resources[environment]:
             assignments[resource_name] = resource_name  # In this context, role name = config ID
-        
+
         return assignments
-    
+
     def validate_repository_data(self, repository_data: Dict[str, Any]) -> bool:
         """Validate repository data format.
         
@@ -706,38 +711,38 @@ class RegistryBridge:
         try:
             if "role_assignments" not in repository_data or "configurations" not in repository_data:
                 return False
-            
+
             role_assignments = repository_data["role_assignments"]
             configurations = repository_data["configurations"]
-            
+
             if not isinstance(role_assignments, dict) or not isinstance(configurations, dict):
                 return False
-            
+
             # Validate that all assigned configs exist
             for role_name, config_id in role_assignments.items():
                 if config_id not in configurations:
                     logger.warning(f"Configuration '{config_id}' referenced by role '{role_name}' not found")
                     return False
-            
+
             # Validate configuration format
             for config_id, config_data in configurations.items():
                 if not isinstance(config_data, dict):
                     return False
-                
+
                 if "type" not in config_data:
                     logger.warning(f"Configuration '{config_id}' missing 'type' field")
                     return False
-            
+
             # Additional validation for model configurations
             if not self._validate_model_provider_references(configurations):
                 return False
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Error validating repository data: {e}")
             return False
-    
+
     def _validate_model_provider_references(self, configurations: Dict[str, Dict[str, Any]]) -> bool:
         """Validate that model configurations reference valid provider configurations.
         
@@ -751,24 +756,24 @@ class RegistryBridge:
             # Get all provider configurations
             provider_configs = {
                 config_id: config_data for config_id, config_data in configurations.items()
-                if ("type" in config_data and config_data["type"] in ["llm_config", "database_config", "vector_db_config", 
+                if ("type" in config_data and config_data["type"] in ["llm_config", "database_config", "vector_db_config",
                                               "cache_config", "storage_config", "embedding_config",
                                               "graph_db_config", "message_queue_config"])
             }
-            
+
             # Get all model configurations
             model_configs = {
                 config_id: config_data for config_id, config_data in configurations.items()
                 if ("type" in config_data and config_data["type"] == "model_config")
             }
-            
+
             # Validate each model configuration
             for model_id, model_data in model_configs.items():
                 if "provider_type" not in model_data:
                     logger.warning(f"Model configuration '{model_id}' missing required 'provider_type' field")
                     continue
                 provider_type = model_data["provider_type"]
-                
+
                 # Check if there's a provider configuration with matching provider_type
                 matching_provider = None
                 for provider_id, provider_data in provider_configs.items():
@@ -778,7 +783,7 @@ class RegistryBridge:
                     if provider_data["provider_type"] == provider_type:
                         matching_provider = provider_id
                         break
-                
+
                 if not matching_provider:
                     logger.warning(
                         f"Model configuration '{model_id}' references provider_type '{provider_type}' "
@@ -786,11 +791,11 @@ class RegistryBridge:
                     )
                     # This is a warning, not an error - models can reference providers registered elsewhere
                     continue
-                
+
                 logger.debug(f"Model '{model_id}' references provider '{matching_provider}' (type: {provider_type})")
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Error validating model-provider references: {e}")
             return False

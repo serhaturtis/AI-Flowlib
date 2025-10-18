@@ -1,1 +1,1 @@
-# Makes qdrant a package 
+# Makes qdrant a package

@@ -23,7 +23,7 @@ class AgentConfigManager(AgentComponent):
     - Configuration merging and defaults
     - Configuration access and management
     """
-    
+
     def __init__(self, name: str = "config_manager"):
         """Initialize the configuration manager.
         
@@ -32,15 +32,15 @@ class AgentConfigManager(AgentComponent):
         """
         super().__init__(name)
         self._config: Optional[AgentConfig] = None
-    
+
     async def _initialize_impl(self) -> None:
         """Initialize the configuration manager."""
         logger.info("Configuration manager initialized")
-    
+
     async def _shutdown_impl(self) -> None:
         """Shutdown the configuration manager."""
         logger.info("Configuration manager shutdown")
-    
+
     def prepare_config(self, config: Optional[Union[Dict[str, Any], AgentConfig]] = None) -> AgentConfig:
         """Prepare configuration for the agent.
         
@@ -60,25 +60,25 @@ class AgentConfigManager(AgentComponent):
             if isinstance(config, AgentConfig):
                 self._config = config
                 return config
-            
+
             # If dict, create AgentConfig from dict
             elif isinstance(config, dict):
                 self._config = AgentConfig(**config)
                 return self._config
-            
+
             # If None, create default config
             elif config is None:
                 raise ConfigurationError("Configuration is required - no default agent configuration allowed")
-            
+
             # Invalid config type
             else:
                 raise ConfigurationError(f"Invalid config type: {type(config)}. Expected dict or AgentConfig.")
-                
+
         except Exception as e:
             if isinstance(e, ConfigurationError):
                 raise
             raise ConfigurationError(f"Failed to prepare agent configuration: {e}") from e
-    
+
     @property
     def config(self) -> AgentConfig:
         """Get the current configuration.
@@ -92,7 +92,7 @@ class AgentConfigManager(AgentComponent):
         if self._config is None:
             raise ConfigurationError("Configuration not set. Call prepare_config() first.")
         return self._config
-    
+
     def update_config(self, config: Union[Dict[str, Any], AgentConfig]) -> AgentConfig:
         """Update the current configuration.
         
@@ -103,7 +103,7 @@ class AgentConfigManager(AgentComponent):
             Updated AgentConfig instance
         """
         return self.prepare_config(config)
-    
+
     def get_config_dict(self) -> Dict[str, Any]:
         """Get configuration as dictionary.
         

@@ -6,7 +6,7 @@ from text responses, particularly useful for handling LLM outputs.
 
 import json
 import re
-from typing import Dict, Any, Optional, Union, List
+from typing import Any, Dict, List, Optional, Union
 
 
 def extract_json(text: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
@@ -65,11 +65,11 @@ def extract_json_str(text: str) -> str:
     """
     if not text:
         return ""
-        
+
     # Try to find a JSON object using regex
     json_pattern = r'(\{[\s\S]*\}|\[[\s\S]*\])'
     match = re.search(json_pattern, text)
-    
+
     if match:
         json_str = match.group(0)
         try:
@@ -78,14 +78,14 @@ def extract_json_str(text: str) -> str:
             return json_str
         except json.JSONDecodeError:
             pass
-    
+
     # If no valid JSON found with regex, try the whole text
     try:
         json.loads(text)
         return text
     except json.JSONDecodeError:
         pass
-        
+
     return ""
 
 
@@ -101,9 +101,9 @@ def format_json(data: Union[Dict[str, Any], List[Any]], indent: int = 2) -> str:
     """
     if not data:
         return "{}" if isinstance(data, dict) else "[]"
-        
+
     try:
         return json.dumps(data, indent=indent, ensure_ascii=False)
     except (TypeError, ValueError) as e:
         # Handle non-serializable objects
-        return f"Error formatting as JSON: {str(e)}" 
+        return f"Error formatting as JSON: {str(e)}"

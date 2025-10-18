@@ -19,7 +19,7 @@ class ExampleLlamaCppEmbeddingProviderConfig(EmbeddingConfigResource):
     Individual embedding models are defined separately using @embedding_model_config.
     This config can be assigned to roles like 'default-embedding' via role assignment.
     """
-    
+
     def __init__(self, name: str, type: str, **kwargs: Any) -> None:
         super().__init__(
             name=name,

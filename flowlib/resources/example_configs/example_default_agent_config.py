@@ -26,9 +26,6 @@ class DefaultAgentConfig(AgentConfigResource):
             llm_name="default-llm",
             temperature=0.7,
             max_iterations=10,
-            enable_memory=True,
             enable_learning=True,
-            enable_thinking=True,
-            auto_decomposition=True,
             verbose=False
         )

@@ -4,20 +4,27 @@ This module provides a concrete implementation of the VectorDBProvider
 for Qdrant, a vector similarity search engine.
 """
 
+import hashlib
 import logging
 import uuid
-import hashlib
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from pydantic import Field
 from qdrant_client import QdrantClient, models
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.vector.base import VectorDBProvider, VectorDBProviderSettings, VectorMetadata, SimilaritySearchResult, VectorSearchResult, VectorIndexStats
 from flowlib.providers.core.decorators import provider
-from flowlib.providers.embedding.base import EmbeddingProvider
 from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.embedding.base import EmbeddingProvider
+from flowlib.providers.vector.base import (
+    SimilaritySearchResult,
+    VectorDBProvider,
+    VectorDBProviderSettings,
+    VectorIndexStats,
+    VectorMetadata,
+    VectorSearchResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,28 +39,28 @@ class QdrantProviderSettings(VectorDBProviderSettings):
     
     This follows Interface Segregation - only fields Qdrant actually needs.
     """
-    
+
     # Qdrant connection settings
     url: str = Field(default="http://localhost:6333", description="Qdrant server URL")
     api_key: Optional[str] = Field(default=None, description="API key for Qdrant authentication")
-    
+
     # Qdrant-specific collection settings
     collection_name: str = Field(default="default", description="Default collection name")
     vector_size: int = Field(default=1536, description="Vector dimension size")
     distance: str = Field(default="Cosine", description="Distance metric: Cosine, Euclid, Dot")
     metric: str = Field(default="cosine", description="Alias for distance metric (for compatibility)")  # Added for compatibility
-    
+
     # Qdrant performance settings
     timeout: float = Field(default=30.0, description="Request timeout in seconds")
     prefer_grpc: bool = Field(default=False, description="Whether to use gRPC instead of HTTP")
-    
+
     # Alternative connection settings (for detailed HTTP/gRPC configuration)
     host: Optional[str] = Field(default=None, description="Alternative: Qdrant server host")
     port: Optional[int] = Field(default=None, description="Alternative: Qdrant HTTP port")
     grpc_port: Optional[int] = Field(default=6334, description="Alternative: Qdrant gRPC port")
     https: bool = Field(default=False, description="Alternative: Use HTTPS instead of HTTP")
     prefix: Optional[str] = Field(default=None, description="Alternative: URL prefix")
-    
+
     # Local mode settings
     prefer_local: bool = Field(default=False, description="Prefer local file-based storage over HTTP")
     path: Optional[str] = Field(default=None, description="Path for local file-based storage")
@@ -68,7 +75,7 @@ class QdrantProvider(VectorDBProvider):
     This provider implements vector storage, retrieval, and similarity search
     using Qdrant, a vector similarity search engine.
     """
-    
+
     def __init__(self, name: str, provider_type: str, settings: Optional[QdrantProviderSettings] = None, **kwargs: object):
         """Initialize Qdrant provider.
         
@@ -107,7 +114,7 @@ class QdrantProvider(VectorDBProvider):
                 )
             )
         return self._client
-        
+
     async def initialize(self) -> None:
         """Initialize Qdrant client and embedding provider.
         
@@ -132,9 +139,9 @@ class QdrantProvider(VectorDBProvider):
                     retry_count=0
                 )
             )
-        
+
         await self._initialize()
-        
+
     async def _initialize(self) -> None:
         """Initialize Qdrant client and embedding provider.
         
@@ -173,7 +180,7 @@ class QdrantProvider(VectorDBProvider):
                 )
                 self._client = client
                 logger.info(f"Connected to Qdrant server at: {cast(QdrantProviderSettings, self.settings).host}:{cast(QdrantProviderSettings, self.settings).port}")
-                
+
             # Get collection info for default collection if specified
             if cast(QdrantProviderSettings, self.settings).collection_name:
                 try:
@@ -182,7 +189,7 @@ class QdrantProvider(VectorDBProvider):
                     logger.info(f"Using default Qdrant collection: {cast(QdrantProviderSettings, self.settings).collection_name}")
                 except Exception:
                     logger.warning(f"Default collection not found: {cast(QdrantProviderSettings, self.settings).collection_name}. It will be created when needed.")
-            
+
             # Get and initialize the embedding provider (optional for tests)
             if cast(QdrantProviderSettings, self.settings).embedding_provider_name:
                 try:
@@ -194,10 +201,10 @@ class QdrantProvider(VectorDBProvider):
                 except Exception as e:
                     logger.warning(f"Could not initialize embedding provider: {e}")
                     # Don't fail initialization for tests - embedding provider is optional
-            
+
             # Mark as initialized if we get here without exceptions
             self._initialized = True
-            
+
         except Exception as e:
             self._client = None
             raise ProviderError(
@@ -217,7 +224,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def shutdown(self) -> None:
         """Close Qdrant connection."""
         if self._client:
@@ -230,11 +237,11 @@ class QdrantProvider(VectorDBProvider):
             self._embedding_provider = None
             self._initialized = False
             logger.info("Closed Qdrant connection")
-    
+
     async def _shutdown(self) -> None:
         """Close Qdrant connection."""
         await self.shutdown()
-    
+
     def _get_distance_metric(self, metric: Optional[str]) -> models.Distance:
         """Convert string metric to Qdrant Distance enum.
         
@@ -246,7 +253,7 @@ class QdrantProvider(VectorDBProvider):
         """
         metric = metric or "cosine"
         metric_lower = metric.lower()
-        
+
         if metric_lower == "cosine":
             return models.Distance.COSINE
         elif metric_lower == "euclid" or metric_lower == "euclidean" or metric_lower == "l2":
@@ -270,7 +277,7 @@ class QdrantProvider(VectorDBProvider):
                     retry_count=0
                 )
             )
-    
+
     def _map_distance_metric(self, metric: str) -> str:
         """Map distance metric to Qdrant format.
         
@@ -281,7 +288,7 @@ class QdrantProvider(VectorDBProvider):
             Qdrant distance metric string
         """
         metric_lower = metric.lower()
-        
+
         if metric_lower == "cosine":
             return "Cosine"
         elif metric_lower in ["euclid", "euclidean", "l2"]:
@@ -305,7 +312,7 @@ class QdrantProvider(VectorDBProvider):
                     retry_count=0
                 )
             )
-    
+
     def _string_to_uuid(self, string_id: str) -> str:
         """Convert a string ID to a deterministic UUID.
         
@@ -357,9 +364,9 @@ class QdrantProvider(VectorDBProvider):
                 )
             )
         return name
-    
-    async def create_collection(self, 
-                              collection_name: str, 
+
+    async def create_collection(self,
+                              collection_name: str,
                               dimension: int,
                               metric: Optional[str] = None) -> None:
         """Create a collection in Qdrant.
@@ -374,7 +381,7 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         try:
             # Check if collection already exists
             try:
@@ -392,10 +399,10 @@ class QdrantProvider(VectorDBProvider):
             except Exception:
                 # Collection doesn't exist, create it
                 pass
-            
+
             # Get distance metric
             distance = self._get_distance_metric(metric)
-            
+
             # Create collection
             assert self._client is not None, "Qdrant client not initialized"
             self.client.create_collection(
@@ -405,14 +412,14 @@ class QdrantProvider(VectorDBProvider):
                     distance=distance
                 )
             )
-            
+
             # Get and store collection info
             collection_info = self.client.get_collection(collection_name)
             self._collection_info[collection_name] = collection_info
-            
+
             metric_name = distance.name if hasattr(distance, 'name') else str(distance)
             logger.info(f"Created Qdrant collection: {collection_name} with dimension={dimension}, metric={metric_name}")
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to create index: {str(e)}",
@@ -431,7 +438,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def delete_collection(self, collection_name: str) -> None:
         """Delete a collection from Qdrant.
         
@@ -443,17 +450,17 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         try:
             # Delete collection
             self.client.delete_collection(collection_name)
-            
+
             # Remove from collection info
             if collection_name in self._collection_info:
                 del self._collection_info[collection_name]
-            
+
             logger.info(f"Deleted Qdrant collection: {collection_name}")
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to delete index: {str(e)}",
@@ -472,7 +479,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _metadata_to_payload(self, metadata: VectorMetadata) -> Dict[str, object]:
         """Convert metadata to Qdrant payload.
         
@@ -484,14 +491,14 @@ class QdrantProvider(VectorDBProvider):
         """
         # Convert metadata to dict
         payload = metadata.model_dump()
-        
+
         # Store original ID in payload for retrieval, but remove from top level
         if "id" in payload:
             payload["_original_id"] = payload["id"]
             del payload["id"]
-            
+
         return payload
-    
+
     def _payload_to_metadata(self, payload: Dict[str, object], id: str) -> VectorMetadata:
         """Convert Qdrant payload to metadata.
 
@@ -530,10 +537,10 @@ class QdrantProvider(VectorDBProvider):
             created_at=created_at_int,
             updated_at=updated_at_int
         )
-    
-    async def insert_vectors_original_method(self, 
-                            vectors: List[List[float]], 
-                            metadata: List[VectorMetadata], 
+
+    async def insert_vectors_original_method(self,
+                            vectors: List[List[float]],
+                            metadata: List[VectorMetadata],
                             collection_name: Optional[str] = None) -> List[str]:
         """Insert multiple vectors into Qdrant.
         
@@ -550,9 +557,9 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         collection_name = self._get_collection_name(collection_name)
-        
+
         # Ensure collection exists (or check dimension consistency)
         # Skip this check if using a mock for testing
         from unittest.mock import Mock
@@ -601,14 +608,14 @@ class QdrantProvider(VectorDBProvider):
         for i, vec in enumerate(vectors):
             # Convert metadata to payload
             payload = self._metadata_to_payload(metadata[i]) if i < len(metadata) else {}
-            
+
             # Get ID from metadata or generate one
             if i < len(metadata) and metadata[i].id:
                 # Convert string ID to UUID for Qdrant compatibility
                 point_id = self._string_to_uuid(metadata[i].id)
             else:
                 point_id = str(uuid.uuid4())
-            
+
             # Create point
             points.append(
                 models.PointStruct(
@@ -617,7 +624,7 @@ class QdrantProvider(VectorDBProvider):
                     payload=payload
                 )
             )
-        
+
         # Insert in batches of 100
         batch_size = 100
         for i in range(0, len(points), batch_size):
@@ -626,13 +633,13 @@ class QdrantProvider(VectorDBProvider):
                 collection_name=collection_name,
                 points=batch
             )
-        
+
         logger.info(f"Inserted {len(vectors)} vectors into Qdrant collection: {collection_name}")
-        
+
         return [str(point.id) for point in points]
-    
-    async def get_vectors(self, 
-                         ids: List[str], 
+
+    async def get_vectors(self,
+                         ids: List[str],
                          collection_name: Optional[str] = None) -> List[Tuple[List[float], VectorMetadata]]:
         """Get vectors by ID from Qdrant.
         
@@ -648,14 +655,14 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         # Get collection name
         coll_name = self._get_collection_name(collection_name)
-        
+
         try:
             # Convert string IDs to UUIDs for Qdrant compatibility
             uuid_ids = [self._string_to_uuid(str(id_val)) for id_val in ids]
-            
+
             # Get points by IDs
             response = self.client.retrieve(
                 collection_name=coll_name,
@@ -663,11 +670,11 @@ class QdrantProvider(VectorDBProvider):
                 with_vectors=True,
                 with_payload=True
             )
-            
+
             # Parse response
             result = []
             id_to_point = {str(point.id): point for point in response}
-            
+
             for id in ids:
                 if id in id_to_point:
                     point = id_to_point[id]
@@ -679,9 +686,9 @@ class QdrantProvider(VectorDBProvider):
                 else:
                     # Vector not found
                     result.append(([], VectorMetadata(id=id)))
-            
+
             return result
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to get vectors from Qdrant: {str(e)}",
@@ -700,9 +707,9 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
-    async def delete_vectors_original_method(self, 
-                           ids: List[str], 
+
+    async def delete_vectors_original_method(self,
+                           ids: List[str],
                            collection_name: Optional[str] = None) -> None:
         """Delete vectors by ID from Qdrant.
         
@@ -715,10 +722,10 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         # Get collection name
         coll_name = self._get_collection_name(collection_name)
-        
+
         try:
             # Delete points - convert string IDs to UUIDs for Qdrant compatibility
             uuid_ids: List[Union[int, str]] = [self._string_to_uuid(str(id_val)) for id_val in ids]
@@ -728,9 +735,9 @@ class QdrantProvider(VectorDBProvider):
                     points=uuid_ids
                 )
             )
-            
+
             logger.info(f"Deleted {len(ids)} vectors from Qdrant collection: {coll_name}")
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to delete vectors from Qdrant: {str(e)}",
@@ -749,7 +756,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _filter_to_qdrant(self, filter: Dict[str, object]) -> Optional[models.Filter]:
         """Convert generic filter to Qdrant filter.
         
@@ -761,7 +768,7 @@ class QdrantProvider(VectorDBProvider):
         """
         if not filter:
             return None
-            
+
         # Convert simple key-value filters to equals condition
         conditions: List[Union[models.FieldCondition, models.IsEmptyCondition, models.IsNullCondition, models.HasIdCondition, models.HasVectorCondition, models.NestedCondition, models.Filter]] = []
         for key, value in filter.items():
@@ -799,21 +806,21 @@ class QdrantProvider(VectorDBProvider):
                         range_params["lte"] = value["$lte"]
                     if "$gte" in value:
                         range_params["gte"] = value["$gte"]
-                    
+
                     conditions.append(
                         models.FieldCondition(
                             key=key,
                             range=models.Range(**range_params)
                         )
                     )
-        
+
         if conditions:
             return models.Filter(
                 must=conditions
             )
-        
+
         return None
-    
+
     def _convert_filter_conditions(self, filter_conditions: Dict[str, object]) -> Optional[models.Filter]:
         """Convert filter conditions to Qdrant format.
         
@@ -824,7 +831,7 @@ class QdrantProvider(VectorDBProvider):
             Qdrant filter object
         """
         return self._filter_to_qdrant(filter_conditions)
-    
+
     def _create_point_structs(self, vectors: List[List[float]], metadata: List[Dict[str, object]], ids: List[str]) -> List[models.PointStruct]:
         """Create Qdrant point structures.
         
@@ -840,7 +847,7 @@ class QdrantProvider(VectorDBProvider):
         for i, vector in enumerate(vectors):
             point_id = ids[i] if i < len(ids) else str(uuid.uuid4())
             payload = metadata[i] if i < len(metadata) else {}
-            
+
             points.append(
                 models.PointStruct(
                     id=point_id,
@@ -848,12 +855,12 @@ class QdrantProvider(VectorDBProvider):
                     payload=payload
                 )
             )
-        
+
         return points
-    
-    async def search_by_vector(self, 
-                             vector: List[float], 
-                             k: int = 10, 
+
+    async def search_by_vector(self,
+                             vector: List[float],
+                             k: int = 10,
                              collection_name: Optional[str] = None,
                              filter: Optional[Dict[str, object]] = None) -> List[SimilaritySearchResult]:
         """Search for similar vectors by vector.
@@ -872,10 +879,10 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         collection_name = self._get_collection_name(collection_name)
         qdrant_filter = self._filter_to_qdrant(filter) if filter is not None else None
-        
+
         try:
             # Perform search using query vector
             search_result = self.client.search(
@@ -884,20 +891,20 @@ class QdrantProvider(VectorDBProvider):
                 query_filter=qdrant_filter,
                 limit=k
             )
-            
+
             # Parse results
             results = []
             for scored_point in search_result:
                 # Convert payload to metadata
                 if scored_point.payload is not None:
                     self._payload_to_metadata(scored_point.payload, str(scored_point.id))
-                
+
                 # Create search result - use payload directly as metadata for compatibility
                 # Use original ID from payload if available, otherwise the UUID
                 result_id = str(scored_point.id)
                 if scored_point.payload and "_original_id" in scored_point.payload:
                     result_id = scored_point.payload["_original_id"]
-                
+
                 # Handle Qdrant's complex vector types
                 vector_data: Optional[List[float]] = None
                 if scored_point.vector is not None:
@@ -917,11 +924,11 @@ class QdrantProvider(VectorDBProvider):
                     metadata=scored_point.payload or {},
                     score=scored_point.score
                 )
-                
+
                 results.append(result)
-            
+
             return results
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to search vectors in Qdrant: {str(e)}",
@@ -940,7 +947,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def search_by_id(self,
                           id: str,
                           top_k: int = 10,
@@ -967,7 +974,7 @@ class QdrantProvider(VectorDBProvider):
 
         # Get collection name
         coll_name = self._get_collection_name(index_name)
-        
+
         try:
             # Convert filter
             qdrant_filter = self._filter_to_qdrant(filter) if filter is not None else None
@@ -1028,9 +1035,9 @@ class QdrantProvider(VectorDBProvider):
                 )
 
                 results.append(result)
-            
+
             return results
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to search vectors by ID in Qdrant: {str(e)}",
@@ -1049,10 +1056,10 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
-    async def search_by_metadata(self, 
-                               filter: Dict[str, object], 
-                               k: int = 10, 
+
+    async def search_by_metadata(self,
+                               filter: Dict[str, object],
+                               k: int = 10,
                                collection_name: Optional[str] = None) -> List[SimilaritySearchResult]:
         """Search for vectors by metadata.
         
@@ -1069,14 +1076,14 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         # Get collection name
         coll_name = self._get_collection_name(collection_name)
-        
+
         try:
             # Convert filter
             qdrant_filter = self._filter_to_qdrant(filter)
-            
+
             if not qdrant_filter:
                 raise ProviderError(
                     message="Empty filter for metadata search",
@@ -1094,7 +1101,7 @@ class QdrantProvider(VectorDBProvider):
                         retry_count=0
                     )
                 )
-            
+
             # Perform scroll search (doesn't need a query vector)
             scroll_result = self.client.scroll(
                 collection_name=coll_name,
@@ -1103,7 +1110,7 @@ class QdrantProvider(VectorDBProvider):
                 with_payload=True,
                 filter=qdrant_filter
             )
-            
+
             # Parse results
             results = []
             for point in scroll_result[0]:
@@ -1129,11 +1136,11 @@ class QdrantProvider(VectorDBProvider):
                     metadata=payload,
                     score=1.0  # Placeholder score
                 )
-                
+
                 results.append(result)
-            
+
             return results
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to search vectors by metadata in Qdrant: {str(e)}",
@@ -1152,7 +1159,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def count_vectors(self, collection_name: Optional[str] = None) -> int:
         """Count vectors in a collection.
         
@@ -1167,17 +1174,17 @@ class QdrantProvider(VectorDBProvider):
         """
         if not self._client:
             await self.initialize()
-            
+
         # Get collection name
         coll_name = self._get_collection_name(collection_name)
-        
+
         try:
             # Get collection info
             collection_info = self.client.get_collection(coll_name)
-            
+
             # Return vector count
             return collection_info.vectors_count or 0
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to count vectors in Qdrant: {str(e)}",
@@ -1196,10 +1203,10 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
-    async def embed_and_search(self, 
-                               query_text: str, 
-                               k: int = 10, 
+
+    async def embed_and_search(self,
+                               query_text: str,
+                               k: int = 10,
                                collection_name: Optional[str] = None,
                                filter: Optional[Dict[str, object]] = None) -> List[SimilaritySearchResult]:
         """Generate embedding for query text and search Qdrant.
@@ -1233,7 +1240,7 @@ class QdrantProvider(VectorDBProvider):
                     retry_count=0
                 )
             )
-            
+
         # Generate embedding for the query text
         try:
             embedding_list = await self._embedding_provider.embed(query_text)
@@ -1273,7 +1280,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-            
+
         # Perform search using the generated vector
         return await self.search_by_vector(
             vector=query_vector,
@@ -1281,7 +1288,7 @@ class QdrantProvider(VectorDBProvider):
             collection_name=collection_name,
             filter=filter
         )
-    
+
     # Unified API methods for test compatibility
     async def create_index(self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs: Any) -> bool:
         """Create a new vector index.
@@ -1300,7 +1307,7 @@ class QdrantProvider(VectorDBProvider):
         """
         await self.create_collection(index_name, vector_dimension, metric)
         return True
-    
+
     async def delete_index(self, index_name: str) -> bool:
         """Delete a vector index.
         
@@ -1315,7 +1322,7 @@ class QdrantProvider(VectorDBProvider):
         """
         await self.delete_collection(index_name)
         return True
-    
+
     async def index_exists(self, index_name: str) -> bool:
         """Check if index exists.
         
@@ -1331,9 +1338,9 @@ class QdrantProvider(VectorDBProvider):
         try:
             if not self._client:
                 await self.initialize()
-            
+
             return bool(self.client.collection_exists(index_name))
-                
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to check if index {index_name} exists: {str(e)}",
@@ -1352,7 +1359,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def insert_vectors(self, index_name: str, vectors: List[List[float]], metadata: Optional[List[Dict[str, object]]] = None, ids: Optional[List[str]] = None) -> bool:
         """Insert multiple vectors with metadata.
         
@@ -1371,14 +1378,14 @@ class QdrantProvider(VectorDBProvider):
         try:
             if not self._client:
                 await self.initialize()
-            
+
             # Convert metadata to VectorMetadata objects
             meta_objects = []
             for i in range(len(vectors)):
                 if metadata and i < len(metadata):
                     meta_dict = metadata[i].copy()
                     vector_id = ids[i] if ids and i < len(ids) else str(uuid.uuid4())
-                    
+
                     # Extract known VectorMetadata fields with proper type conversion
                     text_value = meta_dict.pop("text", None)
                     text = str(text_value) if text_value is not None else None
@@ -1402,11 +1409,11 @@ class QdrantProvider(VectorDBProvider):
                 else:
                     meta_id = ids[i] if ids and i < len(ids) else str(uuid.uuid4())
                     meta_objects.append(VectorMetadata(id=meta_id))
-            
+
             # Use the collection-based method
             await self.insert_vectors_internal(vectors, meta_objects, index_name)
             return True
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to insert vectors: {str(e)}",
@@ -1425,12 +1432,12 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def insert_vectors_internal(self, vectors: List[List[float]], metadata: List[VectorMetadata], collection_name: Optional[str] = None) -> List[str]:
         """Internal method to insert vectors - rename the existing one."""
         return await self.insert_vectors_original_method(vectors, metadata, collection_name)
-    
-    
+
+
     async def search_vectors(self, index_name: str, query_vector: List[float], top_k: int = 10, filter_conditions: Optional[Dict[str, object]] = None) -> List[VectorSearchResult]:
         """Search for similar vectors.
         
@@ -1461,7 +1468,7 @@ class QdrantProvider(VectorDBProvider):
                 ))
 
             return search_results
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to search vectors: {str(e)}",
@@ -1480,7 +1487,7 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def delete_vectors(self, index_name: str, ids: List[str]) -> bool:
         """Delete vectors by IDs.
         
@@ -1496,8 +1503,8 @@ class QdrantProvider(VectorDBProvider):
         """
         await self.delete_vectors_original_method(ids, index_name)
         return True
-    
-    
+
+
     async def get_index_stats(self, index_name: str) -> VectorIndexStats:
         """Get index statistics.
         
@@ -1513,10 +1520,10 @@ class QdrantProvider(VectorDBProvider):
         try:
             if not self._client:
                 await self.initialize()
-            
+
             # Get collection info
             collection_info = self.client.get_collection(index_name)
-            
+
             # Extract stats
             total_vectors = collection_info.points_count or 0
 
@@ -1533,14 +1540,14 @@ class QdrantProvider(VectorDBProvider):
             else:
                 # Fallback for unknown configuration
                 dimension = 0
-            
+
             return VectorIndexStats(
                 name=index_name,
                 total_vectors=total_vectors,
                 vector_dimension=dimension,
                 metric=self.settings.metric
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to get index stats: {str(e)}",
@@ -1559,8 +1566,8 @@ class QdrantProvider(VectorDBProvider):
                 ),
                 cause=e
             )
-    
-    async def get_by_filter(self, filter: Dict[str, object], top_k: int = 10, 
+
+    async def get_by_filter(self, filter: Dict[str, object], top_k: int = 10,
                            include_vectors: bool = False, index_name: Optional[str] = None) -> List[Dict[str, object]]:
         """Get vectors by metadata filter without vector similarity search."""
         try:
@@ -1571,7 +1578,7 @@ class QdrantProvider(VectorDBProvider):
                 "Qdrant provider does not currently support metadata-only queries. "
                 "Use search() with a query vector instead."
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to get by filter: {str(e)}",
@@ -1602,4 +1609,4 @@ class QdrantProvider(VectorDBProvider):
             return True
         except Exception as e:
             logger.error(f"Qdrant connection check failed: {str(e)}")
-            return False 
+            return False

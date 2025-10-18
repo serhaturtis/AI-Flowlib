@@ -5,7 +5,14 @@ Simple string-based role system with tool categories for flexible access control
 
 import logging
 from typing import Dict, List, Optional
-from .models import AGENT_ROLES, TOOL_CATEGORIES, ROLE_TOOL_ACCESS, ToolMetadata
+
+from flowlib.resources.models.constants import ResourceType
+from flowlib.resources.models.role_config_resource import (
+    RoleConfigResource,
+    ToolCategoryConfigResource,
+)
+
+from .models import ToolMetadata
 from .registry import tool_registry
 
 logger = logging.getLogger(__name__)
@@ -17,15 +24,22 @@ class ToolPermissionError(Exception):
 
 
 class ToolRoleManager:
-    """Simple tool access manager based on agent roles and tool categories.
+    """Dynamic tool access manager based on resource registry.
 
-    Maps agent roles (strings) to tool categories they can access.
-    Much simpler than the previous enum/security level system.
+    Uses RoleConfigResource and ToolCategoryConfigResource for flexible configuration.
+    No hardcoded mappings - all configuration comes from the resource registry.
     """
 
     def __init__(self) -> None:
         """Initialize tool role manager."""
-        pass
+        self._resource_registry = None
+
+    def _get_resource_registry(self):
+        """Lazy import of resource registry to avoid circular dependencies."""
+        if self._resource_registry is None:
+            from flowlib.resources.registry.registry import resource_registry
+            self._resource_registry = resource_registry
+        return self._resource_registry
 
     def get_allowed_tools(self, agent_role: Optional[str]) -> List[str]:
         """Get list of tools allowed for an agent role.
@@ -37,10 +51,10 @@ class ToolRoleManager:
             List of tool names the agent role can access
         """
         if not agent_role:
-            agent_role = "general_purpose"
+            raise ValueError("Agent role must be specified")
 
-        # Get tool categories this role can access
-        allowed_categories = ROLE_TOOL_ACCESS.get(agent_role, ["generic"])
+        # Get tool categories this role can access from resource registry
+        allowed_categories = self._get_role_tool_categories(agent_role)
 
         allowed_tools = []
         all_tools = tool_registry.list()
@@ -69,14 +83,14 @@ class ToolRoleManager:
             ToolPermissionError: If access is denied
         """
         if not agent_role:
-            agent_role = "general_purpose"
+            raise ValueError("Agent role must be specified")
 
         try:
             metadata = tool_registry.get_metadata(tool_name)
             if not metadata:
                 raise ToolPermissionError(f"No metadata found for tool '{tool_name}'")
 
-            allowed_categories = ROLE_TOOL_ACCESS.get(agent_role, ["generic"])
+            allowed_categories = self._get_role_tool_categories(agent_role)
 
             if self._is_tool_allowed_for_role(agent_role, metadata, allowed_categories):
                 return True
@@ -120,13 +134,14 @@ class ToolRoleManager:
         Returns:
             Dictionary with role info and allowed tool categories
         """
-        if agent_role not in AGENT_ROLES:
-            agent_role = "general_purpose"
+        role_config = self._get_role_config(agent_role)
+        if not role_config:
+            raise ValueError(f"Role '{agent_role}' not found in resource registry")
 
         return {
             "role": [agent_role],
-            "description": [AGENT_ROLES.get(agent_role, "Unknown role")],
-            "allowed_categories": ROLE_TOOL_ACCESS.get(agent_role, ["generic"]),
+            "description": [role_config.description],
+            "allowed_categories": role_config.tool_categories,
             "allowed_tools": self.get_allowed_tools(agent_role)
         }
 
@@ -136,7 +151,13 @@ class ToolRoleManager:
         Returns:
             Dictionary mapping role names to descriptions
         """
-        return AGENT_ROLES.copy()
+        registry = self._get_resource_registry()
+        roles = {}
+        resources_by_type = registry.get_by_type(ResourceType.ROLE_CONFIG)
+        for resource_name, role_config in resources_by_type.items():
+            if isinstance(role_config, RoleConfigResource):
+                roles[role_config.agent_role] = role_config.description
+        return roles
 
     def list_all_categories(self) -> Dict[str, str]:
         """List all available tool categories.
@@ -144,7 +165,13 @@ class ToolRoleManager:
         Returns:
             Dictionary mapping category names to descriptions
         """
-        return TOOL_CATEGORIES.copy()
+        registry = self._get_resource_registry()
+        categories = {}
+        resources_by_type = registry.get_by_type(ResourceType.TOOL_CATEGORY_CONFIG)
+        for resource_name, category_config in resources_by_type.items():
+            if isinstance(category_config, ToolCategoryConfigResource):
+                categories[category_config.category_name] = category_config.description
+        return categories
 
     def get_tools_by_category(self, category: str) -> List[str]:
         """Get all tools in a specific category.
@@ -167,6 +194,36 @@ class ToolRoleManager:
                 continue
 
         return tools
+
+    def _get_role_config(self, agent_role: str) -> Optional[RoleConfigResource]:
+        """Get role configuration from resource registry.
+
+        Args:
+            agent_role: Agent role string
+
+        Returns:
+            RoleConfigResource instance or None if not found
+        """
+        registry = self._get_resource_registry()
+        resources_by_type = registry.get_by_type(ResourceType.ROLE_CONFIG)
+        for resource_name, role_config in resources_by_type.items():
+            if isinstance(role_config, RoleConfigResource) and role_config.agent_role == agent_role:
+                return role_config
+        return None
+
+    def _get_role_tool_categories(self, agent_role: str) -> List[str]:
+        """Get tool categories allowed for a role.
+
+        Args:
+            agent_role: Agent role string
+
+        Returns:
+            List of tool category names
+        """
+        role_config = self._get_role_config(agent_role)
+        if not role_config:
+            raise ValueError(f"Role '{agent_role}' not found in resource registry")
+        return role_config.tool_categories
 
 
 # Global tool role manager instance

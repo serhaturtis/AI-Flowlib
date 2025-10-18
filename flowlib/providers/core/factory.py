@@ -5,15 +5,17 @@ based on the provider_type specified in the configuration.
 """
 
 import logging
-from typing import Dict, Type, Optional, cast, Any
+from typing import Any, Dict, Optional, Type, cast
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
+from flowlib.providers.db.base import DBProvider
+from flowlib.providers.graph.base import GraphDBProvider
+
+from .base import Provider
+
 # Removed ProviderType import - using config-driven provider access
 from .registry import provider_registry
-from .base import Provider
-from flowlib.providers.graph.base import GraphDBProvider
-from flowlib.providers.db.base import DBProvider
 
 logger = logging.getLogger(__name__)
 
@@ -96,22 +98,22 @@ def create_provider(
     # NOTE: This factory function is primarily for testing and legacy support.
     # Modern code should use config-driven provider access:
     # provider = await provider_registry.get_by_config("config-name")
-    
+
     # No registry existence checks - factory creates new instances per CLAUDE.md principles
-    
+
     # If implementation is specified, try to get specific provider class
     provider_class = None
-    
+
     if implementation and provider_type in PROVIDER_IMPLEMENTATIONS:
         impl_registry = PROVIDER_IMPLEMENTATIONS[provider_type]
         if implementation.lower() in impl_registry:
             provider_class = impl_registry[implementation.lower()]
-            
+
             # Lazy import provider classes to avoid import issues
             if provider_class is None:
                 provider_class = _import_provider_class(provider_type, implementation.lower())
                 impl_registry[implementation.lower()] = provider_class
-        
+
         if provider_class is None:
             list(impl_registry.keys())
             raise ProviderError(
@@ -130,7 +132,7 @@ def create_provider(
                     retry_count=0
                 )
             )
-        
+
     if provider_class is None:
         raise ProviderError(
             message=f"No provider found for type {provider_type}",
@@ -148,7 +150,7 @@ def create_provider(
                 retry_count=0
             )
         )
-        
+
     try:
         # If 'settings' is a dict, convert to the provider's settings_class
         if 'settings' in kwargs and isinstance(kwargs['settings'], dict):
@@ -172,11 +174,11 @@ def create_provider(
                         retry_count=0
                     )
                 )
-        # Pop settings from kwargs to avoid passing it twice. 
+        # Pop settings from kwargs to avoid passing it twice.
         # kwargs['settings'] would have been converted to a Pydantic object by the block above if it was a dict.
         # If 'settings' was not in kwargs initially, or was not a dict, pop will return None (due to default) or the original value.
         final_settings_arg = kwargs.pop('settings', None) # Get the processed settings, remove from kwargs
-        
+
         # Some providers handle provider_type internally
         if issubclass(provider_class, (GraphDBProvider, DBProvider)):
             provider = cast(Provider[Any], provider_class(name=name, settings=final_settings_arg, **kwargs))
@@ -231,7 +233,7 @@ async def create_and_initialize_provider(
         ProviderError: If provider creation or initialization fails
     """
     # No registry existence checks - factory creates new instances per CLAUDE.md principles
-    
+
     # Create the provider
     provider = create_provider(
         provider_type=provider_type,
@@ -240,7 +242,7 @@ async def create_and_initialize_provider(
         register=register,
         **kwargs
     )
-    
+
     # Initialize and return
     try:
         await provider.initialize()
@@ -309,7 +311,7 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
             "file": "FileStatePersister",
         },
     }
-    
+
     # Map of provider types to modules
     module_map = {
         "llm": "flowlib.providers.llm",
@@ -322,7 +324,7 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
         "graph_db": "flowlib.providers.graph",
         "state_persister": "flowlib.agent.persistence.adapters",
     }
-    
+
     # Check if we have a mapping for this provider type and implementation
     if provider_type not in provider_map or implementation not in provider_map[provider_type]:
         # Special handling for file persister as it might be in a different file
@@ -335,7 +337,7 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
                 raise
         else:
             raise ImportError(f"No provider mapping for {provider_type}/{implementation}")
-    
+
     # Get the module path and class name
     # Handle potential special case for file persister path
     if provider_type == "state_persister" and implementation == "file":
@@ -343,7 +345,7 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
     else:
          module_map[provider_type]
          provider_map[provider_type][implementation]
-    
+
     try:
         # Use direct imports for each provider type/implementation
         if provider_type == "llm":
@@ -387,18 +389,26 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
                 return RabbitMQProvider
         elif provider_type == "state_persister":
              if implementation == "redis":
-                 from flowlib.agent.components.persistence.adapters import RedisStatePersister
+                 from flowlib.agent.components.persistence.adapters import (
+                     RedisStatePersister,
+                 )
                  return cast(Type[Provider[Any]], RedisStatePersister)
              elif implementation == "mongodb":
-                 from flowlib.agent.components.persistence.adapters import MongoStatePersister
+                 from flowlib.agent.components.persistence.adapters import (
+                     MongoStatePersister,
+                 )
                  return cast(Type[Provider[Any]], MongoStatePersister)
              elif implementation == "postgres":
-                 from flowlib.agent.components.persistence.adapters import PostgresStatePersister
+                 from flowlib.agent.components.persistence.adapters import (
+                     PostgresStatePersister,
+                 )
                  return cast(Type[Provider[Any]], PostgresStatePersister)
              elif implementation == "file": # Import handled earlier
-                 from flowlib.agent.components.persistence.file import FileStatePersister
+                 from flowlib.agent.components.persistence.file import (
+                     FileStatePersister,
+                 )
                  return cast(Type[Provider[Any]], FileStatePersister)
-        
+
         # If we get here, something went wrong with our mappings
         raise ImportError(f"Provider import failed for {provider_type}/{implementation}")
     except ImportError as e:
@@ -428,7 +438,7 @@ def _import_provider_type(provider_type: str) -> Type[Provider[Any]]:
         "embedding": "from ..embedding.base import EmbeddingProvider; return EmbeddingProvider",
         "graph_db": "from ..graph.base import GraphDBProvider; return GraphDBProvider",
     }
-    
+
     # Get import statement
     if provider_type in import_map:
         import_statement = import_map[provider_type]
@@ -440,5 +450,5 @@ def _import_provider_type(provider_type: str) -> Type[Provider[Any]]:
         except ImportError as e:
             logger.error(f"Failed to import provider class for {provider_type}: {str(e)}")
             raise
-    
-    raise ImportError(f"No import mapping for {provider_type}") 
+
+    raise ImportError(f"No import mapping for {provider_type}")

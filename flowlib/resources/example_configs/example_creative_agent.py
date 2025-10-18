@@ -25,9 +25,6 @@ class CreativeAgentConfig(AgentConfigResource):
             llm_name="default-llm",
             temperature=0.9,  # Higher temperature for creativity
             max_iterations=15,
-            enable_memory=True,
             enable_learning=True,
-            enable_thinking=True,
-            auto_decomposition=True,
             verbose=False
         )

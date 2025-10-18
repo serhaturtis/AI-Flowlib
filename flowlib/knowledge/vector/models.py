@@ -1,14 +1,14 @@
 """Models for vector storage flow."""
 
-from typing import Dict, Optional, Any
-from flowlib.core.models import StrictBaseModel
+from typing import Any, Dict, Optional
 
+from flowlib.core.models import StrictBaseModel
 from flowlib.knowledge.models import (
-    VectorStoreInput,
-    VectorStoreOutput,
+    DocumentContent,
     VectorEmbedding,
     VectorSearchResult,
-    DocumentContent
+    VectorStoreInput,
+    VectorStoreOutput,
 )
 
 

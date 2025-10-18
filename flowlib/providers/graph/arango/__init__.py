@@ -1,6 +1,6 @@
 """ArangoDB graph database provider module."""
 
-from typing import Optional, Type, Any
+from typing import Any, Optional, Type
 
 # Type variables for components that can be None or actual types
 ArangoProvider: Optional[Type[Any]]
@@ -17,6 +17,6 @@ except ImportError:
 
 __all__ = [
     "ArangoProvider",
-    "ArangoProviderSettings", 
+    "ArangoProviderSettings",
     "ARANGO_AVAILABLE",
 ]

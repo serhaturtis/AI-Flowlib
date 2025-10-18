@@ -5,17 +5,16 @@ for MongoDB database using motor (async driver).
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Callable, cast, Coroutine
+from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 from typing import List as ListType
 
-from pydantic import Field, BaseModel
+from pydantic import BaseModel, Field
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.db.base import DatabaseHealthInfo, DatabaseInfo, PoolInfo
-from flowlib.providers.core.base import ProviderSettings
-from flowlib.providers.core.base import Provider
+from flowlib.providers.core.base import Provider, ProviderSettings
 from flowlib.providers.core.decorators import provider
+from flowlib.providers.db.base import DatabaseHealthInfo, DatabaseInfo, PoolInfo
 
 logger = logging.getLogger(__name__)
 
@@ -72,44 +71,44 @@ class MongoDBProviderSettings(ProviderSettings):
     3. Connection pooling and timeout configuration
     4. MongoDB-specific features (replica sets, read/write concerns)
     """
-    
+
     # Connection settings
     host: str = Field(default="localhost", description="MongoDB server host")
     port: int = Field(default=27017, description="MongoDB server port")
     username: Optional[str] = Field(default=None, description="MongoDB username")
     password: Optional[str] = Field(default=None, description="MongoDB password")
     database: str = Field(default="test", description="MongoDB database name")
-    
+
     # Connection string override (takes precedence over host/port)
     connection_string: Optional[str] = Field(default=None, description="MongoDB connection string (overrides host/port if provided)")
-    
+
     # Authentication settings
     auth_source: str = Field(default="admin", description="Authentication database name")
     auth_mechanism: Optional[str] = Field(default=None, description="Authentication mechanism")
-    
+
     # Timeout settings
     connect_timeout_ms: int = Field(default=20000, description="Connection timeout in milliseconds")
     server_selection_timeout_ms: int = Field(default=20000, description="Server selection timeout in milliseconds")
-    
+
     # Connection pool settings
     max_pool_size: Optional[int] = Field(default=None, description="Maximum number of connections in the pool")
     min_pool_size: Optional[int] = Field(default=None, description="Minimum number of connections in the pool")
     max_idle_time_ms: Optional[int] = Field(default=None, description="Maximum idle time for connections in milliseconds")
-    
+
     # MongoDB operation settings
     read_preference: Optional[str] = Field(default=None, description="Read preference setting")
     write_concern: Optional[Dict[str, Any]] = Field(default=None, description="Write concern settings")
     read_concern: Optional[Dict[str, Any]] = Field(default=None, description="Read concern settings")
     replica_set: Optional[str] = Field(default=None, description="Replica set name")
-    
+
     # SSL settings
     ssl_enabled: Optional[bool] = Field(default=None, description="Whether SSL is enabled")
     ssl_cert_reqs: Optional[str] = Field(default=None, description="SSL certificate requirements")
     ssl_ca_certs: Optional[str] = Field(default=None, description="SSL CA certificates path")
     ssl_certfile: Optional[str] = Field(default=None, description="SSL certificate file path")
     ssl_keyfile: Optional[str] = Field(default=None, description="SSL key file path")
-    
-    
+
+
     # Additional connection arguments
     connect_args: Dict[str, Any] = Field(default_factory=dict)
 
@@ -122,7 +121,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
     This provider implements database operations using motor,
     an asynchronous driver for MongoDB.
     """
-    
+
     def __init__(self, name: str = "mongodb", settings: Optional[MongoDBProviderSettings] = None):
         """Initialize MongoDB provider.
         
@@ -134,7 +133,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         self._settings = settings or MongoDBProviderSettings(database="test")
         self._client: Optional[AsyncIOMotorClient] = None
         self._db: Optional[AsyncIOMotorDatabase] = None
-        
+
     async def _initialize(self) -> None:
         """Initialize MongoDB connection.
         
@@ -150,7 +149,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     "connectTimeoutMS": self._settings.connect_timeout_ms,
                     **self._settings.connect_args
                 }
-                
+
                 # Add MongoDB-specific settings if provided
                 if self._settings.max_pool_size is not None:
                     client_args["maxPoolSize"] = self._settings.max_pool_size
@@ -182,7 +181,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     client_args["ssl_certfile"] = self._settings.ssl_certfile
                 if self._settings.ssl_keyfile is not None:
                     client_args["ssl_keyfile"] = self._settings.ssl_keyfile
-                
+
                 # Use connection string if provided
                 self._client = motor.motor_asyncio.AsyncIOMotorClient(
                     self._settings.connection_string,
@@ -197,7 +196,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     "connectTimeoutMS": self._settings.connect_timeout_ms,
                     **self._settings.connect_args
                 }
-                
+
                 # Only add authentication fields if they're specified
                 if self._settings.username is not None:
                     client_args["username"] = self._settings.username
@@ -207,7 +206,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     client_args["authSource"] = self._settings.auth_source
                 if self._settings.auth_mechanism is not None:
                     client_args["authMechanism"] = self._settings.auth_mechanism
-                
+
                 # Add MongoDB-specific settings if provided
                 if self._settings.max_pool_size is not None:
                     client_args["maxPoolSize"] = self._settings.max_pool_size
@@ -239,17 +238,17 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     client_args["ssl_certfile"] = self._settings.ssl_certfile
                 if self._settings.ssl_keyfile is not None:
                     client_args["ssl_keyfile"] = self._settings.ssl_keyfile
-                
+
                 # Use host and port
                 self._client = motor.motor_asyncio.AsyncIOMotorClient(**client_args)
-            
+
             # Get database
             self._db = self._client[self._settings.database]
 
             # Ping database to verify connection
             await self._client.admin.command('ping')
             logger.info(f"Connected to MongoDB: {self._settings.host}:{self._settings.port}/{self._settings.database}")
-            
+
         except Exception as e:
             self._client = None
             self._db = None
@@ -270,7 +269,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def _shutdown(self) -> None:
         """Close MongoDB connection."""
         if self._client:
@@ -282,7 +281,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 self._client = None
                 self._db = None
                 logger.info(f"Closed MongoDB connection: {self._settings.host}:{self._settings.port}")
-    
+
     async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Execute a MongoDB operation.
         
@@ -313,7 +312,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     retry_count=0
                 )
             )
-        
+
         if "collection" not in params:
             raise ProviderError(
                 message="MongoDB query operation requires 'collection' parameter",
@@ -337,7 +336,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 message="Collection name required for MongoDB operations",
                 context=ErrorContext.create(
                     flow_name="mongodb_provider",
-                    error_type="ValidationError", 
+                    error_type="ValidationError",
                     error_location="execute",
                     component=self.name,
                     operation="validate_collection"
@@ -349,7 +348,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     retry_count=0
                 )
             )
-        
+
         try:
             if query == "find":
                 if "filter" not in params:
@@ -360,14 +359,14 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 limit = params["limit"] if "limit" in params else None
                 skip = params["skip"] if "skip" in params else None
                 return await self.execute_query(collection, filter_query, projection, sort, limit, skip)
-                
+
             elif query == "insert_one":
                 if "document" not in params:
                     raise KeyError("Required 'document' parameter missing for insert_one query")
                 document = params["document"]
                 document_id = await self.insert_document(collection, document)
                 return [{"operation": "insert_one", "inserted_id": str(document_id), "acknowledged": True}]
-                
+
             elif query == "insert_many":
                 if "documents" not in params:
                     raise KeyError("Required 'documents' parameter missing for insert_many query")
@@ -377,7 +376,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     document_id = await self.insert_document(collection, document)
                     inserted_ids.append(document_id)
                 return [{"operation": "insert_many", "inserted_ids": [str(id) for id in inserted_ids], "acknowledged": True}]
-                
+
             elif query == "update_one":
                 if "filter" not in params:
                     raise ValueError("update_one operation requires 'filter' parameter")
@@ -388,26 +387,26 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 upsert = params["upsert"] if "upsert" in params else False
                 modified_count = await self.update_document(collection, filter_query, update, upsert)
                 return [{"operation": "update_one", "modified_count": modified_count, "acknowledged": True}]
-                
+
             elif query == "delete_one":
                 if "filter" not in params:
                     raise ValueError("delete_one operation requires 'filter' parameter")
                 filter_query = params["filter"]
                 deleted_count = await self.delete_document(collection, filter_query)
                 return [{"operation": "delete_one", "deleted_count": deleted_count, "acknowledged": True}]
-                
+
             elif query == "delete_many":
                 if "filter" not in params:
                     raise ValueError("delete_many operation requires 'filter' parameter")
                 filter_query = params["filter"]
                 deleted_count = await self.delete_document(collection, filter_query)
                 return [{"operation": "delete_many", "deleted_count": deleted_count, "acknowledged": True}]
-                
+
             elif query == "count":
                 filter_query = params["filter"] if "filter" in params else {}
                 count = await self.count_documents(collection, filter_query)
                 return [{"operation": "count", "count": count}]
-                
+
             else:
                 raise ProviderError(
                     message=f"Unsupported MongoDB operation: {query}",
@@ -420,12 +419,12 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
-                        provider_type="db", 
+                        provider_type="db",
                         operation="execute",
                         retry_count=0
                     )
                 )
-                
+
         except Exception as e:
             if isinstance(e, ProviderError):
                 raise
@@ -447,7 +446,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 cause=e
             )
 
-    async def execute_query(self, 
+    async def execute_query(self,
                            collection: str,
                            query: Dict[str, Any],
                            projection: Optional[Dict[str, Any]] = None,
@@ -494,10 +493,10 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         try:
             # Get collection
             coll = self._db[collection]
-            
+
             # Build cursor
             cursor = coll.find(query, projection)
-            
+
             # Apply sort, limit, skip if provided
             if sort:
                 cursor = cursor.sort(sort)
@@ -505,17 +504,17 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 cursor = cursor.skip(skip)
             if limit:
                 cursor = cursor.limit(limit)
-                
+
             # Get results
             results = await cursor.to_list(length=None)
-            
+
             # Convert ObjectId to string
             for doc in results:
                 if '_id' in doc and isinstance(doc['_id'], ObjectId):
                     doc['_id'] = str(doc['_id'])
 
             return cast(List[Dict[str, Any]], results)
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to execute MongoDB query: {str(e)}",
@@ -534,7 +533,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def insert_document(self, collection: str, document: Dict[str, Any]) -> str:
         """Insert a document into a collection.
         
@@ -572,13 +571,13 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         try:
             # Get collection
             coll = self._db[collection]
-            
+
             # Insert document
             result = await coll.insert_one(document)
-            
+
             # Return inserted ID as string
             return str(result.inserted_id)
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to insert document: {str(e)}",
@@ -597,11 +596,11 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 cause=e
             )
-    
-    async def update_document(self, 
-                             collection: str, 
-                             query: Dict[str, Any], 
-                             update: Dict[str, Any], 
+
+    async def update_document(self,
+                             collection: str,
+                             query: Dict[str, Any],
+                             update: Dict[str, Any],
                              upsert: bool = False) -> int:
         """Update documents in a collection.
         
@@ -641,13 +640,13 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         try:
             # Get collection
             coll = self._db[collection]
-            
+
             # Update documents
             result = await coll.update_many(query, update, upsert=upsert)
-            
+
             # Return modified count
             return result.modified_count
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to update documents: {str(e)}",
@@ -666,7 +665,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def delete_document(self, collection: str, query: Dict[str, Any]) -> int:
         """Delete documents from a collection.
         
@@ -704,13 +703,13 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         try:
             # Get collection
             coll = self._db[collection]
-            
+
             # Delete documents
             result = await coll.delete_many(query)
-            
+
             # Return deleted count
             return result.deleted_count
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to delete documents: {str(e)}",
@@ -729,11 +728,11 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 cause=e
             )
-    
-    async def create_index(self, 
-                          collection: str, 
-                          keys: List[tuple], 
-                          unique: bool = False, 
+
+    async def create_index(self,
+                          collection: str,
+                          keys: List[tuple],
+                          unique: bool = False,
                           sparse: bool = False) -> str:
         """Create an index on a collection.
         
@@ -773,13 +772,13 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         try:
             # Get collection
             coll = self._db[collection]
-            
+
             # Create index
             result = await coll.create_index(keys, unique=unique, sparse=sparse)
-            
+
             # Return index name
             return result
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to create index: {str(e)}",
@@ -798,7 +797,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def begin_transaction(self) -> Any:
         """Begin a MongoDB transaction.
         
@@ -835,7 +834,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
             # Start a transaction on the session
             session.start_transaction()
             return session
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to begin transaction: {str(e)}",
@@ -871,7 +870,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
             await session.commit_transaction()
             await session.end_session()
             return True
-            
+
         except Exception as e:
             try:
                 await session.end_session()
@@ -912,7 +911,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
             await session.abort_transaction()
             await session.end_session()
             return True
-            
+
         except Exception as e:
             try:
                 await session.end_session()
@@ -945,7 +944,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         """
         if self._client is None:
             return False
-            
+
         try:
             # Try to ping the database
             await self._client.admin.command('ping')
@@ -974,10 +973,10 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 version=None
             )
-            
+
         try:
             connection_active = await self.check_connection()
-            
+
             # Get server info if connected
             server_info = None
             version = None
@@ -990,12 +989,12 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     logger.debug(f"Could not retrieve MongoDB server info: {server_info_error}")
                     server_info = None
                     version = "unavailable"
-            
+
             # Build additional info
             additional_info = {}
             if server_info:
                 additional_info["server_info"] = server_info
-            
+
             return DatabaseHealthInfo(
                 status="healthy" if connection_active else "unhealthy",
                 connected=connection_active,
@@ -1011,7 +1010,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 version=version,
                 additional_info=additional_info
             )
-            
+
         except Exception as e:
             return DatabaseHealthInfo(
                 status="error",
@@ -1068,7 +1067,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 # Start a transaction
                 result: Dict[str, Any] = await session.with_transaction(operations)
                 return result
-                
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to execute transaction: {str(e)}",
@@ -1087,7 +1086,7 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def count_documents(self, collection: str, query: Dict[str, Any]) -> int:
         """Count documents in a collection.
         
@@ -1125,10 +1124,10 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
         try:
             # Get collection
             coll = self._db[collection]
-            
+
             # Count documents
             return await coll.count_documents(query)
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to count documents: {str(e)}",
@@ -1146,4 +1145,4 @@ class MongoDBProvider(Provider[MongoDBProviderSettings]):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )

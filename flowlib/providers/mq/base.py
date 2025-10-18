@@ -5,12 +5,14 @@ that share common functionality for publishing and consuming messages.
 """
 
 import logging
-from typing import Any, Dict, Optional, Type, TypeVar, Callable, Union, Generic
+from typing import Any, Callable, Dict, Generic, Optional, Type, TypeVar, Union
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.base import Provider, ProviderSettings
+
 # Removed ProviderType import - using config-driven provider access
 
 logger = logging.getLogger(__name__)
@@ -32,23 +34,23 @@ class MQProviderSettings(ProviderSettings):
         ssl_enabled: Whether to use SSL for connections
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     # Connection settings
     host: str = Field(default="localhost", description="Message queue server host")
     port: int = Field(default=5672, description="Message queue server port")
     username: Optional[str] = Field(default=None, description="Username for authentication")
     password: Optional[str] = Field(default=None, description="Password for authentication (use SecretStr in implementations)")
     virtual_host: str = Field(default="/", description="Virtual host path")
-    
+
     # Performance settings
     timeout: float = Field(default=30.0, description="Connection timeout in seconds")
     heartbeat: int = Field(default=60, description="Heartbeat interval in seconds")
     ssl_enabled: bool = Field(default=False, description="Enable SSL/TLS encryption")
-    
+
     # Retry settings
     max_retries: int = Field(default=3, description="Maximum retry attempts")
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
-    
+
     # Delivery settings
     prefetch_count: int = Field(default=10, description="Number of messages to prefetch")
     auto_ack: bool = Field(default=False, description="Automatically acknowledge messages")
@@ -67,7 +69,7 @@ class MessageMetadata(BaseModel):
         headers: Custom message headers
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     message_id: Optional[str] = None
     correlation_id: Optional[str] = None
     timestamp: Optional[Union[int, float]] = None
@@ -75,7 +77,7 @@ class MessageMetadata(BaseModel):
     priority: Optional[int] = None
     content_type: Optional[str] = None
     headers: Dict[str, Any] = {}
-    
+
     # Additional provider-specific fields
     delivery_tag: Optional[Any] = None
     routing_key: Optional[str] = None
@@ -92,7 +94,7 @@ class MQProvider(Provider[SettingsT], Generic[SettingsT]):
     
     Inherits from Provider and defines the MQ-specific interface.
     """
-    
+
     def __init__(self, name: str = "mq", settings: Optional[SettingsT] = None):
         """Initialize message queue provider.
         
@@ -104,34 +106,34 @@ class MQProvider(Provider[SettingsT], Generic[SettingsT]):
         super().__init__(name=name, settings=settings, provider_type="message_queue")
         # Remove redundant attribute setting, handled by Provider base
         # self._initialized = False
-        # self._connection = None 
-        
+        # self._connection = None
+
     # Removed incorrect initialize/shutdown methods that overrode Provider base methods
     # @property
     # def initialized(self) -> bool: ...
     # async def initialize(self): ...
     # async def shutdown(self): ...
-        
+
     # Keep abstract methods defining the MQ interface
-    async def publish(self, 
-                     exchange: str, 
-                     routing_key: str, 
+    async def publish(self,
+                     exchange: str,
+                     routing_key: str,
                      message: Any,
                      metadata: Optional[MessageMetadata] = None) -> bool:
         raise NotImplementedError("Subclasses must implement publish()")
-        
+
     async def consume(self,
                      queue: str,
                      callback: Callable[[Any, MessageMetadata], Any],
                      consumer_tag: Optional[str] = None) -> Any:
         raise NotImplementedError("Subclasses must implement consume()")
-        
+
     async def acknowledge(self, delivery_tag: Any) -> None:
         raise NotImplementedError("Subclasses must implement acknowledge()")
-        
+
     async def reject(self, delivery_tag: Any, requeue: bool = True) -> None:
         raise NotImplementedError("Subclasses must implement reject()")
-        
+
     async def check_connection(self) -> bool:
         raise NotImplementedError("Subclasses must implement check_connection()")
 
@@ -168,16 +170,16 @@ class MQProvider(Provider[SettingsT], Generic[SettingsT]):
         """
         try:
             message_dict = message.model_dump() # Use model_dump instead of dict
-            
+
             # Set content type in metadata if not provided
             if metadata is None:
                 metadata = MessageMetadata(content_type="application/json")
             elif metadata.content_type is None:
                 metadata.content_type = "application/json"
-                
+
             # Publish the message
             return await self.publish(exchange, routing_key, message_dict, metadata)
-            
+
         except Exception as e:
             # Wrap and re-raise errors with context
             raise ProviderError(
@@ -197,7 +199,7 @@ class MQProvider(Provider[SettingsT], Generic[SettingsT]):
                 ),
                 cause=e
             )
-            
+
     async def consume_structured(self,
                                queue: str,
                                output_type: Type[T],
@@ -223,17 +225,17 @@ class MQProvider(Provider[SettingsT], Generic[SettingsT]):
                 try:
                     # Parse the message into the output type
                     parsed_message = output_type.model_validate(message) # Use model_validate
-                    
+
                     # Call the original callback with the parsed message
                     return await callback(parsed_message, metadata)
-                    
+
                 except Exception as e:
                     logger.error(f"Failed to parse message as {output_type.__name__}: {str(e)}")
                     # Handle parsing errors according to implementation
-                    
+
             # Start consuming with the wrapper callback
             return await self.consume(queue, wrapper_callback, consumer_tag)
-            
+
         except Exception as e:
             # Wrap and re-raise errors with context
             raise ProviderError(
@@ -252,4 +254,4 @@ class MQProvider(Provider[SettingsT], Generic[SettingsT]):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )

@@ -5,7 +5,7 @@ This module provides a standardized way for flows to specify how their
 outputs should be displayed to end users.
 """
 
-from typing import Protocol, Optional, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -18,7 +18,7 @@ class UserDisplayable(Protocol):
     Note: This is a Protocol, so classes just need to implement the
     get_user_display() method - no inheritance required.
     """
-    
+
     def get_user_display(self) -> str:
         """Get user-friendly display text for this result.
         
@@ -48,26 +48,26 @@ def extract_user_display(result_data: object) -> Optional[str]:
         except Exception as e:
             # If method exists but fails, this is a critical error - don't mask it
             raise RuntimeError(f"get_user_display() method failed: {str(e)}") from e
-    
+
     # Handle known types for display field extraction
     if isinstance(result_data, dict):
         data_dict = result_data
     else:
         # Convert unknown objects to string representation
         return str(result_data)
-    
+
     # Look for common display fields in order of preference
     display_fields = [
-        'user_display', 'display_text', 'summary', 
+        'user_display', 'display_text', 'summary',
         'message', 'response', 'output', 'result'
     ]
-    
+
     for field in display_fields:
         if field in data_dict and data_dict[field]:
             value = data_dict[field]
             if isinstance(value, str):
                 return value
-    
+
     return None
 
 
@@ -89,13 +89,13 @@ def format_flow_output_for_user(flow_name: str, result_data: object, success: bo
     user_display = extract_user_display(result_data)
     if user_display:
         return user_display
-    
+
     # Fallback to flow-specific formatting for known flow types
     if flow_name == "shell-command":
         return _format_shell_command_output(result_data, success)
     elif flow_name == "conversation":
         return _format_conversation_output(result_data, success)
-    
+
     # Generic fallback formatting
     if success:
         return f"✅ {flow_name} completed successfully"
@@ -122,14 +122,14 @@ def _format_shell_command_output(result_data: object, success: bool) -> str:
         data = result_data
     else:
         return "Shell command executed"
-    
+
     command = data['command'] if 'command' in data else None
     stdout = data['stdout'] if 'stdout' in data else ''
     stderr = data['stderr'] if 'stderr' in data else ''
-    
+
     if not command:
         return "Shell command executed"
-    
+
     if success and stdout.strip():
         return f"Command executed successfully:\n```bash\n$ {command}\n{stdout}\n```"
     elif not success and stderr.strip():
@@ -144,7 +144,7 @@ def _format_conversation_output(result_data: object, success: bool) -> str:
         data = result_data
     else:
         return "Conversation completed"
-    
+
     response = ''
     if 'response' in data:
         response = data['response']
@@ -152,5 +152,5 @@ def _format_conversation_output(result_data: object, success: bool) -> str:
         response = data['message']
     if response:
         return response
-    
+
     return "Conversation completed"

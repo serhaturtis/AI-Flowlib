@@ -25,9 +25,6 @@ class PreciseAgentConfig(AgentConfigResource):
             llm_name="default-llm",
             temperature=0.3,  # Lower temperature for consistency
             max_iterations=20,  # More iterations for thoroughness
-            enable_memory=True,
             enable_learning=False,  # Avoid learning patterns that might compromise precision
-            enable_thinking=True,
-            auto_decomposition=True,
             verbose=True  # Verbose to show all reasoning
         )

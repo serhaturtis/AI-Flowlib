@@ -2,20 +2,20 @@
 
 from flowlib.knowledge.plugin_generation.flow import PluginGenerationFlow
 from flowlib.knowledge.plugin_generation.models import (
-    PluginGenerationRequest, 
+    ExtractionStats,
+    PluginGenerationRequest,
     PluginGenerationResult,
     PluginGenerationSummary,
-    ExtractionStats,
+    ProcessedData,
     ProcessedDataStats,
-    ProcessedData
 )
 
 __all__ = [
     "PluginGenerationFlow",
-    "PluginGenerationRequest", 
+    "PluginGenerationRequest",
     "PluginGenerationResult",
     "PluginGenerationSummary",
-    "ExtractionStats", 
+    "ExtractionStats",
     "ProcessedDataStats",
     "ProcessedData"
 ]

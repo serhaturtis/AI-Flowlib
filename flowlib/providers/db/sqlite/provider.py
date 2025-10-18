@@ -4,30 +4,39 @@ This module provides a concrete implementation of the DBProvider
 for SQLite database using aiosqlite.
 """
 
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Tuple, TYPE_CHECKING
-import json
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import Field
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
-from flowlib.providers.db.base import DBProvider, DBProviderSettings, DatabaseHealthInfo, DatabaseInfo, PoolInfo
 from flowlib.providers.core.decorators import provider
+from flowlib.providers.db.base import (
+    DatabaseHealthInfo,
+    DatabaseInfo,
+    DBProvider,
+    DBProviderSettings,
+    PoolInfo,
+)
+
 # Removed ProviderType import - using config-driven provider access
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    import aiosqlite
     import sqlite3
+
+    import aiosqlite
     AIOSQLITE_AVAILABLE = True
 else:
     try:
-        import aiosqlite
         import sqlite3
+
+        import aiosqlite
         AIOSQLITE_AVAILABLE = True
     except ImportError:
         AIOSQLITE_AVAILABLE = False
@@ -53,17 +62,17 @@ class SQLiteProviderSettings(DBProviderSettings):
     
     Note: SQLite is file-based, no host/port/authentication needed.
     """
-    
+
     # SQLite file settings
     database_path: str = Field(default="./database.db", description="Path to SQLite database file (e.g., './app.db', '/data/database.sqlite')")
     create_if_missing: bool = Field(default=True, description="Create database file if it doesn't exist")
-    
+
     # SQLite performance settings
     journal_mode: str = Field(default="WAL", description="SQLite journal mode (WAL for better concurrency)")
     isolation_level: Optional[str] = Field(default=None, description="SQLite isolation level (None = autocommit mode)")
     timeout: float = Field(default=5.0, description="Connection timeout in seconds")
     detect_types: int = Field(default=0, description="SQLite type detection (can use sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)")
-    
+
     # Additional connection arguments
     connect_args: Dict[str, Any] = Field(default_factory=dict, description="Additional connection arguments")
 
@@ -75,7 +84,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
     This provider implements database operations using aiosqlite,
     an efficient asynchronous SQLite driver.
     """
-    
+
     def __init__(self, name: str = "sqlite", settings: Optional[SQLiteProviderSettings] = None):
         """Initialize SQLite provider.
 
@@ -86,12 +95,12 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         super().__init__(name=name, settings=settings)
         self._settings: SQLiteProviderSettings = settings or SQLiteProviderSettings(database_path=":memory:")
         self._connection: Optional[aiosqlite.Connection] = None
-        
+
     async def initialize(self) -> None:
         """Initialize the SQLite provider."""
         await self._initialize()
         await super().initialize()
-        
+
     async def shutdown(self) -> None:
         """Shutdown the SQLite provider."""
         shutdown_success = True
@@ -100,12 +109,12 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         except Exception:
             shutdown_success = False
             # Don't raise, let shutdown complete gracefully
-        
+
         # Only call super().shutdown() if our shutdown was successful
         # This preserves the initialized state if shutdown fails
         if shutdown_success:
             await super().shutdown()
-        
+
     async def _initialize(self) -> None:
         """Initialize SQLite connection.
         
@@ -131,7 +140,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                         retry_count=0
                     )
                 )
-            
+
             # Check if database file exists
             is_memory_db = self._settings.database_path == ":memory:"
             if not is_memory_db and not os.path.exists(self._settings.database_path):
@@ -156,7 +165,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                             retry_count=0
                         )
                     )
-            
+
             # Connect to database
             self._connection = await aiosqlite.connect(
                 database=self._settings.database_path,
@@ -165,20 +174,20 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 detect_types=self._settings.detect_types,
                 **self._settings.connect_args
             )
-            
+
             # Enable foreign keys
             await self._connection.execute("PRAGMA foreign_keys = ON")
-            
+
             # Set journal mode
             await self._connection.execute(f"PRAGMA journal_mode = {self._settings.journal_mode}")
-            
+
             # Configure JSON serialization/deserialization
             sqlite3.register_adapter(dict, json.dumps)
             sqlite3.register_adapter(list, json.dumps)
             sqlite3.register_converter("JSON", json.loads)
-            
+
             logger.info(f"Connected to SQLite database: {self._settings.database_path}")
-            
+
         except Exception as e:
             self._connection = None
             raise ProviderError(
@@ -198,7 +207,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def _shutdown(self) -> None:
         """Close SQLite connection."""
         if self._connection:
@@ -211,7 +220,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 raise
             finally:
                 self._connection = None
-    
+
     async def execute_query(self, query: str, params: Optional[Union[tuple, dict]] = None) -> List[Dict[str, Any]]:
         """Execute a SQL query.
 
@@ -249,13 +258,13 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         try:
             # Execute query
             cursor = await self._connection.execute(query, params or ())
-            
+
             # Get column names
             columns = [column[0] for column in cursor.description] if cursor.description else []
-            
+
             # Fetch all rows
             rows = await cursor.fetchall()
-            
+
             # Convert rows to dictionaries
             results = []
             for row in rows:
@@ -270,9 +279,9 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                             pass  # Keep as bytes if not valid UTF-8
                     result[column] = value
                 results.append(result)
-                
+
             return results
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to execute SQLite query: {str(e)}",
@@ -291,7 +300,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def execute_update(self, query: str, params: Optional[Union[tuple, dict]] = None) -> int:
         """Execute a SQL update.
         
@@ -332,7 +341,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
 
             # Commit changes
             await self._connection.commit()
-            
+
             # Return number of rows affected
             return cursor.rowcount
 
@@ -340,7 +349,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
             # Rollback transaction
             if self._connection is not None:
                 await self._connection.rollback()
-            
+
             raise ProviderError(
                 message=f"Failed to execute SQLite update: {str(e)}",
                 context=ErrorContext.create(
@@ -358,7 +367,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def execute_script(self, script: str) -> None:
         """Execute a SQL script.
         
@@ -370,7 +379,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         """
         if not self._connection:
             await self.initialize()
-            
+
         if self._connection is None:
             raise ProviderError(
                 message="SQLite connection not available for script execution",
@@ -399,7 +408,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         except Exception as e:
             # Rollback transaction
             await self._connection.rollback()
-            
+
             raise ProviderError(
                 message=f"Failed to execute SQLite script: {str(e)}",
                 context=ErrorContext.create(
@@ -417,7 +426,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def execute_transaction(self, queries: List[Tuple[str, Optional[Union[tuple, dict]]]]) -> List[Any]:
         """Execute queries in a transaction.
         
@@ -459,15 +468,15 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
             for query, params in queries:
                 # Execute query
                 cursor = await self._connection.execute(query, params or ())
-                
+
                 # Check if query returns rows
                 if cursor.description:
                     # Get column names
                     columns = [column[0] for column in cursor.description]
-                    
+
                     # Fetch all rows
                     rows = await cursor.fetchall()
-                    
+
                     # Convert rows to dictionaries
                     query_results = []
                     for row in rows:
@@ -475,21 +484,21 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                         for i, column in enumerate(columns):
                             result[column] = row[i]
                         query_results.append(result)
-                    
+
                     results.append(query_results)
                 else:
                     # For INSERT, UPDATE, DELETE queries
                     results.append(cursor.rowcount)
-                
+
             # Commit transaction
             await self._connection.commit()
-            
+
             return results
-            
+
         except Exception as e:
             # Rollback transaction
             await self._connection.rollback()
-            
+
             raise ProviderError(
                 message=f"Failed to execute SQLite transaction: {str(e)}",
                 context=ErrorContext.create(
@@ -507,7 +516,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def get_table_schema(self, table_name: str) -> List[Dict[str, Any]]:
         """Get schema for a table.
         
@@ -522,12 +531,12 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         """
         if not self._connection:
             await self.initialize()
-            
+
         try:
             # Get table schema
             query = f"PRAGMA table_info({table_name})"
             return await self.execute_query(query)
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to get SQLite table schema: {str(e)}",
@@ -546,7 +555,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def table_exists(self, table_name: str) -> bool:
         """Check if a table exists.
         
@@ -561,14 +570,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         """
         if not self._connection:
             await self.initialize()
-            
+
         try:
             # Check if table exists
             query = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
             result = await self.execute_query(query, (table_name,))
-            
+
             return len(result) > 0
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to check if SQLite table exists: {str(e)}",
@@ -587,7 +596,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Execute a database query.
         
@@ -618,7 +627,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     retry_count=0
                 )
             )
-        
+
         try:
             # Handle parameter conversion based on query style
             param_values: Optional[Union[Dict[str, Any], Tuple[Any, ...]]] = None
@@ -631,7 +640,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     # Query uses positional parameters, convert dict to tuple
                     # This assumes the dict keys are in the order expected by the query
                     param_values = tuple(params.values())
-            
+
             # Determine if this is a SELECT query or not
             query_lower = query.strip().lower()
             if query_lower.startswith('select') or query_lower.startswith('with'):
@@ -641,7 +650,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 # For INSERT/UPDATE/DELETE, return formatted result
                 affected_rows = await self.execute_update(query, param_values)
                 return [{"affected_rows": affected_rows}]
-                
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to execute SQLite query: {str(e)}",
@@ -660,7 +669,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def check_connection(self) -> bool:
         """Check if the database connection is healthy.
         
@@ -679,11 +688,11 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 await cursor.execute("SELECT 1")
                 result = await cursor.fetchone()
                 return result is not None
-                
+
         except Exception as e:
             logger.warning(f"SQLite connection check failed: {e}")
             return False
-    
+
     async def execute_many(self, query: str, params_list: List[Dict[str, Any]]) -> List[Any]:
         """Execute a batch of database queries.
         
@@ -714,21 +723,21 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     retry_count=0
                 )
             )
-        
+
         try:
             # Use executemany for batch operations with named parameters
             cursor = await self._connection.executemany(query, params_list)
-            
+
             await self._connection.commit()
-            
+
             # Return total affected rows as single result
             total_affected = cursor.rowcount
             return [{"affected_rows": total_affected}]
-            
+
         except Exception as e:
             # Rollback on error
             await self._connection.rollback()
-            
+
             raise ProviderError(
                 message=f"Failed to execute SQLite batch queries: {str(e)}",
                 context=ErrorContext.create(
@@ -746,7 +755,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def begin_transaction(self) -> Any:
         """Begin a database transaction.
         
@@ -773,7 +782,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     retry_count=0
                 )
             )
-        
+
         try:
             # SQLite uses connection-level transactions
             await self._connection.execute("BEGIN")
@@ -796,7 +805,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def commit_transaction(self, transaction: Any) -> bool:
         """Commit a database transaction.
         
@@ -830,7 +839,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def rollback_transaction(self, transaction: Any) -> bool:
         """Rollback a database transaction.
         
@@ -864,7 +873,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 ),
                 cause=e
             )
-    
+
     async def get_health(self) -> DatabaseHealthInfo:
         """Get database health information.
         
@@ -876,11 +885,11 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
         """
         try:
             is_connected = await self.check_connection()
-            
+
             # Get database version if connected
             version: Optional[str] = None
             additional_info: Dict[str, Any] = {}
-            
+
             if is_connected and self._connection is not None:
                 try:
                     async with self._connection.cursor() as cursor:
@@ -888,19 +897,19 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                         await cursor.execute("SELECT sqlite_version()")
                         version_result = await cursor.fetchone()
                         version = version_result[0] if version_result else "unknown"
-                        
+
                         # Get database file size if it's a file
                         if self._settings.database_path != ":memory:":
                             db_path = Path(self._settings.database_path)
                             if db_path.exists():
                                 additional_info["database_size_bytes"] = db_path.stat().st_size
-                                
+
                         additional_info["journal_mode"] = self._settings.journal_mode
                         additional_info["connection_initialized"] = self._connection is not None
-                        
+
                 except Exception as e:
                     additional_info["version_check_error"] = str(e)
-            
+
             return DatabaseHealthInfo(
                 status="healthy" if is_connected else "unhealthy",
                 connected=is_connected,
@@ -916,7 +925,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 version=version,
                 additional_info=additional_info
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to get SQLite health info: {str(e)}",
@@ -934,4 +943,4 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )

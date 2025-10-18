@@ -1,9 +1,11 @@
 """Models for knowledge plugin generation."""
 
-from typing import Dict, List, Any, Optional
-from pydantic import Field, ConfigDict
-from flowlib.core.models import StrictBaseModel
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import ConfigDict, Field
+
+from flowlib.core.models import StrictBaseModel
 
 
 class DomainStrategy(str, Enum):
@@ -18,7 +20,7 @@ class DomainStrategy(str, Enum):
 class DomainStrategyConfig(StrictBaseModel):
     """Configuration for domain-specific generation strategy."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     strategy: DomainStrategy = Field(description="Domain strategy to use")
     custom_entity_types: Optional[List[str]] = Field(default=None, description="Custom entity types for this domain")
     custom_relationship_types: Optional[List[str]] = Field(default=None, description="Custom relationship types")
@@ -29,7 +31,7 @@ class DomainStrategyConfig(StrictBaseModel):
 class DatabaseConfig(StrictBaseModel):
     """Database configuration settings."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     enabled: bool = Field(default=True, description="Whether this database is enabled")
     config_file: str = Field(description="Configuration file path")
 
@@ -37,7 +39,7 @@ class DatabaseConfig(StrictBaseModel):
 class DatabaseSettings(StrictBaseModel):
     """Database settings configuration."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     chromadb: Optional[DatabaseConfig] = Field(default=None, description="ChromaDB configuration")
     neo4j: Optional[DatabaseConfig] = Field(default=None, description="Neo4j configuration")
 
@@ -45,7 +47,7 @@ class DatabaseSettings(StrictBaseModel):
 class ExtractionStats(StrictBaseModel):
     """Knowledge extraction statistics."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     total_documents: int = Field(default=0, description="Total documents processed")
     successful_documents: int = Field(default=0, description="Successfully processed documents")
     failed_documents: int = Field(default=0, description="Failed document processing")
@@ -59,7 +61,7 @@ class ExtractionStats(StrictBaseModel):
 class ProcessedDataStats(StrictBaseModel):
     """Statistics for processed data."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     documents: int = Field(default=0, description="Number of documents")
     entities: int = Field(default=0, description="Number of entities")
     relationships: int = Field(default=0, description="Number of relationships")
@@ -69,7 +71,7 @@ class ProcessedDataStats(StrictBaseModel):
 class ProcessedData(StrictBaseModel):
     """Processed knowledge extraction data."""
     model_config = ConfigDict(extra="forbid")
-    
+
     documents: List[Dict[str, Any]] = Field(default_factory=list, description="Processed documents")
     entities: List[Dict[str, Any]] = Field(default_factory=list, description="Extracted entities")
     relationships: List[Dict[str, Any]] = Field(default_factory=list, description="Found relationships")
@@ -80,7 +82,7 @@ class ProcessedData(StrictBaseModel):
 class PluginGenerationSummary(StrictBaseModel):
     """Summary of plugin generation results."""
     model_config = ConfigDict(extra="forbid")
-    
+
     plugin_name: str = Field(description="Generated plugin name")
     plugin_directory: str = Field(description="Plugin directory path")
     domains: List[str] = Field(description="Knowledge domains covered")
@@ -93,7 +95,7 @@ class PluginGenerationSummary(StrictBaseModel):
 class PluginGenerationRequest(StrictBaseModel):
     """Request model for plugin generation."""
     model_config = ConfigDict(extra="forbid")
-    
+
     input_directory: str = Field(description="Directory containing documents to process")
     output_directory: str = Field(description="Where to create the plugin folder")
     plugin_name: str = Field(description="Name for the generated plugin")
@@ -113,7 +115,7 @@ class PluginGenerationRequest(StrictBaseModel):
 class PluginGenerationResult(StrictBaseModel):
     """Result model for plugin generation."""
     model_config = ConfigDict(extra="forbid")
-    
+
     success: bool = Field(description="Whether generation was successful")
     plugin_path: str = Field(description="Path to generated plugin")
     summary: PluginGenerationSummary = Field(description="Generation summary")

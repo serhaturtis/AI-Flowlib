@@ -1,6 +1,6 @@
+import importlib
 import os
 import sys
-import importlib
 import traceback
 from typing import List
 
@@ -56,4 +56,4 @@ def main() -> None:
         print("All modules imported successfully!")
 
 if __name__ == "__main__":
-    main() 
+    main()

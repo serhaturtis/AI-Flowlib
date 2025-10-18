@@ -8,8 +8,8 @@ provider resolution and configuration management.
 import asyncio
 import logging
 import time
-from typing import TypeVar, Generic, Optional, Any
 from abc import ABC, abstractmethod
+from typing import Any, Generic, Optional, TypeVar
 
 from .context import ExecutionContext
 
@@ -29,14 +29,14 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
     - Standardized error handling and logging
     - Performance monitoring
     """
-    
+
     def __init__(self) -> None:
         self.context: Optional[ExecutionContext] = None
         self.start_time: Optional[float] = None
-    
+
     async def execute(
-        self, 
-        input_data: InputT, 
+        self,
+        input_data: InputT,
         processing_options: Optional[dict] = None
     ) -> OutputT:
         """Execute the flow with clean dependency injection.
@@ -52,12 +52,19 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
             FlowExecutionError: If flow execution fails
         """
         self.start_time = time.time()
-        
+
         try:
             # Create execution context
             # Use ExecutionContext instead of removed FlowContext
-            from .context.models import ExecutionContext, SessionContext, TaskContext, ComponentContext, LearningContext
             import os
+
+            from .context.models import (
+                ComponentContext,
+                ExecutionContext,
+                LearningContext,
+                SessionContext,
+                TaskContext,
+            )
 
             session = SessionContext(
                 session_id="flow_session",
@@ -83,17 +90,17 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
                 component=component,
                 learning=learning
             )
-            
+
             # Execute the flow
             logger.info(f"Starting {self.__class__.__name__} execution")
             result = await self.run_pipeline(input_data)
-            
+
             # Add performance metadata
             execution_time = time.time() - self.start_time
             logger.info(f"{self.__class__.__name__} completed in {execution_time:.2f}s")
-            
+
             return result
-            
+
         except Exception as e:
             execution_time = time.time() - self.start_time if self.start_time else 0
             logger.error(f"{self.__class__.__name__} failed after {execution_time:.2f}s: {e}")
@@ -102,7 +109,7 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
                 execution_time=execution_time,
                 original_error=e
             ) from e
-    
+
     @abstractmethod
     async def run_pipeline(self, input_data: InputT) -> OutputT:
         """Implement the core flow logic.
@@ -111,7 +118,7 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
         The FlowContext is available as self.context for provider access.
         """
         pass
-    
+
     async def get_llm(self) -> Any:
         """Convenience method to get LLM provider from registry."""
         from flowlib.providers.core.registry import provider_registry
@@ -134,7 +141,7 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
 
 class FlowExecutionError(Exception):
     """Exception raised when flow execution fails."""
-    
+
     def __init__(self, flow_name: str, execution_time: float, original_error: Exception):
         self.flow_name = flow_name
         self.execution_time = execution_time
@@ -189,12 +196,12 @@ async def execute_flows_in_parallel(
         List of flow outputs in the same order as inputs
     """
     semaphore = asyncio.Semaphore(max_concurrent)
-    
+
     async def execute_with_semaphore(flow_info: tuple[BaseAgentFlow, InputT, Optional[dict]]) -> OutputT:
         flow, input_data, processing_options = flow_info
         async with semaphore:
             result: OutputT = await flow.execute(input_data, processing_options)
             return result
-    
+
     tasks = [execute_with_semaphore(flow_info) for flow_info in flows_and_inputs]
     return await asyncio.gather(*tasks)

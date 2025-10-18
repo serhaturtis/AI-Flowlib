@@ -13,7 +13,7 @@ class ComponentInterface(Protocol):
     
     Defines the lifecycle methods that all components must implement.
     """
-    
+
     async def initialize(self) -> None:
         """Initialize the component.
         
@@ -21,7 +21,7 @@ class ComponentInterface(Protocol):
         It should set up any resources needed by the component.
         """
         ...
-    
+
     async def shutdown(self) -> None:
         """Shutdown the component and release resources.
         
@@ -29,7 +29,7 @@ class ComponentInterface(Protocol):
         It should clean up any resources used by the component.
         """
         ...
-    
+
     @property
     def initialized(self) -> bool:
         """Return whether the component is initialized.
@@ -38,7 +38,7 @@ class ComponentInterface(Protocol):
             True if the component is initialized and ready to use
         """
         ...
-        
+
     @property
     def name(self) -> str:
         """Return the component name.
@@ -46,4 +46,4 @@ class ComponentInterface(Protocol):
         Returns:
             Name of the component
         """
-        ... 
+        ...

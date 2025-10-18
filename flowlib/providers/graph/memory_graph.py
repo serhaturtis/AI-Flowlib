@@ -9,19 +9,25 @@ All data is lost when the process terminates.
 """
 
 import asyncio
-import logging
 import copy
-from typing import Dict, List, Optional, Any
+import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
 from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
 from flowlib.providers.graph.models import (
-    Entity, EntityRelationship, GraphStoreResult, GraphQueryParams, GraphQueryResult,
-    RelationshipSearchResult, GraphDeleteResult, EntitySearchResult)
+    Entity,
+    EntityRelationship,
+    EntitySearchResult,
+    GraphDeleteResult,
+    GraphQueryParams,
+    GraphQueryResult,
+    GraphStoreResult,
+    RelationshipSearchResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,51 +40,51 @@ class InMemoryGraphDatabase:
     
     WARNING: All data is volatile and lost when the process terminates.
     """
-    
+
     def __init__(self) -> None:
         self._entities: Dict[str, Entity] = {}
         self._relationships: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
-    
+
     async def store_entity(self, entity: Entity) -> str:
         """Store an entity in the database."""
         async with self._lock:
             entity_copy = copy.deepcopy(entity)
             self._entities[entity.id] = entity_copy
-            
+
             # Initialize relationship storage for this entity
             if entity.id not in self._relationships:
                 self._relationships[entity.id] = []
-                
+
             return entity.id
-    
+
     async def get_entity(self, entity_id: str) -> Optional[Entity]:
         """Retrieve an entity from the database."""
         async with self._lock:
             entity = self._entities[entity_id] if entity_id in self._entities else None
             return copy.deepcopy(entity) if entity else None
-    
+
     async def delete_entity(self, entity_id: str) -> bool:
         """Delete an entity and all its relationships."""
         async with self._lock:
             if entity_id not in self._entities:
                 return False
-                
+
             # Remove entity
             del self._entities[entity_id]
-            
+
             # Remove all relationships involving this entity
             if entity_id in self._relationships:
                 del self._relationships[entity_id]
-                
+
             # Remove relationships where this entity is the target
             for source_id, rels in self._relationships.items():
                 self._relationships[source_id] = [
                     rel for rel in rels if (rel["target"] if "target" in rel else None) != entity_id
                 ]
-            
+
             return True
-    
+
     async def add_relationship(self, source_id: str, target_id: str, relation_type: str, properties: Dict[str, Any]) -> None:
         """Add a relationship between entities."""
         async with self._lock:
@@ -86,37 +92,37 @@ class InMemoryGraphDatabase:
                 raise ValueError(f"Source entity {source_id} does not exist")
             if target_id not in self._entities:
                 raise ValueError(f"Target entity {target_id} does not exist")
-                
+
             if source_id not in self._relationships:
                 self._relationships[source_id] = []
-                
+
             # Check for duplicate relationship
             for existing_rel in self._relationships[source_id]:
-                if (existing_rel["target"] == target_id and 
+                if (existing_rel["target"] == target_id and
                     existing_rel["relation_type"] == relation_type):
                     # Update existing relationship with new properties
                     existing_rel["properties"].update(properties)
                     return
-                
+
             relationship = {
                 "target": target_id,
                 "relation_type": relation_type,
                 "properties": properties.copy()
             }
-            
+
             self._relationships[source_id].append(relationship)
-    
+
     async def query_relationships(self, entity_id: str, relation_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Query relationships for an entity."""
         async with self._lock:
             if entity_id not in self._relationships:
                 return []
-                
+
             relationships = self._relationships[entity_id]
-            
+
             if relation_type:
                 relationships = [r for r in relationships if r["relation_type"] == relation_type]
-                
+
             return [copy.deepcopy(rel) for rel in relationships]
 
     async def remove_relationship(self, source_id: str, target_id: str, relation_type: str) -> None:
@@ -124,36 +130,36 @@ class InMemoryGraphDatabase:
         async with self._lock:
             if source_id not in self._relationships:
                 return  # No relationships to remove
-                
+
             # Filter out the specific relationship
             self._relationships[source_id] = [
-                rel for rel in self._relationships[source_id] 
+                rel for rel in self._relationships[source_id]
                 if not (rel["target"] == target_id and rel["relation_type"] == relation_type)
             ]
-    
-    async def search_entities(self, query: Optional[str] = None, entity_type: Optional[str] = None, 
+
+    async def search_entities(self, query: Optional[str] = None, entity_type: Optional[str] = None,
                             tags: Optional[List[str]] = None, limit: int = 10) -> List[Entity]:
         """Search entities by criteria."""
         async with self._lock:
             results: List[Entity] = []
-            
+
             for entity in self._entities.values():
                 if len(results) >= limit:
                     break
-                    
+
                 # Type filter
                 if entity_type and entity.type != entity_type:
                     continue
-                    
+
                 # Tag filter
                 if tags and not any(tag in entity.tags for tag in tags):
                     continue
-                    
+
                 # Text query filter (search in ID and attribute values)
                 if query:
                     query_lower = query.lower()
                     match_found = False
-                    
+
                     if query_lower in entity.id.lower():
                         match_found = True
                     else:
@@ -161,12 +167,12 @@ class InMemoryGraphDatabase:
                             if query_lower in str(attr.value).lower():
                                 match_found = True
                                 break
-                    
+
                     if not match_found:
                         continue
-                
+
                 results.append(copy.deepcopy(entity))
-            
+
             return results
 
     async def traverse(self, start_id: str, relation_types: Optional[List[str]] = None, max_depth: int = 2) -> List[Entity]:
@@ -174,22 +180,22 @@ class InMemoryGraphDatabase:
         async with self._lock:
             if start_id not in self._entities:
                 return []
-            
+
             visited = set()
             result = []
             queue = [(start_id, 0)]  # (entity_id, depth)
-            
+
             while queue:
                 current_id, depth = queue.pop(0)
-                
+
                 if current_id in visited or depth > max_depth:
                     continue
-                    
+
                 visited.add(current_id)
-                
+
                 if current_id in self._entities:
                     result.append(copy.deepcopy(self._entities[current_id]))
-                
+
                 # Add connected entities to queue
                 if depth < max_depth and current_id in self._relationships:
                     for rel in self._relationships[current_id]:
@@ -197,7 +203,7 @@ class InMemoryGraphDatabase:
                             target_id = rel["target"]
                             if target_id not in visited:
                                 queue.append((target_id, depth + 1))
-            
+
             return result
 
 
@@ -215,7 +221,7 @@ class MemoryGraphProvider(GraphDBProvider):
     
     WARNING: This is a volatile database - all data is lost when the process terminates.
     """
-    
+
     def __init__(self, name: str = "memory-graph", provider_type: str = "graph_db", settings: Optional[GraphDBProviderSettings] = None):
         """Initialize provider with embedded in-memory database.
         
@@ -227,13 +233,13 @@ class MemoryGraphProvider(GraphDBProvider):
         settings = settings or GraphDBProviderSettings()
         super().__init__(name=name, provider_type=provider_type, settings=settings)
         self._database: Optional[InMemoryGraphDatabase] = None
-    
+
     async def initialize(self) -> None:
         """Initialize the in-memory database."""
         self._database = InMemoryGraphDatabase()
         self._initialized = True
         logger.info(f"In-memory graph database '{self.name}' initialized (volatile storage)")
-    
+
     async def shutdown(self) -> None:
         """Shutdown the database and clear all data."""
         if self._database:
@@ -241,10 +247,10 @@ class MemoryGraphProvider(GraphDBProvider):
             self._database._entities.clear()
             self._database._relationships.clear()
             self._database = None
-        
+
         self._initialized = False
         logger.info(f"In-memory graph database '{self.name}' shutdown (all data lost)")
-    
+
     async def add_entity(self, entity: Entity) -> GraphStoreResult:
         """Add or update an entity in the database."""
         if not self._initialized or not self._database:
@@ -269,7 +275,7 @@ class MemoryGraphProvider(GraphDBProvider):
             # Store the entity first
             entity_id = await self._database.store_entity(entity)
             stored_relationships = []
-            
+
             # Add relationships
             for rel in entity.relationships:
                 await self.add_relationship(
@@ -279,7 +285,7 @@ class MemoryGraphProvider(GraphDBProvider):
                     rel  # Pass the EntityRelationship model directly
                 )
                 stored_relationships.append(f"{entity.id}-{rel.relation_type}->{rel.target_entity}")
-            
+
             return GraphStoreResult(
                 success=True,
                 stored_entities=[entity_id],
@@ -307,7 +313,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def get_entity(self, entity_id: str) -> Optional[Entity]:
         """Get an entity by ID."""
         if not self._initialized or not self._database:
@@ -328,7 +334,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=None
             )
-        
+
         try:
             return await self._database.get_entity(entity_id)
         except Exception as e:
@@ -349,7 +355,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def delete_entity(self, entity_id: str) -> GraphDeleteResult:
         """Delete an entity and all its relationships."""
         if not self._initialized or not self._database:
@@ -370,7 +376,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=None
             )
-        
+
         try:
             deleted = await self._database.delete_entity(entity_id)
             if deleted:
@@ -411,7 +417,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def add_relationship(self, source_id: str, target_entity: str, relation_type: str, relationship: EntityRelationship) -> None:
         """Add a relationship between two entities."""
         if not self._initialized or not self._database:
@@ -497,7 +503,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def query_relationships(self, entity_id: str, relation_type: Optional[str] = None, direction: str = "outgoing") -> RelationshipSearchResult:
         """Query relationships for an entity."""
         if not self._initialized or not self._database:
@@ -609,14 +615,14 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=None
             )
-        
+
         try:
             async with self._database._lock:
                 if source_id not in self._database._relationships:
                     return False
-                
+
                 original_count = len(self._database._relationships[source_id])
-                
+
                 if relation_type:
                     # Remove specific relationship type
                     self._database._relationships[source_id] = [
@@ -629,9 +635,9 @@ class MemoryGraphProvider(GraphDBProvider):
                         rel for rel in self._database._relationships[source_id]
                         if rel["target"] != target_entity
                     ]
-                
+
                 return len(self._database._relationships[source_id]) < original_count
-                
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to delete relationship: {str(e)}",
@@ -671,7 +677,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=None
             )
-        
+
         try:
             await self._database.remove_relationship(source_id, target_entity, relation_type)
         except Exception as e:
@@ -692,7 +698,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def traverse(self, start_id: str, relation_types: Optional[List[str]] = None, max_depth: int = 2) -> List[Entity]:
         """Traverse the graph starting from an entity."""
         if not self._initialized or not self._database:
@@ -713,7 +719,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=None
             )
-        
+
         try:
             return await self._database.traverse(start_id, relation_types, max_depth)
         except Exception as e:
@@ -734,7 +740,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def search_entities(self, query: Optional[str] = None, entity_type: Optional[str] = None,
                             tags: Optional[List[str]] = None, limit: int = 10) -> EntitySearchResult:
         """Search for entities based on criteria."""
@@ -756,7 +762,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=None
             )
-        
+
         try:
             entities = await self._database.search_entities(query, entity_type, tags, limit)
             return EntitySearchResult(
@@ -784,7 +790,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def query(self, query: str, params: Optional[GraphQueryParams] = None) -> GraphQueryResult:
         """Execute a simple query against the in-memory graph."""
         if not self._initialized or not self._database:
@@ -808,7 +814,7 @@ class MemoryGraphProvider(GraphDBProvider):
         try:
             nodes = []
             edges = []
-            
+
             # Parse simple query patterns for the in-memory implementation
             if query.startswith("find_entities"):
                 entity_type = None
@@ -820,7 +826,7 @@ class MemoryGraphProvider(GraphDBProvider):
                         entity_type = part.split("=", 1)[1]
                     elif part.startswith("name="):
                         name = part.split("=", 1)[1]
-                
+
                 # Apply params if provided
                 limit = 10
                 if params:
@@ -831,14 +837,14 @@ class MemoryGraphProvider(GraphDBProvider):
                         entity_type = params.extra_params['entity_type']
                     if 'name' in params.extra_params:
                         name = params.extra_params['name']
-                
+
                 # Search entities
                 entities = await self._database.search_entities(
-                    query=name, 
+                    query=name,
                     entity_type=entity_type,
                     limit=limit
                 )
-                
+
                 # Convert entities to node format
                 for entity in entities:
                     nodes.append({
@@ -848,7 +854,7 @@ class MemoryGraphProvider(GraphDBProvider):
                         "importance": entity.importance,
                         "source": entity.source
                     })
-                    
+
             elif query.startswith("get_relationships"):
                 # Parse entity_id from query
                 parts = query.split()
@@ -856,7 +862,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 for part in parts[1:]:
                     if part.startswith("entity_id="):
                         entity_id = part.split("=", 1)[1]
-                        
+
                 if entity_id:
                     # Get relationships for entity
                     result = await self.query_relationships(entity_id)
@@ -870,7 +876,7 @@ class MemoryGraphProvider(GraphDBProvider):
             else:
                 # For unsupported queries, return empty result
                 logger.warning(f"Unsupported query pattern: {query}")
-                
+
             return GraphQueryResult(
                 success=True,
                 nodes=nodes,
@@ -882,7 +888,7 @@ class MemoryGraphProvider(GraphDBProvider):
                 execution_time_ms=None,
                 total_count=len(nodes) + len(edges)
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to execute query: {str(e)}",

@@ -4,7 +4,9 @@ No fallbacks, no defaults, no optional fields unless explicitly required.
 """
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import Field
+
 from flowlib.core.models import StrictBaseModel
 
 
@@ -14,7 +16,7 @@ class ArangoAttributeData(StrictBaseModel):
     confidence: float = Field(..., description="Confidence score")
     source: str = Field(..., description="Attribute source")
     timestamp: str = Field(..., description="Timestamp in ISO format")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -27,7 +29,7 @@ class ArangoDocumentData(StrictBaseModel):
     source: str = Field(..., description="Document source")
     importance: float = Field(..., description="Document importance score")
     last_updated: str = Field(..., description="Last update timestamp")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -38,7 +40,7 @@ class ArangoRelationshipData(StrictBaseModel):
     confidence: float = Field(..., description="Relationship confidence")
     source: str = Field(..., description="Relationship source")
     timestamp: str = Field(..., description="Timestamp")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -47,7 +49,7 @@ class ArangoQueryResult(StrictBaseModel):
     documents: List[ArangoDocumentData] = Field(..., description="Result documents")
     total_count: int = Field(..., description="Total result count")
     query_time: float = Field(..., description="Query execution time")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -57,7 +59,7 @@ class ArangoEntitySearchResult(StrictBaseModel):
     entity_type: str = Field(..., description="Entity type")
     score: float = Field(..., description="Search relevance score")
     properties: Dict[str, Any] = Field(..., description="Entity properties")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -68,7 +70,7 @@ class ArangoBatchOperation(StrictBaseModel):
     result: Optional[Dict[str, Any]] = Field(None, description="Operation result")
     success: bool = Field(..., description="Whether operation succeeded")
     error_message: Optional[str] = Field(None, description="Error message if failed")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -78,7 +80,7 @@ class ArangoConnectionInfo(StrictBaseModel):
     database: str = Field(..., description="Database name")
     username: str = Field(..., description="Username")
     version: str = Field(..., description="Server version")
-    
+
     # Inherits strict configuration from StrictBaseModel
 
 
@@ -88,5 +90,5 @@ class ArangoCollectionInfo(StrictBaseModel):
     type: str = Field(..., description="Collection type")
     status: str = Field(..., description="Collection status")
     count: int = Field(..., description="Document count")
-    
+
     # Inherits strict configuration from StrictBaseModel

@@ -1,10 +1,15 @@
 """Base classes for knowledge providers."""
 
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field, ConfigDict
 import logging
-from ...providers.vector.chroma.provider import ChromaDBProvider, ChromaDBProviderSettings
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from ...providers.vector.chroma.provider import (
+    ChromaDBProvider,
+    ChromaDBProviderSettings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -12,12 +17,12 @@ logger = logging.getLogger(__name__)
 class Knowledge(BaseModel):
     """Base model for knowledge items returned by providers."""
     model_config = ConfigDict(
-        frozen=True, 
+        frozen=True,
         extra="forbid",
         json_schema_extra={
             "example": {
                 "content": "Caffeine has the molecular formula C8H10N4O2",
-                "source": "vector", 
+                "source": "vector",
                 "domain": "chemistry",
                 "confidence": 0.95,
                 "metadata": {
@@ -27,7 +32,7 @@ class Knowledge(BaseModel):
             }
         }
     )
-    
+
     content: str = Field(..., description="The knowledge content or answer")
     source: str = Field(..., description="Source of knowledge: 'vector', 'graph', 'hybrid'")
     domain: str = Field(..., description="Knowledge domain this belongs to")
@@ -41,10 +46,10 @@ class KnowledgeProvider(ABC):
     Knowledge providers connect to domain-specific databases and provide
     query capabilities for the agent's learning and memory system.
     """
-    
+
     # Subclasses must define the domains they handle
     domains: List[str] = []
-    
+
     @abstractmethod
     async def initialize(self, config: Dict[str, Any]) -> None:
         """Initialize the knowledge provider.
@@ -58,7 +63,7 @@ class KnowledgeProvider(ABC):
             ConfigurationError: If configuration is invalid
         """
         pass
-    
+
     @abstractmethod
     async def query(self, domain: str, query: str, limit: int = 10) -> List[Knowledge]:
         """Query knowledge in the specified domain.
@@ -84,7 +89,7 @@ class KnowledgeProvider(ABC):
         override this to properly close database connections and clean up.
         """
         pass
-    
+
     def supports_domain(self, domain: str) -> bool:
         """Check if this provider supports the given domain.
         
@@ -104,13 +109,13 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
     databases (like ChromaDB) and graph databases (like Neo4j) to provide
     comprehensive knowledge retrieval.
     """
-    
+
     def __init__(self) -> None:
         """Initialize the multi-database provider."""
         self.vector_db: Optional[Any] = None
         self.graph_db: Optional[Any] = None
         self._config: Dict[str, Any] = {}
-        
+
     async def initialize(self, config: Dict[str, Any]) -> None:
         """Initialize database connections.
         
@@ -118,18 +123,18 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
             config: Configuration with 'chromadb' and/or 'neo4j' sections
         """
         self._config = config
-        
+
         # Initialize vector database if configured
         if config.get("chromadb"):
             await self._initialize_vector_db(config["chromadb"])
-            
-        # Initialize graph database if configured  
+
+        # Initialize graph database if configured
         if config.get("neo4j"):
             await self._initialize_graph_db(config["neo4j"])
-            
+
         logger.info(f"Initialized {self.__class__.__name__} with "
                    f"vector={'chromadb' in config}, graph={'neo4j' in config}")
-    
+
     async def _initialize_vector_db(self, config: Dict[str, Any]) -> None:
         """Initialize vector database connection.
         
@@ -139,7 +144,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
         # Removed ProviderType import - using config-driven provider access
         # Convert config to proper settings object
         chroma_settings = ChromaDBProviderSettings(**config["connection"])
-        
+
         self.vector_db = ChromaDBProvider(
             name=f"{self.__class__.__name__}-vectors",
             provider_type="vector_db",
@@ -147,25 +152,28 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
         )
         await self.vector_db.initialize()
         logger.debug("Vector database initialized")
-    
+
     async def _initialize_graph_db(self, config: Dict[str, Any]) -> None:
         """Initialize graph database connection.
         
         Args:
             config: Neo4j configuration
         """
-        from ...providers.graph.neo4j.provider import Neo4jProvider, Neo4jProviderSettings
-        
+        from ...providers.graph.neo4j.provider import (
+            Neo4jProvider,
+            Neo4jProviderSettings,
+        )
+
         # Convert config to proper settings object
         neo4j_settings = Neo4jProviderSettings(**config["connection"])
-        
+
         self.graph_db = Neo4jProvider(
             name=f"{self.__class__.__name__}-graph",
             settings=neo4j_settings
         )
         await self.graph_db.initialize()
         logger.debug("Graph database initialized")
-    
+
     async def query(self, domain: str, query: str, limit: int = 10) -> List[Knowledge]:
         """Query across available databases and fuse results.
         
@@ -179,9 +187,9 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
         """
         if not self.supports_domain(domain):
             raise ValueError(f"Domain '{domain}' not supported by {self.__class__.__name__}")
-            
+
         results = []
-        
+
         # Query vector database if available
         if self.vector_db:
             try:
@@ -190,7 +198,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
                 logger.debug(f"Vector search returned {len(vector_results)} results")
             except Exception as e:
                 logger.error(f"Vector query failed: {e}")
-        
+
         # Query graph database if available
         if self.graph_db:
             try:
@@ -199,13 +207,13 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
                 logger.debug(f"Graph search returned {len(graph_results)} results")
             except Exception as e:
                 logger.error(f"Graph query failed: {e}")
-        
+
         # Fuse and rank results
         fused_results = self._fuse_and_rank_results(results, limit)
         logger.info(f"Knowledge query returned {len(fused_results)} fused results for domain '{domain}'")
-        
+
         return fused_results
-    
+
     @abstractmethod
     async def _query_vector(self, domain: str, query: str, limit: int) -> List[Knowledge]:
         """Query vector database for semantic similarity.
@@ -219,7 +227,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
             Knowledge results from vector search
         """
         pass
-    
+
     @abstractmethod
     async def _query_graph(self, domain: str, query: str, limit: int) -> List[Knowledge]:
         """Query graph database for relationship-based knowledge.
@@ -233,7 +241,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
             Knowledge results from graph traversal
         """
         pass
-        
+
     def _fuse_and_rank_results(self, results: List[Knowledge], limit: int) -> List[Knowledge]:
         """Combine and rank results from multiple sources.
         
@@ -246,26 +254,26 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
         """
         if not results:
             return []
-            
+
         # Remove duplicates based on content similarity
         unique_results: dict[str, Knowledge] = {}
         for result in results:
             # Create a key based on first 100 chars and domain
             key = f"{result.content[:100].strip()}_{result.domain}"
-            
+
             # Keep the result with higher confidence
             if key not in unique_results or result.confidence > unique_results[key].confidence:
                 unique_results[key] = result
-        
+
         # Sort by confidence score (descending) and return top results
         sorted_results = sorted(
-            unique_results.values(), 
-            key=lambda x: x.confidence, 
+            unique_results.values(),
+            key=lambda x: x.confidence,
             reverse=True
         )
-        
+
         return sorted_results[:limit]
-    
+
     async def shutdown(self) -> None:
         """Shutdown all database connections."""
         if self.vector_db:
@@ -274,7 +282,7 @@ class MultiDatabaseKnowledgeProvider(KnowledgeProvider):
                 logger.debug("Vector database connection closed")
             except Exception as e:
                 logger.error(f"Error shutting down vector database: {e}")
-                
+
         if self.graph_db:
             try:
                 await self.graph_db.shutdown()

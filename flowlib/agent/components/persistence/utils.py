@@ -5,9 +5,10 @@ Utility functions related to agent state persistence.
 import logging
 from typing import Dict, List, Optional
 
+from .base import BaseStatePersister
+
 # Import factory and base persister type
 from .factory import create_state_persister
-from .base import BaseStatePersister
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +38,19 @@ async def list_saved_states_metadata(
         if persister is None:
             raise RuntimeError(f"Failed to create persister of type '{persister_type}'")
         await persister.initialize()
-        
+
         # List states using the persister's implementation
         states_metadata = await persister.list_states()
         return states_metadata
-        
+
     except Exception as e:
         logger.error(f"Failed to list saved states using {persister_type} persister: {e}", exc_info=True)
         # Return empty list on error to allow calling code to handle gracefully
-        return [] 
+        return []
     finally:
         # Ensure persister is shut down even if errors occurred
         if persister and persister.initialized:
             try:
                 await persister.shutdown()
             except Exception as shutdown_err:
-                logger.error(f"Error shutting down temporary persister: {shutdown_err}", exc_info=True) 
+                logger.error(f"Error shutting down temporary persister: {shutdown_err}", exc_info=True)

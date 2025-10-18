@@ -1,6 +1,6 @@
 """Edit tool implementation."""
 
-from .tool import EditTool
 from .flow import EditParameterGenerationFlow
+from .tool import EditTool
 
 __all__ = ["EditTool", "EditParameterGenerationFlow"]

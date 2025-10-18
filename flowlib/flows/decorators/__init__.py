@@ -1,3 +1,3 @@
-from .decorators import flow, pipeline 
+from .decorators import flow, pipeline
 
 __all__ = ["flow", "pipeline"]

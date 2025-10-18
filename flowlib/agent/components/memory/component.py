@@ -5,40 +5,41 @@ Orchestrates interactions between different specialized memory components
 (vector, knowledge graph, working memory) using modernized agent framework patterns.
 """
 
-import logging
 import asyncio
+import logging
 from typing import Any, Dict, List, Optional, cast
+
+from pydantic import Field
+
 from flowlib.agent.core.activity_stream import ActivityStream
+from flowlib.core.models import StrictBaseModel
+
+# Import provider/registry for config-driven access
+from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.knowledge.plugin_manager import KnowledgePluginManager
 from flowlib.providers.llm.base import LLMProvider
 
-from pydantic import Field
-from flowlib.core.models import StrictBaseModel
-
-from ...core.errors import MemoryError
 from ...core.base import AgentComponent
+from ...core.errors import MemoryError
+from .knowledge import KnowledgeMemory, KnowledgeMemoryConfig
 from .models import (
     MemoryItem,
-    MemoryStoreRequest,
     MemoryRetrieveRequest,
     MemorySearchRequest,
-    MemorySearchResult
+    MemorySearchResult,
+    MemoryStoreRequest,
 )
 
 # Import modernized memory types
 from .vector import VectorMemory, VectorMemoryConfig
-from .knowledge import KnowledgeMemory, KnowledgeMemoryConfig
 from .working import WorkingMemory, WorkingMemoryConfig
-
-# Import provider/registry for config-driven access
-from flowlib.providers.core.registry import provider_registry
 
 logger = logging.getLogger(__name__)
 
 
 class AgentMemoryConfig(StrictBaseModel):
     """Configuration for agent memory system."""
-    
+
     working_memory: WorkingMemoryConfig = Field(
         default_factory=WorkingMemoryConfig,
         description="Configuration for working memory component"
@@ -73,41 +74,41 @@ class MemoryComponent(AgentComponent):
         """Initialize agent memory with config-driven components."""
         super().__init__("agent_memory")
         self._config = config or AgentMemoryConfig()
-        
+
         # Memory component instances
         self._vector_memory: Optional[VectorMemory] = None
         self._knowledge_memory: Optional[KnowledgeMemory] = None
         self._working_memory: Optional[WorkingMemory] = None
         self._fusion_llm: Optional[LLMProvider] = None
-        
+
         # Optional components
         self._activity_stream = activity_stream
         self._knowledge_plugins = knowledge_plugins
-        
+
         # State tracking
         self._contexts: set[str] = set()
         self._initialized = False
-        
+
         logger.info(f"Initialized AgentMemory with config: {self._config}")
 
     @property
     def initialized(self) -> bool:
         """Check if memory is initialized."""
         return self._initialized
-    
+
     async def initialize(self) -> None:
         """Initialize agent memory and all components."""
         if self._initialized:
             return
-            
+
         logger.info("Initializing AgentMemory...")
-        
+
         try:
             # Create memory component instances
             self._working_memory = WorkingMemory(self._config.working_memory)
             self._vector_memory = VectorMemory(self._config.vector_memory)
             self._knowledge_memory = KnowledgeMemory(self._config.knowledge_memory)
-            
+
             # Initialize all memory components
             if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
                 raise RuntimeError("Memory components not properly initialized")
@@ -117,7 +118,7 @@ class MemoryComponent(AgentComponent):
                 self._vector_memory.initialize(),
                 self._knowledge_memory.initialize()
             )
-            
+
             # Initialize LLM provider for fusion
             self._fusion_llm = cast(LLMProvider[Any], await provider_registry.get_by_config(
                 self._config.fusion_llm_config
@@ -126,10 +127,10 @@ class MemoryComponent(AgentComponent):
                 raise MemoryError(
                     f"Fusion LLM provider not found: {self._config.fusion_llm_config}"
                 )
-            
+
             self._initialized = True
             logger.info("AgentMemory initialized successfully")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize AgentMemory: {e}")
             raise MemoryError(
@@ -141,9 +142,9 @@ class MemoryComponent(AgentComponent):
         """Shutdown comprehensive memory and all components."""
         if not self._initialized:
             return
-            
+
         logger.info("Shutting down AgentMemory...")
-        
+
         # Shutdown all memory components
         shutdown_tasks = []
         if self._working_memory:
@@ -152,17 +153,17 @@ class MemoryComponent(AgentComponent):
             shutdown_tasks.append(self._vector_memory.shutdown())
         if self._knowledge_memory:
             shutdown_tasks.append(self._knowledge_memory.shutdown())
-            
+
         if shutdown_tasks:
             await asyncio.gather(*shutdown_tasks, return_exceptions=True)
-        
+
         # Clean up references
         self._fusion_llm = None
         self._working_memory = None
         self._vector_memory = None
         self._knowledge_memory = None
         self._contexts.clear()
-        
+
         self._initialized = False
         logger.info("AgentMemory shutdown completed")
 
@@ -170,9 +171,9 @@ class MemoryComponent(AgentComponent):
         """Create a memory context across all components."""
         if not self._initialized:
             raise MemoryError("AgentMemory not initialized")
-            
+
         logger.debug(f"Creating context: {context_name}")
-        
+
         # Create context in all memory components
         if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
             raise RuntimeError("Memory components not initialized")
@@ -182,30 +183,30 @@ class MemoryComponent(AgentComponent):
             self._vector_memory.create_context(context_name, metadata),
             self._knowledge_memory.create_context(context_name, metadata)
         ]
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Check for errors
         errors = [res for res in results if isinstance(res, Exception)]
         if errors:
             logger.error(f"Errors creating context '{context_name}': {errors}")
             raise MemoryError(f"Failed to create context in all components: {errors[0]}") from errors[0]
-        
+
         self._contexts.add(context_name)
         logger.debug(f"Context '{context_name}' created in all memory components")
         return context_name
-    
+
     async def store(self, request: MemoryStoreRequest) -> str:
         """Store data across all appropriate memory components."""
         if not self._initialized:
             raise MemoryError("AgentMemory not initialized")
-            
+
         try:
             # Determine storage strategy based on content type
             from ....providers.graph.models import Entity
             is_entity = isinstance(request.value, Entity) or (
-                hasattr(request.value, 'model_dump') and 
-                isinstance(request.value.model_dump(), dict) and 
+                hasattr(request.value, 'model_dump') and
+                isinstance(request.value.model_dump(), dict) and
                 'type' in request.value.model_dump()
             )
 
@@ -220,7 +221,7 @@ class MemoryComponent(AgentComponent):
                 if request.context in execution_contexts:
                     should_store_in_working = False
                     logger.debug(f"Skipping working memory for '{request.key}' (execution history disabled)")
-            
+
             if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
                 raise RuntimeError("Memory components not initialized")
 
@@ -236,24 +237,24 @@ class MemoryComponent(AgentComponent):
             # 3. Store in Vector Memory for semantic search
             logger.debug(f"Storing '{request.key}' in vector memory for semantic search")
             storage_tasks.append(self._vector_memory.store(request))
-                
+
             # Execute storage operations concurrently
             results = await asyncio.gather(*storage_tasks, return_exceptions=True)
-            
+
             # Check for errors and successes
             errors = [res for res in results if isinstance(res, Exception)]
             successes = [res for res in results if not isinstance(res, Exception)]
-            
+
             if errors:
                 logger.warning(f"Partial storage failure for key '{request.key}': {errors}")
-                
+
             # Fail only if ALL components failed
             if errors and len(successes) == 0:
                 logger.error(f"Complete storage failure for key '{request.key}': {errors}")
                 raise MemoryError(
                     f"Failed to store item in all memories: {errors[0]}"
                 ) from errors[0]
-            
+
             # Stream storage activity
             if self._activity_stream:
                 self._activity_stream.memory_store(
@@ -262,10 +263,10 @@ class MemoryComponent(AgentComponent):
                     context=request.context,
                     importance=request.importance
                 )
-            
+
             logger.debug(f"Successfully stored '{request.key}' across all memory components")
             return request.key
-            
+
         except Exception as e:
             logger.error(f"Failed to store item '{request.key}': {e}")
             raise MemoryError(
@@ -299,7 +300,7 @@ class MemoryComponent(AgentComponent):
         """Retrieve by key, checking Working Memory first, then Knowledge Memory."""
         if not self._initialized:
             raise MemoryError("AgentMemory not initialized")
-            
+
         # 1. Check Working Memory first (fastest access)
         logger.debug(f"Attempting to retrieve key '{request.key}' from working memory")
 
@@ -308,7 +309,7 @@ class MemoryComponent(AgentComponent):
 
         try:
             item = await self._working_memory.retrieve(request)
-            if item is not None: 
+            if item is not None:
                 logger.debug(f"Retrieved key '{request.key}' from working memory")
                 return item
         except Exception as e:
@@ -329,7 +330,7 @@ class MemoryComponent(AgentComponent):
         except Exception as e:
             logger.warning(f"Error retrieving from knowledge memory: {e}")
             # Continue to vector memory
-            
+
         # 3. Check Vector Memory (last resort for key-based retrieval)
         logger.debug(f"Attempting to retrieve key '{request.key}' from vector memory")
 
@@ -343,7 +344,7 @@ class MemoryComponent(AgentComponent):
                 return item
         except Exception as e:
             logger.warning(f"Error retrieving from vector memory: {e}")
-        
+
         logger.debug(f"Key '{request.key}' not found in any memory component")
         return None
 
@@ -357,7 +358,7 @@ class MemoryComponent(AgentComponent):
             return []
 
         logger.debug(f"Performing fused search for query: '{request.query}'")
-        
+
         if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
             raise RuntimeError("Memory components not initialized")
 
@@ -368,29 +369,29 @@ class MemoryComponent(AgentComponent):
                 self._vector_memory.search(request),
                 self._knowledge_memory.search(request)
             ]
-            
+
             # Fail fast - don't capture exceptions
             results = await asyncio.gather(*search_tasks)
-            
+
             # Combine results from all memory components
             combined_results = []
-            
+
             for result in results:
                 # Fail fast - no exception handling
                 if not isinstance(result, list):
                     raise MemoryError(f"Invalid search result type: expected list, got {type(result)}")
                 combined_results.extend(result)
-            
+
             # Sort by score if available
             combined_results.sort(
-                key=lambda x: x.score if hasattr(x, 'score') else 0.0, 
+                key=lambda x: x.score if hasattr(x, 'score') else 0.0,
                 reverse=True
             )
-            
+
             # Apply limit
             if request.limit:
                 combined_results = combined_results[:request.limit]
-            
+
             # Stream search activity
             if self._activity_stream:
                 self._activity_stream.memory_retrieval(
@@ -399,25 +400,25 @@ class MemoryComponent(AgentComponent):
                     search_type="fused",
                     results=[r.item.value[:100] for r in combined_results[:3]]
                 )
-            
+
             logger.debug(f"Found {len(combined_results)} total results across all memory components")
             return combined_results
-            
+
         except Exception as e:
             if self._activity_stream:
                 self._activity_stream.error(f"Memory search failed: {str(e)}")
             raise MemoryError(f"Comprehensive memory search failed: {e}", operation="search", cause=e)
 
     async def retrieve_relevant(
-        self, 
-        query: str, 
-        context: Optional[str] = None, 
+        self,
+        query: str,
+        context: Optional[str] = None,
         limit: int = 10
     ) -> List[str]:
         """Retrieve relevant memories using fused search across all components."""
         if not self._initialized:
             raise MemoryError("AgentMemory not initialized")
-            
+
         search_request = MemorySearchRequest(
             query=query,
             context=context,
@@ -427,9 +428,9 @@ class MemoryComponent(AgentComponent):
             search_type="hybrid",
             metadata_filter=None
         )
-        
+
         search_results = await self.search(search_request)
-        
+
         # Convert to string list format
         return [
             f"{result.item.key}: {result.item.value}"
@@ -440,7 +441,7 @@ class MemoryComponent(AgentComponent):
         """Wipe a specific context across all memory components."""
         if not self._initialized:
             raise MemoryError("AgentMemory not initialized")
-            
+
         logger.warning(f"Wiping memory context '{context}' across all components...")
 
         if self._working_memory is None or self._vector_memory is None or self._knowledge_memory is None:
@@ -451,17 +452,17 @@ class MemoryComponent(AgentComponent):
             self._vector_memory.wipe_context(context),
             self._knowledge_memory.wipe_context(context)
         ]
-        
+
         results = await asyncio.gather(*wipe_tasks, return_exceptions=True)
         errors = [res for res in results if isinstance(res, Exception)]
-        
+
         if errors:
             for i, err in enumerate(errors):
                 logger.error(f"Error wiping context '{context}' in component {i}: {err}")
             raise MemoryError(
                 f"Failed to wipe context '{context}' in one or more components: {errors[0]}"
             ) from errors[0]
-            
+
         self._contexts.discard(context)
         logger.info(f"Context '{context}' wiped from all memory components")
 
@@ -473,7 +474,7 @@ class MemoryComponent(AgentComponent):
             "contexts": list(self._contexts),
             "config": self._config.model_dump()
         }
-        
+
         # Add component stats if initialized
         if self._initialized:
             if self._working_memory:
@@ -482,5 +483,5 @@ class MemoryComponent(AgentComponent):
                 stats["vector_memory"] = self._vector_memory.get_stats()
             if self._knowledge_memory:
                 stats["knowledge_memory"] = self._knowledge_memory.get_stats()
-                
+
         return stats

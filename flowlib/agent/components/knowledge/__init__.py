@@ -4,32 +4,32 @@ This module provides the consolidated knowledge component that handles learning,
 storage, and retrieval operations following flowlib's AgentComponent patterns.
 """
 
-from .models import (
-    KnowledgeType,
-    ConfidenceLevel,
-    Entity,
-    Concept,
-    Relationship,
-    Pattern,
-    KnowledgeSet,
-    LearningInput,
-    LearningResult,
-    StorageRequest,
-    RetrievalRequest,
-    RetrievalResult,
-    KnowledgeComponentConfig
-)
+# Import prompts to register them with resource registry
+from . import prompts
 from .component import KnowledgeComponent
 from .flows import (
     AgentKnowledgeExtractionFlow,
-    AgentKnowledgeRetrievalFlow,
     AgentKnowledgeExtractionInput,
     AgentKnowledgeExtractionOutput,
+    AgentKnowledgeRetrievalFlow,
     AgentKnowledgeRetrievalInput,
-    AgentKnowledgeRetrievalOutput
+    AgentKnowledgeRetrievalOutput,
 )
-# Import prompts to register them with resource registry
-from . import prompts
+from .models import (
+    Concept,
+    ConfidenceLevel,
+    Entity,
+    KnowledgeComponentConfig,
+    KnowledgeSet,
+    KnowledgeType,
+    LearningInput,
+    LearningResult,
+    Pattern,
+    Relationship,
+    RetrievalRequest,
+    RetrievalResult,
+    StorageRequest,
+)
 
 __all__ = [
     # Models

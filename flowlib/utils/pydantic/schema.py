@@ -5,11 +5,12 @@ This module provides utilities for working with Pydantic models and their JSON s
 particularly handling recursive conversion and formatting of nested models.
 """
 
-from typing import Dict, List, Type, Union, get_type_hints, get_origin, get_args, Any
-from pydantic import BaseModel
+import copy
 import inspect
 import json
-import copy
+from typing import Any, Dict, List, Type, Union, get_args, get_origin, get_type_hints
+
+from pydantic import BaseModel
 
 
 def model_to_schema_dict(model: Type[BaseModel]) -> Dict[str, Any]:
@@ -30,7 +31,7 @@ def model_to_schema_dict(model: Type[BaseModel]) -> Dict[str, Any]:
     """
     if not inspect.isclass(model) or not issubclass(model, BaseModel):
         raise TypeError(f"Expected a Pydantic model class, got {type(model).__name__}")
-    
+
     # Get the basic schema from model_json_schema
     try:
         schema = model.model_json_schema()
@@ -40,11 +41,11 @@ def model_to_schema_dict(model: Type[BaseModel]) -> Dict[str, Any]:
             schema = model.schema()
         else:
             raise TypeError(f"Model {model.__name__} doesn't support schema generation")
-    
+
     # Process nested models if this is a complex schema
     if "properties" in schema:
         _process_nested_models(schema, model)
-    
+
     return schema
 
 
@@ -65,13 +66,13 @@ def _process_nested_models(schema: Dict[str, Any], model: Type[BaseModel]) -> No
     except Exception:
         # If we can't get type hints, we can't process nested models
         return
-    
+
     # Process each property
     properties = schema["properties"] if "properties" in schema else {}
     for prop_name, prop_info in properties.items():
         if prop_name in type_hints:
             field_type = type_hints[prop_name]
-            
+
             # Handle Optional types (Union[Type, None])
             origin = get_origin(field_type)
             if origin is Union:
@@ -80,13 +81,13 @@ def _process_nested_models(schema: Dict[str, Any], model: Type[BaseModel]) -> No
                 if len(args) == 2 and type(None) in args:
                     # Get the non-None type
                     field_type = next(arg for arg in args if arg is not type(None))
-            
+
             # Check if this is a Pydantic model
             if inspect.isclass(field_type) and issubclass(field_type, BaseModel):
                 # Replace with the full schema for this nested model
                 nested_schema = model_to_schema_dict(field_type)
                 prop_info.update(nested_schema)
-            
+
             # Handle List[PydanticModel]
             elif origin is list or origin is List:
                 args = get_args(field_type)
@@ -94,11 +95,11 @@ def _process_nested_models(schema: Dict[str, Any], model: Type[BaseModel]) -> No
                     if "items" in prop_info:
                         nested_schema = model_to_schema_dict(args[0])
                         prop_info["items"].update(nested_schema)
-            
+
             # Handle Dict[str, PydanticModel]
             elif origin is dict or origin is Dict:
                 args = get_args(field_type)
-                if (len(args) == 2 and args[0] is str and 
+                if (len(args) == 2 and args[0] is str and
                     inspect.isclass(args[1]) and issubclass(args[1], BaseModel)):
                     if "additionalProperties" in prop_info:
                         nested_schema = model_to_schema_dict(args[1])
@@ -137,14 +138,14 @@ def clean_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
         A cleaned schema dictionary
     """
     result = copy.deepcopy(schema)
-    
+
     # Remove redundant descriptions (those contained in property definitions)
     if "$defs" in result:
         for def_key, def_value in result["$defs"].items():
             # Simplify description by removing attribute lists
             if "description" in def_value and "\n\nAttributes:" in def_value["description"]:
                 def_value["description"] = def_value["description"].split("\n\nAttributes:")[0]
-            
+
             # Process properties of the definition
             if "properties" in def_value:
                 for prop_key, prop_value in def_value["properties"].items():
@@ -158,7 +159,7 @@ def clean_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
             # Simplify property descriptions
             if "description" in prop_value:
                 prop_value["description"] = prop_value["description"].split("\n")[0]
-            
+
             # If property has a $ref, remove redundant fields that duplicate info from the referenced definition
             if "$ref" in prop_value:
                 prop_value["$ref"].split("/")[-1]
@@ -167,11 +168,11 @@ def clean_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                 for key in list(prop_value.keys()):
                     if key not in keys_to_keep:
                         del prop_value[key]
-    
+
     # Simplify main schema description
     if "description" in result and "\n\nAttributes:" in result["description"]:
         result["description"] = result["description"].split("\n\nAttributes:")[0]
-    
+
     return result
 
 
@@ -204,46 +205,46 @@ def format_schema_for_prompt(schema: Dict[str, Any], include_descriptions: bool 
     """
     title = schema["title"] if "title" in schema else "Object"
     output = f"Schema: {title}\n"
-    
+
     # Add type information
     schema_type = schema["type"] if "type" in schema else "object"
     output += f"Type: {schema_type}\n"
-    
+
     # Add description if available
     if "description" in schema and schema["description"]:
         output += f"Description: {schema['description']}\n"
-    
+
     # Properties section
     if "properties" in schema:
         output += "\nFields:\n"
         for field_name, field_info in schema["properties"].items():
             field_type = field_info["type"] if "type" in field_info else "unknown"
-            
+
             # Handle arrays with items
             if field_type == "array" and "items" in field_info:
                 items_type = field_info["items"]["type"] if "type" in field_info["items"] else "unknown"
                 if "title" in field_info["items"]:
                     items_type = field_info["items"]["title"]
                 field_type = f"array of {items_type}"
-            
+
             # Handle objects with a title
             if field_type == "object" and "title" in field_info:
                 field_type = field_info["title"]
-            
+
             # Add field to output
             output += f"- {field_name} ({field_type})"
-            
+
             # Add description if available and requested
             if include_descriptions and "description" in field_info and field_info["description"]:
                 output += f": {field_info['description']}"
-            
+
             output += "\n"
-    
+
     # Required fields
     if "required" in schema and schema["required"]:
         required_fields = ", ".join(schema["required"])
         output += f"\nRequired fields: {required_fields}\n"
-    
+
     return output
 
 
@@ -286,7 +287,7 @@ def save_model_schema_to_file(model: Type[BaseModel], file_path: str, indent: in
         schema_json = model_to_clean_json_schema(model, indent)
     else:
         schema_json = model_to_json_schema(model, indent)
-    
+
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(schema_json)
@@ -312,20 +313,20 @@ def get_model_example(model: Type[BaseModel]) -> Dict[str, Any]:
     """
     if not inspect.isclass(model) or not issubclass(model, BaseModel):
         raise TypeError(f"Expected a Pydantic model class, got {type(model).__name__}")
-    
+
     schema = model_to_schema_dict(model)
     example = {}
-    
+
     properties = schema["properties"] if "properties" in schema else {}
     for field_name, field_info in properties.items():
         # Try to use example if provided in schema
         if "example" in field_info:
             example[field_name] = field_info["example"]
             continue
-            
+
         # Otherwise use a type-appropriate default
         field_type = field_info["type"] if "type" in field_info else "unknown"
-        
+
         if field_type == "string":
             example[field_name] = f"example_{field_name}"
         elif field_type == "integer":
@@ -340,23 +341,25 @@ def get_model_example(model: Type[BaseModel]) -> Dict[str, Any]:
             example[field_name] = {}
         else:
             example[field_name] = None
-    
+
     return example
 
 
 def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     """
     Create an ultra-simplified schema with minimal information for easy reading.
-    
+
     This produces a very compact schema focused only on essential information:
     - Field names
-    - Types
-    - Short descriptions (one line)
+    - Types as actual JSON types (not mixed with descriptions)
+    - Descriptions in separate "field_descriptions" section
     - Required fields
-    
+
+    This prevents LLMs from confusing type annotations with example values.
+
     Args:
         schema: The schema dictionary to simplify
-        
+
     Returns:
         A highly simplified schema dictionary with flat structure (no $defs)
     """
@@ -364,16 +367,18 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
         "title": schema["title"] if "title" in schema else "",
         "description": (schema["description"] if "description" in schema else "").split("\n")[0]
     }
-    
+
     # Create definitions lookup table to resolve references
     definitions = {}
     if "$defs" in schema:
         for def_name, def_info in schema["$defs"].items():
             definitions[def_name] = def_info
-    
+
     # Process properties
     if "properties" in schema:
         result["properties"] = {}
+        result["field_descriptions"] = {}
+
         for prop_name, prop_info in schema["properties"].items():
             # Get type information
             prop_type = ""
@@ -381,7 +386,7 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                 # Get referenced type instead of using $ref
                 ref_name = prop_info["$ref"].split("/")[-1]
                 prop_type = ref_name
-                
+
                 # If the property has a title, use it as type name
                 if "title" in prop_info:
                     prop_type = prop_info["title"]
@@ -392,12 +397,15 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                 prop_type = prop_info["type"]
                 # Add item type for arrays
                 if prop_type == "array" and "items" in prop_info:
-                    if "type" in prop_info["items"]:
-                        prop_type = f"array[{prop_info['items']['type']}]"
-                    elif "$ref" in prop_info["items"]:
+                    if "$ref" in prop_info["items"]:
                         ref_name = prop_info["items"]["$ref"].split("/")[-1]
                         prop_type = f"array[{ref_name}]"
-            
+                    elif "title" in prop_info["items"]:
+                        # Use title if available (for nested objects)
+                        prop_type = f"array[{prop_info['items']['title']}]"
+                    elif "type" in prop_info["items"]:
+                        prop_type = f"array[{prop_info['items']['type']}]"
+
             # Get description (first line only)
             description = ""
             if "description" in prop_info:
@@ -407,25 +415,54 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                 ref_name = prop_info["$ref"].split("/")[-1]
                 if ref_name in definitions and "description" in definitions[ref_name]:
                     description = definitions[ref_name]["description"].split("\n")[0]
-            
-            # Create simplified property info
-            if "properties" not in result:
-                result["properties"] = {}
-            result["properties"][prop_name] = f"{prop_type}: {description}"
-    
+
+            # Extract constraints (ge, le, gt, lt, min_length, max_length, minLength, maxLength)
+            constraints = []
+            for constraint_key in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+                                    "minLength", "maxLength", "minItems", "maxItems"]:
+                if constraint_key in prop_info:
+                    value = prop_info[constraint_key]
+                    # Format constraint for readability
+                    if constraint_key == "minimum":
+                        constraints.append(f"≥{value}")
+                    elif constraint_key == "maximum":
+                        constraints.append(f"≤{value}")
+                    elif constraint_key == "exclusiveMinimum":
+                        constraints.append(f">{value}")
+                    elif constraint_key == "exclusiveMaximum":
+                        constraints.append(f"<{value}")
+                    elif constraint_key == "minLength":
+                        constraints.append(f"min_length={value}")
+                    elif constraint_key == "maxLength":
+                        constraints.append(f"max_length={value}")
+                    elif constraint_key == "minItems":
+                        constraints.append(f"min_items={value}")
+                    elif constraint_key == "maxItems":
+                        constraints.append(f"max_items={value}")
+
+            # Add constraints to type string if present
+            if constraints:
+                prop_type = f"{prop_type} ({', '.join(constraints)})"
+
+            # Store type separately from description to avoid confusion
+            result["properties"][prop_name] = prop_type
+            if description:
+                result["field_descriptions"][prop_name] = description
+
     # Add required fields
     if "required" in schema:
         result["required"] = schema["required"]
-    
+
     # Instead of using definitions, add sub-schemas as separate top-level entries
     if "$defs" in schema:
         for def_name, def_info in schema["$defs"].items():
             sub_schema = {
                 "title": def_info["title"] if "title" in def_info else def_name,
                 "description": (def_info["description"] if "description" in def_info else "").split("\n")[0],
-                "properties": {}
+                "properties": {},
+                "field_descriptions": {}
             }
-            
+
             # Process properties of the sub-schema
             if "properties" in def_info:
                 for prop_name, prop_info in def_info["properties"].items():
@@ -438,22 +475,51 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                                 types.append(type_info["type"])
                         if types:
                             prop_type = " | ".join(types)
-                    
+
                     # Get description
                     description = ""
                     if "description" in prop_info:
                         description = prop_info["description"].split("\n")[0]
-                    
-                    # Create simplified property
-                    sub_schema["properties"][prop_name] = f"{prop_type}: {description}"
-            
+
+                    # Extract constraints for sub-schema properties too
+                    constraints = []
+                    for constraint_key in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+                                            "minLength", "maxLength", "minItems", "maxItems"]:
+                        if constraint_key in prop_info:
+                            value = prop_info[constraint_key]
+                            if constraint_key == "minimum":
+                                constraints.append(f"≥{value}")
+                            elif constraint_key == "maximum":
+                                constraints.append(f"≤{value}")
+                            elif constraint_key == "exclusiveMinimum":
+                                constraints.append(f">{value}")
+                            elif constraint_key == "exclusiveMaximum":
+                                constraints.append(f"<{value}")
+                            elif constraint_key == "minLength":
+                                constraints.append(f"min_length={value}")
+                            elif constraint_key == "maxLength":
+                                constraints.append(f"max_length={value}")
+                            elif constraint_key == "minItems":
+                                constraints.append(f"min_items={value}")
+                            elif constraint_key == "maxItems":
+                                constraints.append(f"max_items={value}")
+
+                    # Add constraints to type string if present
+                    if constraints:
+                        prop_type = f"{prop_type} ({', '.join(constraints)})"
+
+                    # Store type separately from description
+                    sub_schema["properties"][prop_name] = prop_type
+                    if description:
+                        sub_schema["field_descriptions"][prop_name] = description
+
             # Add required fields
             if "required" in def_info:
                 sub_schema["required"] = def_info["required"]
-                
+
             # Add this schema with a meaningful name (no $defs)
             result[def_name] = sub_schema
-    
+
     return result
 
 
@@ -473,4 +539,4 @@ def model_to_simple_json_schema(model: Type[BaseModel], indent: int = 2) -> str:
     """
     schema_dict = model_to_schema_dict(model)
     simple_dict = simplify_schema(schema_dict)
-    return json.dumps(simple_dict, indent=indent) 
+    return json.dumps(simple_dict, indent=indent)

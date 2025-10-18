@@ -27,16 +27,8 @@ class CodeReviewAgentConfig(AgentConfigResource):
             llm_name="default-llm",
             temperature=0.4,  # Lower temperature for consistent analysis
             max_iterations=15,
-            enable_memory=True,
             enable_learning=True,
-            enable_thinking=True,
-            auto_decomposition=True,
-            verbose=False,
-            additional_settings={
-                "check_style": True,
-                "check_security": True,
-                "suggest_improvements": True
-            }
+            verbose=False
         )
 
 

@@ -7,12 +7,12 @@ files and binary data in object storage systems.
 
 import logging
 import os
-from typing import Dict, List, Optional, TypeVar, Union, BinaryIO, Tuple, Generic
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from typing import BinaryIO, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 
-from flowlib.providers.core.base import ProviderSettings
-from flowlib.providers.core.base import Provider
+from pydantic import BaseModel, ConfigDict, Field
+
+from flowlib.providers.core.base import Provider, ProviderSettings
 
 logger = logging.getLogger(__name__)
 
@@ -33,21 +33,21 @@ class StorageProviderSettings(ProviderSettings):
         create_bucket: Whether to create bucket if it doesn't exist
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     # Connection settings
     endpoint: Optional[str] = Field(default=None, description="Storage service endpoint URL")
     region: Optional[str] = Field(default=None, description="Storage service region")
     bucket: str = Field(default="default", description="Default storage bucket/container name")
     access_key: Optional[str] = Field(default=None, description="Access key ID for authentication")
     secret_key: Optional[str] = Field(default=None, description="Secret access key for authentication")
-    
+
     # Security settings
     use_ssl: bool = Field(default=True, description="Use SSL/TLS for secure connections")
-    
+
     # Behavior settings
     create_bucket: bool = Field(default=True, description="Create bucket/container if it doesn't exist")
     auto_content_type: bool = Field(default=True, description="Automatically detect content type from file extension")
-    
+
     # Performance settings
     part_size: int = Field(default=5 * 1024 * 1024, description="Part size for multipart uploads in bytes (5MB)")
     max_concurrency: int = Field(default=10, description="Maximum concurrent upload/download threads")
@@ -66,7 +66,7 @@ class FileMetadata(BaseModel):
         metadata: Custom user metadata
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     key: str
     size: int
     etag: Optional[str] = None
@@ -84,7 +84,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
     3. Bucket/container operations
     4. Presigned URL generation
     """
-    
+
     def __init__(self, name: str = "storage", settings: Optional[SettingsT] = None):
         """Initialize storage provider.
         
@@ -97,12 +97,12 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
         self._initialized = False
         self._client = None
         self._settings = settings or StorageProviderSettings()
-        
+
     @property
     def initialized(self) -> bool:
         """Return whether provider has been initialized."""
         return self._initialized
-        
+
     async def initialize(self) -> None:
         """Initialize the storage provider.
         
@@ -111,7 +111,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
         if needed.
         """
         self._initialized = True
-        
+
     async def shutdown(self) -> None:
         """Close all connections and release resources.
         
@@ -120,7 +120,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
         """
         self._initialized = False
         self._client = None
-        
+
     async def create_bucket(self, bucket: Optional[str] = None) -> bool:
         """Create a new bucket/container.
         
@@ -134,7 +134,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If bucket creation fails
         """
         raise NotImplementedError("Subclasses must implement create_bucket()")
-        
+
     async def delete_bucket(self, bucket: Optional[str] = None, force: bool = False) -> bool:
         """Delete a bucket/container.
         
@@ -149,7 +149,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If bucket deletion fails
         """
         raise NotImplementedError("Subclasses must implement delete_bucket()")
-        
+
     async def bucket_exists(self, bucket: Optional[str] = None) -> bool:
         """Check if a bucket/container exists.
         
@@ -163,7 +163,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If check fails
         """
         raise NotImplementedError("Subclasses must implement bucket_exists()")
-        
+
     async def upload_file(self, file_path: str, object_key: str, bucket: Optional[str] = None,
                         metadata: Optional[Dict[str, str]] = None) -> FileMetadata:
         """Upload a file to storage.
@@ -181,7 +181,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If upload fails
         """
         raise NotImplementedError("Subclasses must implement upload_file()")
-        
+
     async def upload_data(self, data: Union[bytes, BinaryIO], object_key: str, bucket: Optional[str] = None,
                         content_type: Optional[str] = None, metadata: Optional[Dict[str, str]] = None) -> FileMetadata:
         """Upload binary data to storage.
@@ -200,7 +200,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If upload fails
         """
         raise NotImplementedError("Subclasses must implement upload_data()")
-        
+
     async def download_file(self, object_key: str, file_path: str, bucket: Optional[str] = None) -> FileMetadata:
         """Download a file from storage.
         
@@ -216,7 +216,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If download fails
         """
         raise NotImplementedError("Subclasses must implement download_file()")
-        
+
     async def download_data(self, object_key: str, bucket: Optional[str] = None) -> Tuple[bytes, FileMetadata]:
         """Download binary data from storage.
         
@@ -231,7 +231,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If download fails
         """
         raise NotImplementedError("Subclasses must implement download_data()")
-        
+
     async def get_metadata(self, object_key: str, bucket: Optional[str] = None) -> FileMetadata:
         """Get metadata for a storage object.
         
@@ -246,7 +246,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If metadata retrieval fails
         """
         raise NotImplementedError("Subclasses must implement get_metadata()")
-        
+
     async def delete_object(self, object_key: str, bucket: Optional[str] = None) -> bool:
         """Delete a storage object.
         
@@ -261,7 +261,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If deletion fails
         """
         raise NotImplementedError("Subclasses must implement delete_object()")
-        
+
     async def list_objects(self, prefix: Optional[str] = None, bucket: Optional[str] = None) -> List[FileMetadata]:
         """List objects in a bucket/container.
         
@@ -276,7 +276,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If listing fails
         """
         raise NotImplementedError("Subclasses must implement list_objects()")
-        
+
     async def generate_presigned_url(self, object_key: str, expiration: int = 3600, bucket: Optional[str] = None,
                                   operation: str = "get") -> str:
         """Generate a presigned URL for a storage object.
@@ -294,7 +294,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If URL generation fails
         """
         raise NotImplementedError("Subclasses must implement generate_presigned_url()")
-        
+
     async def check_connection(self) -> bool:
         """Check if storage connection is active.
         
@@ -302,7 +302,7 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             True if connection is active, False otherwise
         """
         raise NotImplementedError("Subclasses must implement check_connection()")
-        
+
     def get_content_type(self, file_path: str) -> str:
         """Determine content type based on file extension.
         
@@ -340,8 +340,8 @@ class StorageProvider(Provider[SettingsT], Generic[SettingsT]):
             ".avi": "video/x-msvideo",
             ".csv": "text/csv",
         }
-        
+
         _, ext = os.path.splitext(file_path.lower())
         if ext not in extension_map:
             return "application/octet-stream"
-        return extension_map[ext] 
+        return extension_map[ext]

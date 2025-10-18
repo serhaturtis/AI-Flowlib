@@ -1,8 +1,9 @@
 """Agent registry for tracking and accessing agent classes."""
 
 import logging
-from typing import Type, Optional, List, Dict, Union
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Dict, List, Optional, Type, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from flowlib.core.registry.registry import BaseRegistry
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 class AgentInfo(BaseModel):
     """Information about a registered agent."""
     model_config = ConfigDict(extra="forbid")
-    
+
     agent_class: Type = Field(..., description="The agent class")
     metadata: Dict[str, Union[str, int, bool]] = Field(default_factory=dict, description="Agent metadata")
 
@@ -46,7 +47,7 @@ class AgentRegistry(BaseRegistry[Type]):
         )
         class_name = getattr(obj, '__name__', str(obj))
         logger.debug(f"Registered agent: {name} (Class: {class_name})")
-    
+
     # BaseRegistry interface implementation
     def get(self, name: str, expected_type: Optional[Type] = None) -> Type:
         """Get an agent class by name with optional type checking (BaseRegistry interface).
@@ -65,12 +66,12 @@ class AgentRegistry(BaseRegistry[Type]):
         agent_class = self.get_agent_class(name)
         if agent_class is None:
             raise KeyError(f"Agent '{name}' not found in registry")
-        
+
         if expected_type is not None and not issubclass(agent_class, expected_type):
             raise TypeError(f"Agent '{name}' is not a subclass of expected type {expected_type}")
-        
+
         return agent_class
-    
+
     def contains(self, name: str) -> bool:
         """Check if an agent exists in the registry (BaseRegistry interface).
         
@@ -81,7 +82,7 @@ class AgentRegistry(BaseRegistry[Type]):
             True if the agent exists, False otherwise
         """
         return name in self._agents
-    
+
     def list(self, filter_criteria: Optional[Dict[str, Union[str, int, bool]]] = None) -> List[str]:
         """List registered agents matching criteria (BaseRegistry interface).
         
@@ -92,18 +93,18 @@ class AgentRegistry(BaseRegistry[Type]):
             List of agent names matching the criteria
         """
         agents = self.list_agents()
-        
+
         if filter_criteria is None:
             return agents
-        
+
         # Apply filtering logic
         filtered_agents = []
         for agent_name in agents:
             if self._matches_criteria(agent_name, filter_criteria):
                 filtered_agents.append(agent_name)
-        
+
         return filtered_agents
-    
+
     def _matches_criteria(self, agent_name: str, criteria: Dict[str, Union[str, int, bool]]) -> bool:
         """Check if an agent matches the given criteria.
         
@@ -115,14 +116,14 @@ class AgentRegistry(BaseRegistry[Type]):
             True if the agent matches all criteria
         """
         agent_metadata = self.get_agent_metadata(agent_name) or {}
-        
+
         for key, value in criteria.items():
             if key in agent_metadata:
                 if agent_metadata[key] != value:
                     return False
             else:
                 return False
-        
+
         return True
 
     def get_agent_class(self, name: str) -> Optional[Type]:
@@ -148,7 +149,7 @@ class AgentRegistry(BaseRegistry[Type]):
         """
         agent_info = self._agents.get(name)
         return agent_info.metadata if agent_info else None
-        
+
     def get_agent_info(self, name: str) -> Optional[AgentInfo]:
         """Get all registered information for an agent.
 
@@ -172,7 +173,7 @@ class AgentRegistry(BaseRegistry[Type]):
         """Clear all registered agents."""
         self._agents = {}
         logger.debug("Agent registry cleared.")
-    
+
     def remove(self, name: str) -> bool:
         """Remove a specific agent registration from the registry.
         
@@ -186,9 +187,9 @@ class AgentRegistry(BaseRegistry[Type]):
             del self._agents[name]
             logger.debug(f"Removed agent '{name}' from registry")
             return True
-        
+
         return False
-    
+
     def update(self, name: str, obj: Type, **metadata: Union[str, int, bool]) -> bool:
         """Update or replace an existing agent registration.
         
@@ -201,11 +202,11 @@ class AgentRegistry(BaseRegistry[Type]):
             True if an existing agent was updated, False if this was a new registration
         """
         existing_found = self.contains(name)
-        
+
         if existing_found:
             # Remove existing
             self.remove(name)
-            
+
             # Re-register
             self.register(name, obj, **metadata)
             logger.debug(f"Updated existing agent '{name}' in registry")
@@ -217,4 +218,4 @@ class AgentRegistry(BaseRegistry[Type]):
             return False
 
 # Global instance of the agent registry
-agent_registry = AgentRegistry() 
+agent_registry = AgentRegistry()

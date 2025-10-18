@@ -6,13 +6,13 @@ database operations.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Type, TypeVar, Generic
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from pydantic import BaseModel, ConfigDict, Field
+
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.base import Provider, ProviderSettings
-
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ SettingsT = TypeVar('SettingsT', bound='DBProviderSettings')
 class DatabaseInfo(BaseModel):
     """Database connection information."""
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     path: str = Field(..., description="Database path or connection string")
     name: str = Field(..., description="Database name or type")
 
@@ -31,7 +31,7 @@ class DatabaseInfo(BaseModel):
 class PoolInfo(BaseModel):
     """Connection pool information."""
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     active_connections: int = Field(..., description="Number of active connections")
     pool_size: int = Field(..., description="Maximum pool size")
 
@@ -39,7 +39,7 @@ class PoolInfo(BaseModel):
 class DatabaseHealthInfo(BaseModel):
     """Database health information."""
     model_config = ConfigDict(extra="forbid")
-    
+
     status: str = Field(..., description="Overall health status")
     connected: bool = Field(..., description="Whether database is connected")
     connection_active: bool = Field(..., description="Whether connection is active")
@@ -61,29 +61,29 @@ class DBProviderSettings(ProviderSettings):
         pool_size: Connection pool size
         timeout: Connection/query timeout in seconds
     """
-    
+
     # Connection settings
     host: str = "localhost"
     port: Optional[int] = None
     database: str = ""
     username: Optional[str] = None
     password: Optional[str] = None
-    
+
     # Pool settings
     pool_size: int = 5
     min_size: int = 1
     max_overflow: int = 10
-    
+
     # Timeout settings
     timeout: float = 30.0
     connect_timeout: float = 10.0
-    
+
     # SSL settings
     use_ssl: bool = False
     ssl_ca_cert: Optional[str] = None
     ssl_cert: Optional[str] = None
     ssl_key: Optional[str] = None
-    
+
     # Query settings
     query_timeout: float = 30.0
     max_query_size: int = 1000
@@ -102,7 +102,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
     3. Connection pooling and lifecycle management
     4. Error handling and retries
     """
-    
+
     def __init__(self, name: str = "db", settings: Optional[SettingsT] = None):
         """Initialize database provider.
         
@@ -114,12 +114,12 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
         super().__init__(name=name, settings=settings, provider_type="db")
         self._initialized = False
         self._pool = None
-        
+
     @property
     def initialized(self) -> bool:
         """Return whether provider has been initialized."""
         return self._initialized
-        
+
     async def initialize(self) -> None:
         """Initialize the database provider.
         
@@ -127,7 +127,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
         connections to the database and set up connection pools.
         """
         self._initialized = True
-        
+
     async def shutdown(self) -> None:
         """Close all connections and release resources.
         
@@ -136,7 +136,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
         """
         self._initialized = False
         self._pool = None
-        
+
     async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Execute a database query.
         
@@ -151,7 +151,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If query execution fails
         """
         raise NotImplementedError("Subclasses must implement execute()")
-        
+
     async def execute_many(self, query: str, params_list: List[Dict[str, Any]]) -> List[Any]:
         """Execute a batch of database queries.
         
@@ -166,8 +166,8 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If query execution fails
         """
         raise NotImplementedError("Subclasses must implement execute_many()")
-        
-    async def execute_structured(self, query: str, output_type: Type[T], 
+
+    async def execute_structured(self, query: str, output_type: Type[T],
                               params: Optional[Dict[str, Any]] = None) -> List[T]:
         """Execute a query and parse results into structured types.
         
@@ -185,11 +185,11 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
         try:
             # Execute the query
             results = await self.execute(query, params)
-            
+
             # If results is empty, return empty list
             if not results:
                 return []
-                
+
             # Parse results into output type
             parsed_results = []
             for row in results:
@@ -209,12 +209,12 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
                         data = row.__dict__
                     else:
                         raise TypeError(f"Cannot convert result of type {type(row)} to dict")
-                
+
                 # Parse into output type
                 parsed_results.append(output_type.model_validate(data))
-                
+
             return parsed_results
-            
+
         except Exception as e:
             # Wrap and re-raise errors with context
             raise ProviderError(
@@ -234,7 +234,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
                 ),
                 cause=e
             )
-            
+
     async def begin_transaction(self) -> Any:
         """Begin a database transaction.
         
@@ -245,7 +245,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If transaction start fails
         """
         raise NotImplementedError("Subclasses must implement begin_transaction()")
-        
+
     async def commit_transaction(self, transaction: Any) -> bool:
         """Commit a database transaction.
         
@@ -259,7 +259,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If transaction commit fails
         """
         raise NotImplementedError("Subclasses must implement commit_transaction()")
-        
+
     async def rollback_transaction(self, transaction: Any) -> bool:
         """Rollback a database transaction.
         
@@ -273,7 +273,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If transaction rollback fails
         """
         raise NotImplementedError("Subclasses must implement rollback_transaction()")
-        
+
     async def check_connection(self) -> bool:
         """Check if database connection is active.
         
@@ -281,7 +281,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
             True if connection is active, False otherwise
         """
         raise NotImplementedError("Subclasses must implement check_connection()")
-        
+
     async def get_health(self) -> DatabaseHealthInfo:
         """Get database health information.
         
@@ -291,4 +291,4 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
         Raises:
             ProviderError: If health check fails
         """
-        raise NotImplementedError("Subclasses must implement get_health()") 
+        raise NotImplementedError("Subclasses must implement get_health()")

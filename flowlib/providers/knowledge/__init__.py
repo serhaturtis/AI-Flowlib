@@ -1,15 +1,11 @@
 """Knowledge provider system for domain-specific databases."""
 
-from .base import (
-    Knowledge,
-    KnowledgeProvider,
-    MultiDatabaseKnowledgeProvider
-)
+from .base import Knowledge, KnowledgeProvider, MultiDatabaseKnowledgeProvider
 from .plugin_manager import KnowledgePluginManager
 
 __all__ = [
     "Knowledge",
-    "KnowledgeProvider", 
+    "KnowledgeProvider",
     "MultiDatabaseKnowledgeProvider",
     "KnowledgePluginManager"
 ]

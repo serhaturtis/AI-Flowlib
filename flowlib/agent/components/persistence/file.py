@@ -5,16 +5,17 @@ This module provides a simple file-based implementation of the state persister
 interface, storing agent states as JSON files on disk.
 """
 
-import os
 import json
 import logging
-from typing import Dict, List, Optional, Any
+import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from flowlib.agent.core.errors import StatePersistenceError
 from flowlib.agent.models.state import AgentState
-from .base import BaseStatePersister
 from flowlib.providers.core.base import ProviderSettings
+
+from .base import BaseStatePersister
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class FileStatePersisterSettings(ProviderSettings):
 
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles datetime objects."""
-    
+
     def default(self, obj: Any) -> Any:
         if isinstance(obj, datetime):
             return obj.isoformat()
@@ -43,13 +44,13 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
         if not settings or not getattr(settings, "directory", None):
             raise ValueError("FileStatePersister requires a 'settings' argument with a 'directory' field.")
         super().__init__("file_state_persister", settings=settings)
-    
+
     async def _initialize(self) -> None:
         """Initialize persister by creating the directory if needed."""
         # Create directory if it doesn't exist
         os.makedirs(self.settings.directory, exist_ok=True)
         logger.debug(f"Using state directory: {self.settings.directory}")
-    
+
     async def _save_state_impl(
         self,
         state: AgentState,
@@ -67,26 +68,26 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
         try:
             # Get state as dictionary for JSON serialization
             state_dict = state.model_dump()
-            
+
             # Ensure directory exists
             os.makedirs(self.settings.directory, exist_ok=True)
-            
+
             # Create file path
             file_path = os.path.join(self.settings.directory, f"{state.task_id}.json")
-            
+
             # Write to file using custom encoder for datetime objects
             with open(file_path, "w") as f:
                 json.dump(state_dict, f, cls=DateTimeEncoder, indent=2)
-                
+
             # Save metadata if provided
             if metadata:
                 metadata_path = os.path.join(self.settings.directory, f"{state.task_id}.meta.json")
                 with open(metadata_path, "w") as f:
                     json.dump(metadata, f, cls=DateTimeEncoder)
-                
+
             logger.debug(f"State saved to {file_path}")
             return True
-            
+
         except Exception as e:
             error_msg = f"Error saving state to file: {str(e)}"
             logger.error(error_msg)
@@ -96,7 +97,7 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                 task_id=state.task_id,
                 cause=e
             )
-    
+
     async def _load_state_impl(
         self,
         task_id: str
@@ -112,19 +113,19 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
         try:
             # Create file path
             file_path = os.path.join(self.settings.directory, f"{task_id}.json")
-            
+
             # Check if file exists
             if not os.path.exists(file_path):
                 logger.warning(f"State file not found: {file_path}")
                 return None
-            
+
             # Read from file
             with open(file_path, "r") as f:
                 state_json = f.read()
-                
+
             # Parse JSON
             state_dict = json.loads(state_json)
-            
+
             # Create AgentState directly with the state data
             # This fixes the 'dict' object has no attribute 'data' error
             # by correctly passing the dictionary as the data parameter
@@ -139,7 +140,7 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                 task_id=task_id,
                 initial_state_data=state_dict
             )
-            
+
         except Exception as e:
             error_msg = f"Error loading state from file: {str(e)}"
             logger.error(error_msg)
@@ -149,7 +150,7 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                 task_id=task_id,
                 cause=e
             )
-    
+
     async def _delete_state_impl(
         self,
         task_id: str
@@ -166,18 +167,18 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
             # Create file paths
             state_path = os.path.join(self.settings.directory, f"{task_id}.json")
             metadata_path = os.path.join(self.settings.directory, f"{task_id}.meta.json")
-            
+
             # Delete state file if it exists
             if os.path.exists(state_path):
                 os.remove(state_path)
-                
+
             # Delete metadata file if it exists
             if os.path.exists(metadata_path):
                 os.remove(metadata_path)
-                
+
             logger.debug(f"State deleted: {task_id}")
             return True
-            
+
         except Exception as e:
             error_msg = f"Error deleting state file: {str(e)}"
             logger.error(error_msg)
@@ -187,7 +188,7 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                 task_id=task_id,
                 cause=e
             )
-    
+
     async def _list_states_impl(
         self,
         filter_criteria: Optional[Dict[str, str]] = None
@@ -203,24 +204,24 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
         try:
             # Get all JSON files in the directory
             state_files = [f for f in os.listdir(self.settings.directory) if f.endswith(".json") and not f.endswith(".meta.json")]
-            
+
             # Extract task IDs
             task_ids = [os.path.splitext(f)[0] for f in state_files]
-            
+
             # Create metadata for each state
             result = []
             for task_id in task_ids:
                 # Check if metadata file exists
                 metadata_path = os.path.join(self.settings.directory, f"{task_id}.meta.json")
                 metadata = {}
-                
+
                 if os.path.exists(metadata_path):
                     with open(metadata_path, "r") as f:
                         metadata = json.load(f)
-                
+
                 # Add task ID to metadata
                 metadata["task_id"] = task_id
-                
+
                 # Apply filter criteria if provided
                 if filter_criteria:
                     matches = True
@@ -228,14 +229,14 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                         if key not in metadata or metadata[key] != value:
                             matches = False
                             break
-                    
+
                     if not matches:
                         continue
-                
+
                 result.append(metadata)
-            
+
             return result
-            
+
         except Exception as e:
             error_msg = f"Error listing state files: {str(e)}"
             logger.error(error_msg)
@@ -243,4 +244,4 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                 message=error_msg,
                 operation="list",
                 cause=e
-            ) 
+            )

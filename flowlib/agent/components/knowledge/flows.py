@@ -7,12 +7,13 @@ following flowlib's flow patterns and strict validation.
 import logging
 from typing import cast
 
-from flowlib.flows.decorators.decorators import flow, pipeline
-from flowlib.core.models import StrictBaseModel
 from pydantic import Field
 
-from .models import KnowledgeSet, RetrievalRequest
+from flowlib.core.models import StrictBaseModel
+from flowlib.flows.decorators.decorators import flow, pipeline
+
 from .component import KnowledgeComponent
+from .models import KnowledgeSet, RetrievalRequest
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class AgentKnowledgeExtractionInput(StrictBaseModel):
     """Input for agent knowledge extraction flow."""
-    
+
     text: str = Field(..., min_length=1, description="Text to extract knowledge from")
     context: str = Field(..., description="Context information")
     domain_hint: str = Field(default="general", description="Domain hint for extraction")
@@ -29,7 +30,7 @@ class AgentKnowledgeExtractionInput(StrictBaseModel):
 
 class AgentKnowledgeExtractionOutput(StrictBaseModel):
     """Output from agent knowledge extraction flow."""
-    
+
     success: bool = Field(..., description="Whether extraction succeeded")
     knowledge: KnowledgeSet = Field(..., description="Extracted knowledge")
     message: str = Field(..., description="Result message")
@@ -38,7 +39,7 @@ class AgentKnowledgeExtractionOutput(StrictBaseModel):
 
 class AgentKnowledgeRetrievalInput(StrictBaseModel):
     """Input for agent knowledge retrieval flow."""
-    
+
     query: str = Field(..., min_length=1, description="Search query")
     limit: int = Field(default=10, ge=1, le=50, description="Maximum results")
     context_filter: str = Field(default="", description="Context filter")
@@ -46,7 +47,7 @@ class AgentKnowledgeRetrievalInput(StrictBaseModel):
 
 class AgentKnowledgeRetrievalOutput(StrictBaseModel):
     """Output from agent knowledge retrieval flow."""
-    
+
     knowledge: KnowledgeSet = Field(..., description="Retrieved knowledge")
     query: str = Field(..., description="Original query")
     total_found: int = Field(..., ge=0, description="Total items found")
@@ -61,7 +62,7 @@ class AgentKnowledgeRetrievalOutput(StrictBaseModel):
 )
 class AgentKnowledgeExtractionFlow:
     """Flow for extracting knowledge in agent workflows."""
-    
+
     @pipeline(
         input_model=AgentKnowledgeExtractionInput,
         output_model=AgentKnowledgeExtractionOutput
@@ -76,25 +77,25 @@ class AgentKnowledgeExtractionFlow:
             Extraction output with knowledge
         """
         logger.info(f"Starting agent knowledge extraction for {len(input_data.text)} characters")
-        
+
         try:
             # Get knowledge component from registry
             knowledge_component = self._get_knowledge_component()
-            
+
             # Perform knowledge learning
             learning_result = await knowledge_component.learn_from_content(
                 content=input_data.text,
                 context=input_data.context,
                 domain_hint=input_data.domain_hint
             )
-            
+
             return AgentKnowledgeExtractionOutput(
                 success=learning_result.success,
                 knowledge=learning_result.knowledge,
                 message=learning_result.message,
                 processing_time_seconds=learning_result.processing_time_seconds
             )
-            
+
         except Exception as e:
             logger.error(f"Agent knowledge extraction failed: {e}")
             return AgentKnowledgeExtractionOutput(
@@ -103,7 +104,7 @@ class AgentKnowledgeExtractionFlow:
                 message=f"Extraction failed: {str(e)}",
                 processing_time_seconds=0.0
             )
-    
+
     def _get_knowledge_component(self) -> KnowledgeComponent:
         """Get knowledge component from registry."""
         # This would be injected by the flow runner
@@ -122,7 +123,7 @@ class AgentKnowledgeExtractionFlow:
 )
 class AgentKnowledgeRetrievalFlow:
     """Flow for retrieving knowledge in agent workflows."""
-    
+
     @pipeline(
         input_model=AgentKnowledgeRetrievalInput,
         output_model=AgentKnowledgeRetrievalOutput
@@ -137,11 +138,11 @@ class AgentKnowledgeRetrievalFlow:
             Retrieval output with knowledge
         """
         logger.info(f"Starting agent knowledge retrieval for query: '{input_data.query}'")
-        
+
         try:
             # Get knowledge component from registry
             knowledge_component = self._get_knowledge_component()
-            
+
             # Create retrieval request
             retrieval_request = RetrievalRequest(
                 query=input_data.query,
@@ -149,16 +150,16 @@ class AgentKnowledgeRetrievalFlow:
                 limit=input_data.limit,
                 context_filter=input_data.context_filter if input_data.context_filter else None
             )
-            
+
             # Perform knowledge retrieval
             retrieval_result = await knowledge_component.retrieve_knowledge(retrieval_request)
-            
+
             return AgentKnowledgeRetrievalOutput(
                 knowledge=retrieval_result.knowledge,
                 query=retrieval_result.query,
                 total_found=retrieval_result.total_found
             )
-            
+
         except Exception as e:
             logger.error(f"Agent knowledge retrieval failed: {e}")
             return AgentKnowledgeRetrievalOutput(
@@ -166,7 +167,7 @@ class AgentKnowledgeRetrievalFlow:
                 query=input_data.query,
                 total_found=0
             )
-    
+
     def _get_knowledge_component(self) -> KnowledgeComponent:
         """Get knowledge component from registry."""
         # This would be injected by the flow runner

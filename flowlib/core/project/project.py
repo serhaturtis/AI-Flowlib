@@ -4,10 +4,10 @@ This module provides the Project class which handles loading of configurations,
 tools, flows, and agents from a project directory structure.
 """
 
-import sys
-import shutil
-import logging
 import importlib.util
+import logging
+import shutil
+import sys
 from pathlib import Path
 from typing import List, Optional, Set
 
@@ -32,7 +32,8 @@ class Project:
         """
         if project_path:
             self.root_path = Path(project_path)
-            self.flowlib_path = self.root_path / '.flowlib'
+            # For custom projects, the project path IS the flowlib path
+            self.flowlib_path = self.root_path
             self.is_default_project = False
         else:
             # Default to home directory "project"
@@ -99,6 +100,12 @@ class Project:
 
             # Add project paths to Python path temporarily
             paths_added = []
+            # Add project root first so imports like "from tools.module import ..." work
+            root_path_str = str(self.root_path)
+            if root_path_str not in sys.path:
+                sys.path.insert(0, root_path_str)
+                paths_added.append(root_path_str)
+
             for path in [self.configs_path, self.tools_path, self.agents_path,
                         self.flows_path, self.profiles_path]:
                 if path.exists():
@@ -122,6 +129,9 @@ class Project:
 
                 # Load custom flows
                 self._load_flows()
+
+                # Load role configurations (before assignments)
+                self._load_roles()
 
                 # Load role assignments (must be last)
                 self._load_role_assignments()
@@ -167,20 +177,39 @@ class Project:
         """Check if this is a new project that needs initialization.
 
         Returns:
-            True if configs directory is empty (no .py files except __init__.py)
+            True if example configs haven't been copied yet
         """
         if not self.configs_path.exists():
             return True
 
-        py_files = [
-            f for f in self.configs_path.iterdir()
-            if f.is_file() and f.suffix == '.py' and f.name != '__init__.py'
-        ]
+        # Check if example configs were already copied by looking for specific marker files
+        # We check multiple directories where example configs get copied to
+        import flowlib.resources.example_configs as example_configs
 
-        return len(py_files) == 0
+        # Check if any of the target files from EXAMPLE_TO_TARGET exist
+        for example_file, target_file in example_configs.EXAMPLE_TO_TARGET.items():
+            # Handle special case for role assignments
+            if target_file.startswith('../roles/'):
+                target_path = self.roles_path / target_file.replace('../roles/', '')
+            elif target_file.startswith('../profiles/'):
+                target_path = self.profiles_path / target_file.replace('../profiles/', '')
+            elif target_file.startswith('../agents/'):
+                target_path = self.agents_path / target_file.replace('../agents/', '')
+            else:
+                target_path = self.configs_path / target_file
+
+            # If any target file exists, examples were already copied
+            if target_path.exists():
+                return False
+
+        # If no target files exist, this is a new project
+        return True
 
     def _copy_example_configs(self) -> None:
-        """Copy example configuration files to project."""
+        """Copy example configuration files to project.
+
+        Only copies files that don't already exist to prevent overwriting user customizations.
+        """
         try:
             # Import example configs module to get file list
             import flowlib.resources.example_configs as example_configs
@@ -190,27 +219,44 @@ class Project:
 
             # Copy each example file based on mapping
             copied_count = 0
+            skipped_count = 0
+
             for example_file, target_file in example_configs.EXAMPLE_TO_TARGET.items():
                 source_path = example_dir / example_file
 
-                # Handle special case for role assignments
+                # Handle special cases for different target directories
                 if target_file.startswith('../roles/'):
                     target_path = self.roles_path / target_file.replace('../roles/', '')
+                elif target_file.startswith('../profiles/'):
+                    target_path = self.profiles_path / target_file.replace('../profiles/', '')
+                elif target_file.startswith('../agents/'):
+                    target_path = self.agents_path / target_file.replace('../agents/', '')
                 else:
                     target_path = self.configs_path / target_file
 
-                if source_path.exists() and not target_path.exists():
-                    # Ensure target directory exists
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                # Only copy if source exists and target doesn't exist
+                if source_path.exists():
+                    if not target_path.exists():
+                        # Ensure target directory exists
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
 
-                    shutil.copy2(source_path, target_path)
-                    logger.info(f"Copied example config: {target_file}")
-                    copied_count += 1
+                        shutil.copy2(source_path, target_path)
+                        logger.info(f"Copied example config: {target_file}")
+                        copied_count += 1
+                    else:
+                        logger.debug(f"Skipped existing file: {target_file}")
+                        skipped_count += 1
+                else:
+                    logger.warning(f"Source example file not found: {example_file}")
 
             if copied_count > 0:
                 logger.info(f"Copied {copied_count} example configuration files to project")
                 logger.info(f"Edit configurations in {self.flowlib_path} as needed")
-            else:
+
+            if skipped_count > 0:
+                logger.debug(f"Skipped {skipped_count} existing configuration files")
+
+            if copied_count == 0 and skipped_count == 0:
                 logger.debug("No example configs needed to be copied")
 
         except ImportError as e:
@@ -295,6 +341,26 @@ class Project:
         for flow_file in flow_files:
             self._import_module(flow_file, "flow")
 
+    def _load_roles(self) -> None:
+        """Load role configurations from roles/."""
+        if not self.roles_path.exists():
+            logger.debug("No roles directory found")
+            return
+
+        role_files = self._find_python_files(self.roles_path)
+
+        # Filter out assignments.py since that's handled separately
+        role_files = [f for f in role_files if f.name != 'assignments.py']
+
+        if not role_files:
+            logger.debug("No role configuration files found")
+            return
+
+        logger.info(f"Found {len(role_files)} role configuration files")
+
+        for role_file in role_files:
+            self._import_module(role_file, "role")
+
     def _load_role_assignments(self) -> None:
         """Load role assignments from roles/assignments.py."""
         assignments_file = self.roles_path / 'assignments.py'
@@ -333,6 +399,12 @@ class Project:
             module_type: Type of module for logging
         """
         module_name = file_path.stem
+
+        # For tool.py files, include parent directory name for uniqueness
+        if module_type == "tool" and module_name == "tool":
+            # Use parent directory name as the tool name
+            parent_dir = file_path.parent.name
+            module_name = f"{parent_dir}_tool"
 
         # Create unique module name to avoid conflicts
         if self.is_default_project:

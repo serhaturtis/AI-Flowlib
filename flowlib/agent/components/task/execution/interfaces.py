@@ -6,8 +6,9 @@ These are core interfaces, not agent component interfaces, so they should remain
 """
 
 from typing import Protocol, runtime_checkable
-from .models import ToolParameters, ToolResult, ToolExecutionContext
+
 from ..models import TodoItem
+from .models import ToolExecutionContext, ToolParameters, ToolResult
 
 
 @runtime_checkable
@@ -16,7 +17,7 @@ class ToolInterface(Protocol):
     
     Defines the contract that all tools must follow.
     """
-    
+
     async def execute(self, parameters: ToolParameters, context: ToolExecutionContext) -> ToolResult:
         """Execute the tool with given parameters.
         
@@ -57,7 +58,7 @@ class ToolFactory(Protocol):
 @runtime_checkable
 class AgentToolInterface(Protocol):
     """Interface for agent tools."""
-    
+
     async def execute(self, todo: TodoItem, context: ToolExecutionContext) -> ToolResult:
         """Execute tool with TODO item.
         
@@ -84,10 +85,18 @@ class AgentToolFactory(Protocol):
         ...
 
     def get_description(self) -> str:
-        """Get description of the tool.
+        """Get full description of the tool.
 
         Returns:
             Tool description
+        """
+        ...
+
+    def get_planning_description(self) -> str:
+        """Get concise planning description for prompts.
+
+        Returns:
+            Concise description (defaults to first sentence of full description)
         """
         ...
 

@@ -5,6 +5,7 @@ supporting knowledge graph capabilities for the entity-centric memory system.
 """
 
 import importlib.util
+
 from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
 from flowlib.providers.graph.memory_graph import MemoryGraphProvider
 
@@ -15,13 +16,22 @@ JANUS_AVAILABLE = importlib.util.find_spec("gremlinpython") is not None
 
 # Import providers only if dependencies are available
 if NEO4J_AVAILABLE:
-    from flowlib.providers.graph.neo4j.provider import Neo4jProvider, Neo4jProviderSettings  # noqa: F401
+    from flowlib.providers.graph.neo4j.provider import (  # noqa: F401
+        Neo4jProvider,
+        Neo4jProviderSettings,
+    )
 
 if ARANGO_AVAILABLE:
-    from flowlib.providers.graph.arango.provider import ArangoProvider, ArangoProviderSettings  # noqa: F401
+    from flowlib.providers.graph.arango.provider import (  # noqa: F401
+        ArangoProvider,
+        ArangoProviderSettings,
+    )
 
 if JANUS_AVAILABLE:
-    from flowlib.providers.graph.janus.provider import JanusGraphProvider, JanusProviderSettings  # noqa: F401
+    from flowlib.providers.graph.janus.provider import (  # noqa: F401
+        JanusGraphProvider,
+        JanusProviderSettings,
+    )
 
 # Build exports dynamically
 __all__ = [

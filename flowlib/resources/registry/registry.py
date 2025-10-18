@@ -8,8 +8,9 @@ import logging
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 from flowlib.core.registry.registry import BaseRegistry
-from flowlib.resources.models.constants import ResourceType
 from flowlib.resources.models.base import ResourceBase
+from flowlib.resources.models.constants import ResourceType
+
 # Auto-discovery removed - projects handle configuration loading explicitly
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
     This class implements the BaseRegistry interface for managing resources
     like models, prompts, and configurations with type safety and validation.
     """
-    
+
     def __init__(self) -> None:
         """Initialize resource registry."""
         # Main storage for resources: (resource_type, name) -> resource
@@ -36,11 +37,11 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
         self._aliases: Dict[str, tuple[str, str]] = {}
         # Reverse mapping: (canonical_resource_type, canonical_name) -> [alias_names]
         self._canonical_to_aliases: Dict[tuple[str, str], List[str]] = {}
-        
+
         # Registry is now stateless - no auto-discovery needed
-    
+
     # Auto-discovery method removed - projects handle configuration loading explicitly
-        
+
     def register(self, name: str, obj: ResourceBase, resource_type: str = ResourceType.MODEL_CONFIG, **metadata: Union[str, int, bool]) -> None:
         """Register a resource with the registry.
         
@@ -58,7 +59,7 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
         known_types = [rt.value for rt in ResourceType]
         if resource_type not in known_types and not resource_type.startswith(('type', 'test')):
             raise ValueError(f"Invalid resource type '{resource_type}'. Must be one of: {known_types}")
-            
+
         key = (resource_type, name)
         if not isinstance(obj, ResourceBase):
             raise TypeError(f"Resource '{name}' must be a ResourceBase subclass (pydantic v2), got {type(obj)}")
@@ -68,7 +69,7 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
         self._metadata[key] = metadata
         self._resource_types.add(resource_type)
         logger.debug(f"Registered {resource_type} '{name}'")
-        
+
     def get(self, name: str, expected_type: Optional[Type[Any]] = None) -> ResourceBase:
         """Get a resource by name or alias (type determined by decorator).
         
@@ -105,7 +106,7 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
                     f"expected {expected_type.__name__}"
                 )
             return resource
-        
+
         # Search across all resource types for the canonical name
         for (resource_type, resource_name), resource in self._resources.items():
             if resource_name == name:
@@ -115,9 +116,9 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
                         f"expected {expected_type.__name__}"
                     )
                 return resource
-        
+
         raise KeyError(f"Resource '{name}' not found")
-    
+
     def get_metadata(self, name: str) -> Dict[str, Any]:
         """Get metadata for a resource by name only.
         
@@ -137,10 +138,10 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
                 if metadata_key not in self._metadata:
                     raise KeyError(f"Resource '{name}' found but metadata missing")
                 return self._metadata[metadata_key]
-        
+
         raise KeyError(f"Resource '{name}' not found")
-        
-    
+
+
     def contains(self, name: str) -> bool:
         """Check if a resource exists by name only.
         
@@ -155,8 +156,8 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             if resource_name == name:
                 return True
         return False
-    
-    
+
+
     def list(self, filter_criteria: Optional[Dict[str, Any]] = None) -> List[str]:
         """List registered resources matching criteria.
         
@@ -170,14 +171,14 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
         filter_type = None
         if filter_criteria and 'resource_type' in filter_criteria:
             filter_type = filter_criteria['resource_type']
-        
+
         result = []
         for (rt, name) in self._resources.keys():
             if filter_type is None or rt == filter_type:
                 result.append(name)
-                
+
         return result
-    
+
     def list_types(self) -> List[str]:
         """List all resource types in the registry.
         
@@ -185,7 +186,7 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             List of resource types
         """
         return list(self._resource_types)
-    
+
     def get_by_type(self, resource_type: str) -> Dict[str, Any]:
         """Get all resources of a specific type.
         
@@ -200,7 +201,7 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             if rt == resource_type:
                 result[name] = resource
         return result
-    
+
     def remove(self, name: str) -> bool:
         """Remove a specific registration from the registry.
         
@@ -216,16 +217,16 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             resource_type, resource_name = key
             if resource_name == name:
                 keys_to_remove.append(key)
-        
+
         if keys_to_remove:
             for key in keys_to_remove:
                 del self._resources[key]
                 self._metadata.pop(key, None)
             logger.debug(f"Removed resource '{name}' from registry")
             return True
-        
+
         return False
-    
+
     def update(self, name: str, obj: ResourceBase, resource_type: Optional[str] = None, **metadata: Union[str, int, bool]) -> bool:
         """Update or replace an existing registration.
         
@@ -245,11 +246,11 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             if resource_name == name:
                 existing_found = True
                 break
-        
+
         if existing_found:
             # Remove existing
             self.remove(name)
-            
+
             # Re-register with same or new type
             final_resource_type = resource_type or rt
             self.register(name, obj, final_resource_type, **metadata)
@@ -262,7 +263,7 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             self.register(name, obj, resource_type, **metadata)
             logger.debug(f"Registered new resource '{name}' in registry")
             return False
-    
+
     # Enhanced alias support methods
     def register_with_aliases(self, canonical_name: str, obj: ResourceBase, aliases: Optional[List[str]] = None, resource_type: str = ResourceType.MODEL_CONFIG, **metadata: Union[str, int, bool]) -> None:
         """Register a resource with canonical name and optional aliases.
@@ -275,11 +276,11 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             **metadata: Additional metadata about the resource
         """
         canonical_key = (resource_type, canonical_name)
-        
+
         # Only register canonical name if it doesn't exist yet
         if not self.contains(canonical_name):
             self.register(canonical_name, obj, resource_type, **metadata)
-        
+
         # Register aliases pointing to canonical resource
         if aliases:
             for alias in aliases:
@@ -287,13 +288,13 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
                 if alias in self._aliases:
                     logger.debug(f"Alias '{alias}' already exists, skipping")
                     continue
-                    
+
                 self._aliases[alias] = canonical_key
                 if canonical_key not in self._canonical_to_aliases:
                     self._canonical_to_aliases[canonical_key] = []
                 self._canonical_to_aliases[canonical_key].append(alias)
                 logger.debug(f"Created alias '{alias}' -> '{canonical_name}' ({resource_type})")
-    
+
     def create_alias(self, alias_name: str, canonical_name: str) -> bool:
         """Create an alias that points to an existing canonical name.
         
@@ -310,19 +311,19 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
             if resource_name == canonical_name:
                 canonical_key = (resource_type, resource_name)
                 break
-        
+
         if not canonical_key:
             return False
-        
+
         # Create alias
         self._aliases[alias_name] = canonical_key
         if canonical_key not in self._canonical_to_aliases:
             self._canonical_to_aliases[canonical_key] = []
         self._canonical_to_aliases[canonical_key].append(alias_name)
-        
+
         logger.debug(f"Created alias '{alias_name}' -> '{canonical_name}' ({canonical_key[0]})")
         return True
-    
+
     def remove_alias(self, alias_name: str) -> bool:
         """Remove an alias (but not the canonical object).
         
@@ -334,19 +335,19 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
         """
         if alias_name not in self._aliases:
             return False
-        
+
         canonical_key = self._aliases[alias_name]
         del self._aliases[alias_name]
-        
+
         # Update reverse mapping
         if canonical_key in self._canonical_to_aliases:
             self._canonical_to_aliases[canonical_key].remove(alias_name)
             if not self._canonical_to_aliases[canonical_key]:
                 del self._canonical_to_aliases[canonical_key]
-        
+
         logger.debug(f"Removed alias '{alias_name}'")
         return True
-    
+
     def list_aliases(self, canonical_name: str) -> List[str]:
         """List all aliases that point to a canonical name.
         
@@ -364,9 +365,9 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
                     # No aliases exist for this canonical name
                     return []
                 return self._canonical_to_aliases[canonical_key]
-        
+
         return []
-    
+
     def clear(self) -> None:
         """Clear all registrations and aliases from the registry."""
         self._resources.clear()
@@ -375,5 +376,5 @@ class ResourceRegistry(BaseRegistry[ResourceBase]):
         self._aliases.clear()
         self._canonical_to_aliases.clear()
         logger.debug("Cleared all resources and aliases from registry")
-        
+
 resource_registry: ResourceRegistry = ResourceRegistry()

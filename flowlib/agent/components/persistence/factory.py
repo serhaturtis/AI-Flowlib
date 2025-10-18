@@ -6,12 +6,13 @@ based on the specified type.
 """
 
 import logging
-from typing import Optional, Union, Any
+from typing import Any, Optional, Union
 
 from flowlib.agent.core.errors import StatePersistenceError
+from flowlib.agent.models.config import StatePersistenceConfig
+
 from .file import FileStatePersister, FileStatePersisterSettings
 from .provider import ProviderStatePersister
-from flowlib.agent.models.config import StatePersistenceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def create_state_persister(
         if 'config' in kwargs and isinstance(kwargs['config'], StatePersistenceConfig):
             config = kwargs['config']
             persister_type = config.persistence_type
-            
+
             if persister_type == "file":
                 if not config.base_path:
                     raise StatePersistenceError(message="Missing base_path for file state persister", operation="create")
@@ -47,7 +48,7 @@ def create_state_persister(
                 return FileStatePersister(settings=settings)
             elif persister_type == "provider":
                 return ProviderStatePersister(provider_name=config.provider_id)
-        
+
         # Standard case with individual parameters
         if persister_type == "file":
             directory = None
@@ -61,7 +62,7 @@ def create_state_persister(
                 raise StatePersistenceError(message="Missing directory for file state persister", operation="create")
             settings = FileStatePersisterSettings(directory=directory)
             return FileStatePersister(settings=settings)
-            
+
         elif persister_type == "provider":
             # Support both provider_id (new) and provider_name (old) parameter names
             provider_name = None
@@ -75,11 +76,11 @@ def create_state_persister(
                     operation="create"
                 )
             return ProviderStatePersister(provider_name=provider_name)
-            
+
         else:
             logger.warning(f"Invalid persister type: {persister_type}")
             return None
-            
+
     except Exception as e:
         error_msg = f"Error creating state persister: {str(e)}"
         logger.error(error_msg)
@@ -87,4 +88,4 @@ def create_state_persister(
             message=error_msg,
             operation="create",
             cause=e
-        ) 
+        )

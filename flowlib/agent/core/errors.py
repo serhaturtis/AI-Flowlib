@@ -6,12 +6,14 @@ All agent errors now inherit from the unified core error system.
 """
 
 from typing import Any, Dict, Optional, Type, Union
-from flowlib.core.errors.errors import BaseError, ErrorContext as CoreErrorContext
+
+from flowlib.core.errors.errors import BaseError
+from flowlib.core.errors.errors import ErrorContext as CoreErrorContext
 
 
 class ErrorContext:
     """Helper for creating error context dictionaries."""
-    
+
     @staticmethod
     def create(**context: Union[str, int, bool, None]) -> Dict[str, Union[str, int, bool, None]]:
         """Create an error context dictionary."""
@@ -24,7 +26,7 @@ class AgentError(BaseError):
     All errors in the agent system should inherit from this class.
     Now inherits from the unified core error system.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -53,19 +55,19 @@ class AgentError(BaseError):
             component=component,
             operation=operation
         )
-        
+
         # Call parent constructor
         super().__init__(message, error_context, cause)
-        
+
         # Store additional context as a separate field
         self.additional_context: Dict[str, Any] = dict(context)
-    
+
     def __str__(self) -> str:
         """String representation - just the message for backward compatibility."""
         if self.cause:
             return f"{self.message} (caused by: {self.cause})"
         return self.message
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert error to dictionary.
         
@@ -77,7 +79,7 @@ class AgentError(BaseError):
             "message": self.message,
             "context": self.additional_context,
         }
-        
+
         if self.cause:
             if hasattr(self.cause, "to_dict") and callable(self.cause.to_dict):
                 result["cause"] = self.cause.to_dict()
@@ -86,7 +88,7 @@ class AgentError(BaseError):
                     "error_type": self.cause.__class__.__name__,
                     "message": str(self.cause),
                 }
-        
+
         return result
 
 
@@ -95,7 +97,7 @@ class NotInitializedError(AgentError):
     
     Components must be initialized before they can be used.
     """
-    
+
     def __init__(
         self,
         message: Optional[str] = None,
@@ -115,12 +117,12 @@ class NotInitializedError(AgentError):
             message = f"Component '{component_name}' must be initialized before use"
             if operation:
                 message += f" (attempted operation: {operation})"
-                
+
         if component_name:
             context["component_name"] = component_name
         if operation:
             context["operation"] = operation
-            
+
         # Remove operation from context since it's a parameter for parent class
         parent_context = {k: v for k, v in context.items() if k != "operation"}
         if not operation:
@@ -129,7 +131,7 @@ class NotInitializedError(AgentError):
             raise ValueError("AgentError requires component_name parameter - cannot be None or empty")
         parent_operation = operation
         super().__init__(message, None, component_name, parent_operation, **parent_context)
-        
+
         # Add operation back to context for backward compatibility
         if operation:
             self.additional_context["operation"] = operation
@@ -140,7 +142,7 @@ class ComponentError(AgentError):
     
     Raised when a component fails to initialize, operate, or shutdown.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -161,12 +163,12 @@ class ComponentError(AgentError):
         context["component_name"] = component_name
         if operation:
             context["operation"] = operation
-            
+
         # Remove operation from context since it's a parameter for parent class
         parent_context = {k: v for k, v in context.items() if k != "operation"}
         parent_operation = operation if operation else "unknown"
         super().__init__(message, cause=cause, component=component_name, operation=parent_operation, **parent_context)
-        
+
         # Add operation back to context for backward compatibility
         if operation:
             self.additional_context["operation"] = operation
@@ -177,7 +179,7 @@ class ConfigurationError(AgentError):
     
     Raised when there is an invalid configuration value or missing required config.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -198,7 +200,7 @@ class ConfigurationError(AgentError):
             **context: Additional context information
         """
         self.config_key = config_key
-        
+
         if config_key:
             context["config_key"] = config_key
         if invalid_value is not None:
@@ -214,7 +216,7 @@ class ExecutionError(AgentError):
     
     Raised when there is a failure during the execution cycle.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -263,7 +265,7 @@ class PlanningError(ExecutionError):
     
     Raised when there is a failure during the planning phase.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -280,7 +282,7 @@ class PlanningError(ExecutionError):
         # Add planning type to context
         kwargs["planning_type"] = planning_type
         kwargs["stage"] = planning_type
-        
+
         super().__init__(message, **kwargs)
 
 
@@ -289,7 +291,7 @@ class ReflectionError(ExecutionError):
     
     Raised when there is a failure during the reflection phase.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -310,7 +312,7 @@ class MemoryError(AgentError):
     
     Raised when there is a failure during memory store, retrieve, or search.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -337,12 +339,12 @@ class MemoryError(AgentError):
             kwargs["key"] = key
         if context:
             kwargs["memory_context"] = context
-            
+
         # Remove operation from kwargs since it's a parameter for parent class
         parent_kwargs = {k: v for k, v in kwargs.items() if k != "operation"}
         parent_operation = operation if operation else "unknown"
         super().__init__(message, cause=cause, component="memory", operation=parent_operation, **parent_kwargs)
-        
+
         # Add operation back to context for backward compatibility
         if operation:
             self.additional_context["operation"] = operation
@@ -354,7 +356,7 @@ class StatePersistenceError(AgentError):
     
     Raised when there is a failure during state saving or loading.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -374,15 +376,15 @@ class StatePersistenceError(AgentError):
         """
         self.operation = operation
         self.task_id = task_id
-        
+
         context["operation"] = operation
         if task_id:
             context["task_id"] = task_id
-            
+
         # Remove operation from context since it's a parameter for parent class
         parent_context = {k: v for k, v in context.items() if k != "operation"}
         super().__init__(message, cause=cause, component="persistence", operation=operation, **parent_context)
-        
+
         # Add operation back to context for backward compatibility
         self.additional_context["operation"] = operation
 
@@ -392,7 +394,7 @@ class ProviderError(AgentError):
     
     Raised when there is a failure in a provider operation.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -414,12 +416,12 @@ class ProviderError(AgentError):
             kwargs["provider_name"] = provider_name
         if operation:
             kwargs["operation"] = operation
-            
+
         # Remove operation from kwargs since it's a parameter for parent class
         parent_kwargs = {k: v for k, v in kwargs.items() if k != "operation"}
         parent_operation = operation if operation else "unknown"
         super().__init__(message, cause=cause, component="provider", operation=parent_operation, **parent_kwargs)
-        
+
         # Add operation back to context for backward compatibility
         if operation:
-            self.additional_context["operation"] = operation 
+            self.additional_context["operation"] = operation

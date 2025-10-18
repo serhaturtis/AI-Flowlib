@@ -5,7 +5,7 @@ interface for working with different caching systems.
 """
 
 from .base import CacheProvider, CacheProviderSettings
-from .memory.provider import MemoryCacheProvider, InMemoryCacheProviderSettings
+from .memory.provider import InMemoryCacheProviderSettings, MemoryCacheProvider
 from .redis.provider import RedisCacheProvider, RedisCacheProviderSettings
 
 __all__ = [
@@ -17,4 +17,4 @@ __all__ = [
     "InMemoryCacheProviderSettings"
 ]
 
-# Makes cache a package 
+# Makes cache a package

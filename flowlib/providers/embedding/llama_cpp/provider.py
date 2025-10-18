@@ -2,15 +2,19 @@
 Embedding provider using llama-cpp-python.
 """
 
-import logging
-from typing import List, Union, Optional, TypeVar, Dict, Any
 import asyncio
+import logging
+from typing import Any, Dict, List, Optional, TypeVar, Union
+
 from pydantic import Field
 
-from flowlib.providers.embedding.base import EmbeddingProvider, EmbeddingProviderSettings
-from flowlib.providers.core.decorators import provider
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
+from flowlib.providers.core.decorators import provider
+from flowlib.providers.embedding.base import (
+    EmbeddingProvider,
+    EmbeddingProviderSettings,
+)
 
 # Lazy import llama_cpp
 try:
@@ -33,18 +37,18 @@ class LlamaCppEmbeddingProviderSettings(EmbeddingProviderSettings):
     
     No host/port needed - uses local model files.
     """
-    
+
     # LlamaCpp embedding infrastructure settings
     n_ctx: int = Field(default=512, description="Context size for embedding model")
     n_threads: Optional[int] = Field(default=None, description="Number of threads for inference")
     n_batch: int = Field(default=512, description="Batch size for embedding processing")
-    
+
     # LlamaCpp embedding specific settings
     use_gpu: bool = Field(default=False, description="Whether to use GPU acceleration")
     n_gpu_layers: int = Field(default=0, description="Number of layers to offload to GPU")
     verbose: bool = Field(default=False, description="Enable verbose logging from LlamaCpp")
     use_mlock: bool = Field(default=False, description="Use mlock to keep model in memory")
-    
+
     # Embedding-specific settings
     embedding_dim: int = Field(default=384, description="Dimension of embedding vectors")
     normalize: bool = Field(default=True, description="Whether to normalize embedding vectors")
@@ -56,8 +60,8 @@ SettingsType = TypeVar('SettingsType', bound=LlamaCppEmbeddingProviderSettings)
 # --- Provider Implementation ---
 
 @provider(
-    provider_type="embedding", 
-    name="llamacpp_embedding", 
+    provider_type="embedding",
+    name="llamacpp_embedding",
     settings_class=LlamaCppEmbeddingProviderSettings
 )
 class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSettings]):
@@ -65,7 +69,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
     
     Supports GGUF models compatible with llama.cpp for generating embeddings.
     """
-    
+
     def __init__(self, name: str, provider_type: str, settings: LlamaCppEmbeddingProviderSettings, **kwargs: object):
         """Initialize LlamaCppEmbeddingProvider.
         
@@ -87,17 +91,17 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 "Please install it with embedding support: "
                 "pip install llama-cpp-python[server] or similar."
             )
-        
+
         self._model_path: Optional[str] = None
         self._model_config: Optional[Dict[str, object]] = None
         self._lock = asyncio.Lock()
-        
+
         logger.info(f"LlamaCppEmbeddingProvider '{name}' configured")
 
     async def _initialize(self) -> None:
         """Initialize the embedding provider."""
         logger.info(f"LlamaCppEmbeddingProvider '{self.name}' initialized successfully")
-        
+
     async def _initialize_model(self, model_name: str) -> None:
         """Initialize a specific embedding model.
         
@@ -109,11 +113,11 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
         """
         if self._model and self._model_config and hasattr(self._model_config, 'path'):
             return  # Already loaded
-            
+
         try:
             # Get model configuration from registry - similar to LlamaCppProvider
             model_config_raw = await self.get_model_config(model_name)
-            
+
             # Convert to model config with path attribute - get_model_config always returns Dict[str, object]
             # Path is always in the nested 'config' field - single source of truth
             if 'config' not in model_config_raw or not isinstance(model_config_raw['config'], dict):
@@ -127,12 +131,12 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 raise TypeError(f"Model path must be a string, got {type(path_value)}")
             model_path = path_value
             self._model_config = model_config_raw
-                    
+
             # Load the model with the path from config
             await self._load_model(model_path)
-            
+
             logger.info(f"Initialized embedding model '{model_name}' from: {model_path}")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize embedding model '{model_name}': {e}")
             raise ProviderError(
@@ -158,7 +162,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
         async with self._lock:
             if self._model and self._model_path == model_path:
                 return  # Already loaded
-            
+
             logger.info(f"Loading embedding model: {model_path}...")
             try:
                 # Prepare arguments for Llama constructor with explicit types
@@ -206,7 +210,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 # relies on garbage collection - set to None for frozen models
                 object.__setattr__(self, '_model', None)
                 logger.info(f"Embedding model resources released for: {self._model_path}")
-            
+
     async def embed(self, text: Union[str, List[str]], model_name: Optional[str] = None) -> List[List[float]]:
         """Generate embeddings for the given text(s).
         
@@ -237,7 +241,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                     retry_count=0
                 )
             )
-            
+
         # Initialize model if not already loaded
         if not self._model:
             if model_name:
@@ -245,14 +249,14 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
             else:
                 # Use default embedding model role
                 await self._initialize_model("default-embedding-model")
-            
+
         async with self._lock:
             try:
                 # llama-cpp expects a list, even for a single string
                 input_texts = [text] if isinstance(text, str) else text
                 if not input_texts:
                     return []
-                
+
                 # Ensure model is loaded
                 if self._model is None:
                     raise ProviderError(
@@ -276,7 +280,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 # Note: Llama.embed() might be synchronous depending on version/setup
                 # If it blocks significantly, consider running in a thread pool executor
                 embeddings = self._model.embed(input_texts)
-                
+
                 # Ensure the output is List[List[float]]
                 if not isinstance(embeddings, list) or not all(isinstance(e, list) for e in embeddings):
                      raise ProviderError(
@@ -295,9 +299,9 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                              retry_count=0
                          )
                      )
-                 
+
                 return embeddings
-                
+
             except Exception as e:
                 logger.error(f"Failed to generate embeddings: {e}", exc_info=True)
                 raise ProviderError(
@@ -316,4 +320,4 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                         retry_count=0
                     ),
                     cause=e
-                ) 
+                )

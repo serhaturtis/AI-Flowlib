@@ -7,14 +7,13 @@ in various contexts within the flowlib ecosystem.
 
 # Import all the formatting utilities
 from flowlib.utils.formatting import (
-    # Text formatting
-    process_escape_sequences,
-    
+    extract_json,
     # Entity formatting
     format_conversation,
-    format_state,
     format_history,
-    extract_json
+    format_state,
+    # Text formatting
+    process_escape_sequences,
 )
 
 
@@ -25,7 +24,7 @@ def example_text_formatting() -> None:
     processed = process_escape_sequences(raw_text)
     print("Original:", repr(raw_text))
     print("Processed:", repr(processed))
-    
+
 
 def example_conversation_formatting() -> None:
     """Example of conversation formatting usage."""
@@ -35,23 +34,23 @@ def example_conversation_formatting() -> None:
         {"speaker": "Assistant", "content": "Of course! What do you need help with?"},
         {"speaker": "User", "content": "I need to create a report about climate change."}
     ]
-    
+
     # Format conversation for prompt
     formatted = format_conversation(conversation)
     print("Formatted conversation:")
     print(formatted)
-    
+
     # Format execution state
     state = {
         "task": "Create a report about climate change",
         "progress": 0.5,
         "last_action": "Research key statistics"
     }
-    
+
     formatted_state = format_state(state)
     print("\nFormatted state:")
     print(formatted_state)
-    
+
     # Format execution history
     history = [
         {
@@ -63,11 +62,11 @@ def example_conversation_formatting() -> None:
         {
             "action": "execute_flow",
             "flow": "create-outline",
-            "reasoning": "Need to organize the information into a report structure", 
+            "reasoning": "Need to organize the information into a report structure",
             "reflection": "Created a coherent outline with key sections"
         }
     ]
-    
+
     formatted_history = format_history(history)
     print("\nFormatted history:")
     print(formatted_history)
@@ -87,7 +86,7 @@ def example_json_extraction() -> None:
     
     Let me know if you need anything else.
     """
-    
+
     # Extract JSON data
     json_data = extract_json(text_with_json)
     print("Extracted JSON data:")
@@ -98,13 +97,13 @@ def run_examples() -> None:
     """Run all examples."""
     print("=== TEXT FORMATTING EXAMPLES ===")
     example_text_formatting()
-    
+
     print("\n=== CONVERSATION FORMATTING EXAMPLES ===")
     example_conversation_formatting()
-    
+
     print("\n=== JSON EXTRACTION EXAMPLES ===")
     example_json_extraction()
 
 
 if __name__ == "__main__":
-    run_examples() 
+    run_examples()

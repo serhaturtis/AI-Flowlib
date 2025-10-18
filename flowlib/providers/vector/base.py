@@ -6,10 +6,11 @@ vector embeddings with metadata.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Type, TypeVar, Generic
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from pydantic import BaseModel, ConfigDict, Field
+
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.base import Provider, ProviderSettings
 
@@ -33,19 +34,19 @@ class VectorDBProviderSettings(ProviderSettings):
         metric: Distance metric for similarity search
         batch_size: Batch size for bulk operations
     """
-    
+
     # Connection settings
     host: Optional[str] = Field(default=None, description="Vector database server host")
     port: Optional[int] = Field(default=None, description="Vector database server port")
     api_key: Optional[str] = Field(default=None, description="API key for authentication")
     username: Optional[str] = Field(default=None, description="Username for authentication")
     password: Optional[str] = Field(default=None, description="Password for authentication")
-    
+
     # Vector settings
     index_name: str = Field(default="default", description="Default vector index/collection name")
     vector_dimension: int = Field(default=1536, description="Vector dimension (1536 for OpenAI embeddings)")
     metric: str = Field(default="cosine", description="Distance metric: cosine, euclidean, or dot")
-    
+
     # Performance settings
     batch_size: int = Field(default=100, description="Batch size for bulk vector operations")
     timeout: float = Field(default=30.0, description="Operation timeout in seconds")
@@ -64,7 +65,7 @@ class VectorMetadata(BaseModel):
         updated_at: Last update timestamp
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     id: str
     text: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -82,7 +83,7 @@ class VectorSearchResult(BaseModel):
         vector: Vector data (if requested)
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     id: str
     score: float
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -102,7 +103,7 @@ class VectorIndexStats(BaseModel):
         metric: Distance metric used
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     name: str
     total_vectors: int = 0
     vector_dimension: int
@@ -122,7 +123,7 @@ class VectorInsertResult(BaseModel):
         error_details: Details about any errors
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     success: bool
     inserted_ids: List[str] = Field(default_factory=list)
     failed_ids: List[str] = Field(default_factory=list)
@@ -139,7 +140,7 @@ class VectorDeleteResult(BaseModel):
         error_details: Details about any errors
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     success: bool
     deleted_count: int = 0
     not_found_ids: List[str] = Field(default_factory=list)
@@ -157,7 +158,7 @@ class VectorBatchSearchResult(BaseModel):
         error_details: Details about any errors
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
-    
+
     success: bool
     results: List[List[VectorSearchResult]] = Field(default_factory=list)
     query_count: int = 0
@@ -178,7 +179,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
     3. Metadata storage and filtering
     4. Type-safe operations with Pydantic models
     """
-    
+
     def __init__(self, name: str, provider_type: str, settings: Optional[SettingsT] = None, **kwargs: Any):
         """Initialize VectorDB provider.
         
@@ -192,12 +193,12 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
         self._initialized = False
         self._client: Optional[Any] = None
         self._settings = settings or VectorDBProviderSettings()
-        
+
     @property
     def initialized(self) -> bool:
         """Return whether provider has been initialized."""
         return self._initialized
-        
+
     async def initialize(self) -> None:
         """Initialize the vector database connection.
         
@@ -205,7 +206,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
         connections to the vector database.
         """
         self._initialized = True
-        
+
     async def shutdown(self) -> None:
         """Close all connections and release resources.
         
@@ -214,7 +215,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
         """
         self._initialized = False
         self._client = None
-        
+
     async def create_index(self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs: Any) -> bool:
         """Create a new vector index/collection.
         
@@ -231,7 +232,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If index creation fails
         """
         raise NotImplementedError("Subclasses must implement create_index()")
-        
+
     async def delete_index(self, index_name: str) -> bool:
         """Delete a vector index/collection.
         
@@ -245,7 +246,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If index deletion fails
         """
         raise NotImplementedError("Subclasses must implement delete_index()")
-        
+
     async def index_exists(self, index_name: str) -> bool:
         """Check if index exists.
         
@@ -259,7 +260,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If check fails
         """
         raise NotImplementedError("Subclasses must implement index_exists()")
-        
+
     async def insert_vectors(self, index_name: str, vectors: List[List[float]], metadata: Optional[List[Dict[str, Any]]] = None, ids: Optional[List[str]] = None) -> bool:
         """Insert multiple vectors with metadata.
         
@@ -276,7 +277,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If insertion fails
         """
         raise NotImplementedError("Subclasses must implement insert_vectors()")
-        
+
     async def search_vectors(self, index_name: str, query_vector: List[float], top_k: int = 10, filter_conditions: Optional[Dict[str, Any]] = None) -> List[VectorSearchResult]:
         """Search for similar vectors.
         
@@ -293,7 +294,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If search fails
         """
         raise NotImplementedError("Subclasses must implement search_vectors()")
-        
+
     async def delete_vectors(self, index_name: str, ids: List[str]) -> bool:
         """Delete vectors by IDs.
         
@@ -308,7 +309,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If deletion fails
         """
         raise NotImplementedError("Subclasses must implement delete_vectors()")
-        
+
     async def get_index_stats(self, index_name: str) -> VectorIndexStats:
         """Get index statistics.
         
@@ -322,7 +323,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If getting stats fails
         """
         raise NotImplementedError("Subclasses must implement get_index_stats()")
-        
+
     async def insert(self, vector: List[float], metadata: Dict[str, Any], id: Optional[str] = None,
                    index_name: Optional[str] = None) -> str:
         """Insert a vector with metadata.
@@ -340,7 +341,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If insertion fails
         """
         raise NotImplementedError("Subclasses must implement insert()")
-        
+
     async def insert_batch(self, vectors: List[List[float]], metadatas: List[Dict[str, Any]],
                          ids: Optional[List[str]] = None, index_name: Optional[str] = None) -> List[str]:
         """Insert multiple vectors with metadata.
@@ -358,7 +359,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If batch insertion fails
         """
         raise NotImplementedError("Subclasses must implement insert_batch()")
-        
+
     async def get(self, id: str, include_vector: bool = False,
                 index_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Get a vector by ID.
@@ -375,7 +376,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If retrieval fails
         """
         raise NotImplementedError("Subclasses must implement get()")
-        
+
     async def delete(self, id: str, index_name: Optional[str] = None) -> bool:
         """Delete a vector by ID.
         
@@ -390,7 +391,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If deletion fails
         """
         raise NotImplementedError("Subclasses must implement delete()")
-        
+
     async def search(self, query_vector: List[float], top_k: int = 10, filter: Optional[Dict[str, Any]] = None,
                    include_vectors: bool = False, index_name: Optional[str] = None) -> List[VectorSearchResult]:
         """Search for similar vectors.
@@ -409,7 +410,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If search fails
         """
         raise NotImplementedError("Subclasses must implement search()")
-        
+
     async def search_by_id(self, id: str, top_k: int = 10, filter: Optional[Dict[str, Any]] = None,
                          include_vectors: bool = False, index_name: Optional[str] = None) -> List[VectorSearchResult]:
         """Search for similar vectors using an existing vector ID.
@@ -428,7 +429,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If search fails
         """
         raise NotImplementedError("Subclasses must implement search_by_id()")
-        
+
     async def search_structured(self, query_vector: List[float], output_type: Type[T], top_k: int = 10,
                               filter: Optional[Dict[str, Any]] = None, index_name: Optional[str] = None) -> List[T]:
         """Search for similar vectors and parse results into structured types.
@@ -455,7 +456,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
                 include_vectors=False,
                 index_name=index_name
             )
-            
+
             # Parse results into the output type
             parsed_results = []
             for result in results:
@@ -463,12 +464,12 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
                 data = result.metadata.copy()
                 data["score"] = result.score
                 data["id"] = result.id
-                
+
                 # Parse into output type
                 parsed_results.append(output_type.parse_obj(data))
-                
+
             return parsed_results
-            
+
         except Exception as e:
             # Wrap and re-raise errors with context
             error_context = ErrorContext.create(
@@ -492,7 +493,7 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
                 provider_context=provider_context,
                 cause=e
             )
-            
+
     async def count(self, filter: Optional[Dict[str, Any]] = None, index_name: Optional[str] = None) -> int:
         """Count vectors in the index.
         
@@ -507,8 +508,8 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If count fails
         """
         raise NotImplementedError("Subclasses must implement count()")
-        
-    async def get_by_filter(self, filter: Dict[str, Any], top_k: int = 10, 
+
+    async def get_by_filter(self, filter: Dict[str, Any], top_k: int = 10,
                            include_vectors: bool = False, index_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get vectors by metadata filter without vector similarity search.
         
@@ -535,4 +536,4 @@ class VectorDBProvider(Provider[SettingsT], Generic[SettingsT]):
         Returns:
             True if connection is active, False otherwise
         """
-        raise NotImplementedError("Subclasses must implement check_connection()") 
+        raise NotImplementedError("Subclasses must implement check_connection()")

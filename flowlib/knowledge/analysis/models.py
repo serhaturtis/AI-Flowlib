@@ -1,9 +1,11 @@
 """Models for entity analysis flow."""
 
-from typing import List, Optional
-from pydantic import Field
-from flowlib.core.models import StrictBaseModel
 from enum import Enum
+from typing import List, Optional
+
+from pydantic import Field
+
+from flowlib.core.models import StrictBaseModel
 
 
 class EntityExtractionStrategy(str, Enum):

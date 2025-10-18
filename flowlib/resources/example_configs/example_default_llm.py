@@ -19,7 +19,7 @@ class ExampleLlamaCppProviderConfig(LLMConfigResource):
     Individual models are defined separately using @model_config.
     This config can be assigned to roles like 'default-llm' via role assignment.
     """
-    
+
     def __init__(self, name: str, type: str, **kwargs: Any) -> None:
         super().__init__(
             name=name,
@@ -36,7 +36,7 @@ class ExampleLlamaCppProviderConfig(LLMConfigResource):
             settings={
                 # Pure infrastructure settings (LlamaCppSettings) - Provider concerns only
                 "max_concurrent_models": 3,        # Maximum models loaded simultaneously
-                
+
                 # Provider reliability settings (from ProviderSettings)
                 "timeout": 120,                    # Request timeout in seconds
                 "max_retries": 3,                  # Maximum retry attempts

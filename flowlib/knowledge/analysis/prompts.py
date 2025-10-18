@@ -1,14 +1,14 @@
 """Prompts for entity analysis flow."""
 
-from flowlib.resources.models.base import ResourceBase
+from pydantic import Field
+
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.providers.llm import PromptConfigOverride
-from typing import ClassVar
+from flowlib.resources.models.base import ResourceBase
 
 
 @prompt("entity-extraction-llm")
 class EntityExtractionLLMPrompt(ResourceBase):
-    template: ClassVar[str] = """You are analyzing a technical document in the {{domain}} domain.
+    template: str = Field(default="""You are analyzing a technical document in the {{domain}} domain.
         
 Extract all important entities from the following text. For each entity, provide:
 - name: The entity name
@@ -32,17 +32,17 @@ Text to analyze:
 {{text}}
 
 Extract entities that would be valuable for an AI agent working in the {{domain}} field.
-Provide an 'entities' array with the extracted entities."""
-    
-    config: ClassVar[PromptConfigOverride] = PromptConfigOverride(
-        temperature=0.3,  # Lower temperature for precise extraction
-        max_tokens=3000   # Increased for comprehensive entity extraction
-    )
+Provide an 'entities' array with the extracted entities.""")
+
+    config: dict = Field(default={
+        "temperature": 0.3,  # Lower temperature for precise extraction
+        "max_tokens": 3000   # Increased for comprehensive entity extraction
+    })
 
 
 @prompt("relationship-extraction-llm")
 class RelationshipExtractionLLMPrompt(ResourceBase):
-    template: ClassVar[str] = """You are analyzing relationships in a {{domain}} technical document.
+    template: str = Field(default="""You are analyzing relationships in a {{domain}} technical document.
 
 Given these entities:
 {{entity_list}}
@@ -59,17 +59,17 @@ Focus on technical relationships that would help an AI understand how these enti
 Text to analyze:
 {{text}}
 
-Provide a 'relationships' array with the identified relationships."""
-    
-    config: ClassVar[PromptConfigOverride] = PromptConfigOverride(
-        temperature=0.3,  # Lower temperature for precise extraction
-        max_tokens=2500   # Increased for comprehensive relationship extraction
-    )
+Provide a 'relationships' array with the identified relationships.""")
+
+    config: dict = Field(default={
+        "temperature": 0.3,  # Lower temperature for precise extraction
+        "max_tokens": 2500   # Increased for comprehensive relationship extraction
+    })
 
 
 @prompt("concept-extraction-llm")
 class ConceptExtractionLLMPrompt(ResourceBase):
-    template: ClassVar[str] = """You are analyzing a {{domain}} technical document.
+    template: str = Field(default="""You are analyzing a {{domain}} technical document.
 
 Extract the {{max_concepts}} most important technical concepts. For each:
 - concept: The concept name
@@ -83,9 +83,9 @@ Focus on concepts that are crucial for understanding {{domain}}.
 Text to analyze:
 {{text}}
 
-Provide a 'concepts' array with the most important concepts."""
-    
-    config: ClassVar[PromptConfigOverride] = PromptConfigOverride(
-        temperature=0.3,  # Lower temperature for precise extraction
-        max_tokens=3500   # Increased for comprehensive concept extraction
-    )
+Provide a 'concepts' array with the most important concepts.""")
+
+    config: dict = Field(default={
+        "temperature": 0.3,  # Lower temperature for precise extraction
+        "max_tokens": 3500   # Increased for comprehensive concept extraction
+    })

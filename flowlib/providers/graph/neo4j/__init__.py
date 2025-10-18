@@ -2,6 +2,7 @@
 
 from typing import Any, Type
 
+
 # Define default classes first (single source of truth)
 class _DefaultNeo4jProvider:
     """Default Neo4j provider stub."""
@@ -27,7 +28,8 @@ Entity: Type[Any]
 
 # Import availability and components
 try:
-    from .provider import Neo4jProvider as _Neo4jProvider, Neo4jProviderSettings as _Neo4jProviderSettings
+    from .provider import Neo4jProvider as _Neo4jProvider
+    from .provider import Neo4jProviderSettings as _Neo4jProviderSettings
     NEO4J_AVAILABLE = True
 
     # Use actual imports when available
@@ -57,7 +59,7 @@ except ImportError:
 
 __all__ = [
     "Neo4jProvider",
-    "Neo4jProviderSettings", 
+    "Neo4jProviderSettings",
     "NEO4J_AVAILABLE",
     "GraphDatabase",
     "Entity",

@@ -4,23 +4,25 @@ This module provides unified context management for all agent operations,
 replacing fragmented context assembly with a single source of truth.
 """
 
+from .manager import AgentContextManager
 from .models import (
-    ExecutionContext,
-    SessionContext,
-    TaskContext,
     ComponentContext,
-    LearningContext,
+    ContextManagerConfig,
     ConversationMessage,
+    ExecutionContext,
+    LearningContext,
+    RecoveryStrategy,
+    SessionContext,
+    SuccessfulPattern,
+    TaskContext,
     UserProfile,
     WorkspaceKnowledge,
-    SuccessfulPattern,
-    RecoveryStrategy
 )
-from .manager import AgentContextManager
 
 __all__ = [
+    "ContextManagerConfig",
     "ExecutionContext",
-    "SessionContext", 
+    "SessionContext",
     "TaskContext",
     "ComponentContext",
     "LearningContext",

@@ -1,6 +1,7 @@
-from typing import Optional, Callable, Any, TYPE_CHECKING
-from flowlib.resources.models.constants import ResourceType
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+
 from flowlib.resources.models.base import ResourceBase
+from flowlib.resources.models.constants import ResourceType
 
 if TYPE_CHECKING:
     from flowlib.resources.registry.registry import ResourceRegistry
@@ -26,12 +27,12 @@ def resource(name: str, resource_type: str = ResourceType.MODEL_CONFIG, **metada
         # If already a ResourceBase subclass, register directly
         if not isinstance(obj, type) or not issubclass(obj, ResourceBase):
             raise TypeError(f"Resource '{name}' must be a ResourceBase subclass (pydantic v2), got {type(obj)}")
-        
+
         # Attach metadata to class first
         obj.__resource_name__ = name  # type: ignore[attr-defined]
         obj.__resource_type__ = resource_type  # type: ignore[attr-defined]
         obj.__resource_metadata__ = {'name': name, 'type': resource_type, **metadata}  # type: ignore[attr-defined]
-        
+
         # Instantiate the resource for registration with minimal required fields
         instance = obj(name=name, type=resource_type)
         registry.register(
@@ -58,22 +59,42 @@ def model_config(name: str, provider_type: Optional[str] = None, provider: Optio
         registry = _get_resource_registry()
         if registry is None:
             raise RuntimeError("Resource registry not initialized")
-            
-        # Attach metadata to class
+
+        # Determine provider type - fail-fast validation, no fallbacks
+        if provider and provider_type:
+            raise ValueError("Cannot specify both 'provider' and 'provider_type'. Use 'provider_type'.")
+
+        final_provider_type = provider_type or provider
+        if not final_provider_type:
+            raise ValueError(f"model_config '{name}' requires explicit provider_type parameter (e.g., 'llamacpp', 'openai')")
+
+        # Explicit config required - no fallbacks
+        if config is None:
+            raise ValueError(f"model_config '{name}' requires explicit config parameter")
+
+        # Attach metadata to class - store all config data as class attributes (single source of truth)
         cls.__resource_name__ = name  # type: ignore[attr-defined]
         cls.__resource_type__ = ResourceType.MODEL_CONFIG  # type: ignore[attr-defined]
-        cls.__resource_metadata__ = {'name': name, 'type': ResourceType.MODEL, **metadata}  # type: ignore[attr-defined]
-        
+        cls.__resource_metadata__ = {'name': name, 'type': ResourceType.MODEL_CONFIG, 'provider_type': final_provider_type, 'config': config, **metadata}  # type: ignore[attr-defined]
+
+        # Store provider_type and config as class attributes for single source of truth
+        cls.__provider_type__ = final_provider_type  # type: ignore[attr-defined]
+        cls.__config__ = config  # type: ignore[attr-defined]
+
+        # Add properties to expose config data from class attributes
+        def config_prop(self: Any) -> Dict[str, Any]:
+            """Access config from class attributes (single source of truth)."""
+            return getattr(self.__class__, '__config__', {})
+
+        def provider_type_prop(self: Any) -> Optional[str]:
+            """Access provider_type from class attributes (single source of truth)."""
+            return getattr(self.__class__, '__provider_type__', None)
+
+        cls.config = property(config_prop)  # type: ignore[attr-defined]
+        cls.provider_type = property(provider_type_prop)  # type: ignore[attr-defined]
+
         # Register with global registry if available
         if registry is not None:
-            # Determine provider type - fail-fast validation, no fallbacks
-            if provider and provider_type:
-                raise ValueError("Cannot specify both 'provider' and 'provider_type'. Use 'provider_type'.")
-            
-            final_provider_type = provider_type or provider
-            if not final_provider_type:
-                raise ValueError(f"model_config '{name}' requires explicit provider_type parameter (e.g., 'llamacpp', 'openai')")
-            
             # If already a ResourceBase subclass, register directly
             if isinstance(cls, type) and issubclass(cls, ResourceBase):
                 # ResourceBase accepts only name and type parameters
@@ -81,9 +102,6 @@ def model_config(name: str, provider_type: Optional[str] = None, provider: Optio
             else:
                 # Wrap non-contract class in ModelResource
                 from flowlib.resources.models.model_resource import ModelResource
-                # Explicit config required - no fallbacks
-                if config is None:
-                    raise ValueError(f"model_config '{name}' requires explicit config parameter")
                 instance = ModelResource(
                     name=name,
                     provider_type=final_provider_type,
@@ -91,7 +109,7 @@ def model_config(name: str, provider_type: Optional[str] = None, provider: Optio
                     type="model_config",
                     model_path=config.get("model_path"),
                     model_name=config.get("model_name", name),
-                    model_type=config.get("model_type")
+                    chat_format=config.get("chat_format")
                 )
             registry.register(
                 name=name,
@@ -99,7 +117,7 @@ def model_config(name: str, provider_type: Optional[str] = None, provider: Optio
                 resource_type=ResourceType.MODEL_CONFIG,
                 **metadata
             )
-        
+
         return cls
     return decorator
 
@@ -123,7 +141,7 @@ def prompt(name: str, **metadata: Any) -> Callable[[type], type]:
     """
     def decorator(obj: type) -> type:
         registry = _get_resource_registry()
-        
+
         # Check if template exists before registration using safe attribute access
         template_exists = False
         try:
@@ -141,12 +159,12 @@ def prompt(name: str, **metadata: Any) -> Callable[[type], type]:
 
         if not template_exists:
             raise ValueError(f"Prompt '{name}' must have a 'template' attribute")
-        
+
         # Attach metadata to class
         obj.__resource_name__ = name  # type: ignore[attr-defined]
         obj.__resource_type__ = ResourceType.PROMPT_CONFIG  # type: ignore[attr-defined]
         obj.__resource_metadata__ = {'name': name, 'type': ResourceType.PROMPT, **metadata}  # type: ignore[attr-defined]
-        
+
         # Add default config only if it doesn't already exist using safe attribute access
         config_exists = False
         try:
@@ -169,7 +187,7 @@ def prompt(name: str, **metadata: Any) -> Callable[[type], type]:
                 "frequency_penalty": 0,
                 "presence_penalty": 0
             }
-        
+
         # Register with global registry if available
         if registry is not None:
             # If already a ResourceBase subclass, register directly
@@ -179,17 +197,17 @@ def prompt(name: str, **metadata: Any) -> Callable[[type], type]:
                 # For non-ResourceBase classes, call the resource decorator
                 decorated_obj = resource(name, ResourceType.PROMPT_CONFIG, **metadata)(obj)
                 return decorated_obj
-            
+
             registry.register(
                 name=name,
                 obj=instance,
                 resource_type=ResourceType.PROMPT_CONFIG,
                 **metadata
             )
-        
+
         # This object now conforms to PromptTemplate protocol
         return obj
-    
+
     return decorator
 
 def config(name: str, **metadata: Any) -> Callable[[type], type]:
@@ -232,9 +250,80 @@ def storage_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a storage configuration resource."""
     return resource(name, ResourceType.STORAGE_CONFIG, **metadata)
 
-def embedding_config(name: str, **metadata: Any) -> Callable[[type], type]:
-    """Register a class as an embedding configuration resource."""
-    return resource(name, ResourceType.EMBEDDING_CONFIG, **metadata)
+def embedding_config(name: str, provider_type: Optional[str] = None, provider: Optional[str] = None, config: Optional[dict[str, Any]] = None, **metadata: Any) -> Callable[[type], type]:
+    """Register a class as an embedding configuration resource.
+    If the decorated class is not a ResourceBase subclass, wrap it in EmbeddingResource.
+
+    Args:
+        name: Unique name for the embedding config
+        provider_type: Provider implementation to use (e.g., "llamacpp_embedding", "openai_embedding", "huggingface")
+        provider: DEPRECATED - use provider_type instead
+        config: Additional embedding configuration
+        **metadata: Additional metadata
+    """
+    def decorator(cls: type) -> type:
+        registry = _get_resource_registry()
+        if registry is None:
+            raise RuntimeError("Resource registry not initialized")
+
+        # Determine provider type - fail-fast validation, no fallbacks
+        if provider and provider_type:
+            raise ValueError("Cannot specify both 'provider' and 'provider_type'. Use 'provider_type'.")
+
+        final_provider_type = provider_type or provider
+        if not final_provider_type:
+            raise ValueError(f"embedding_config '{name}' requires explicit provider_type parameter (e.g., 'llamacpp_embedding', 'openai_embedding')")
+
+        # Explicit config required - no fallbacks
+        if config is None:
+            raise ValueError(f"embedding_config '{name}' requires explicit config parameter")
+
+        # Attach metadata to class - store all config data as class attributes (single source of truth)
+        cls.__resource_name__ = name  # type: ignore[attr-defined]
+        cls.__resource_type__ = ResourceType.EMBEDDING_CONFIG  # type: ignore[attr-defined]
+        cls.__resource_metadata__ = {'name': name, 'type': ResourceType.EMBEDDING_CONFIG, 'provider_type': final_provider_type, 'config': config, **metadata}  # type: ignore[attr-defined]
+
+        # Store provider_type and config as class attributes for single source of truth
+        cls.__provider_type__ = final_provider_type  # type: ignore[attr-defined]
+        cls.__config__ = config  # type: ignore[attr-defined]
+
+        # Add properties to expose config data from class attributes
+        def config_prop(self: Any) -> Dict[str, Any]:
+            """Access config from class attributes (single source of truth)."""
+            return getattr(self.__class__, '__config__', {})
+
+        def provider_type_prop(self: Any) -> Optional[str]:
+            """Access provider_type from class attributes (single source of truth)."""
+            return getattr(self.__class__, '__provider_type__', None)
+
+        cls.config = property(config_prop)  # type: ignore[attr-defined]
+        cls.provider_type = property(provider_type_prop)  # type: ignore[attr-defined]
+
+        # Register with global registry if available
+        if registry is not None:
+            # Always wrap embedding configs in EmbeddingResource for consistent structure
+            # regardless of base class, to ensure provider compatibility
+            from flowlib.resources.models.embedding_resource import EmbeddingResource
+            instance = EmbeddingResource(
+                name=name,
+                provider_type=final_provider_type,
+                config=config,
+                type="embedding_config",
+                model_path=config.get("model_path") or config.get("path"),
+                model_name=config.get("model_name", name),
+                dimensions=config.get("dimensions", 768),
+                max_length=config.get("max_length", 512),
+                normalize=config.get("normalize", True)
+            )
+            registry.register(
+                name=name,
+                obj=instance,
+                resource_type=ResourceType.EMBEDDING_CONFIG,
+                **metadata
+            )
+
+        return cls
+    return decorator
 
 def graph_db_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a graph database configuration resource."""
@@ -247,6 +336,24 @@ def message_queue_config(name: str, **metadata: Any) -> Callable[[type], type]:
 def agent_profile_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as an agent profile configuration resource."""
     return resource(name, ResourceType.AGENT_PROFILE_CONFIG, **metadata)
+
+def role_config(name: str, **metadata: Any) -> Callable[[type], type]:
+    """Register a class as a role configuration resource.
+
+    Args:
+        name: Unique name for the role (e.g., 'composer', 'software_engineer')
+        **metadata: Additional metadata about the role
+    """
+    return resource(name, ResourceType.ROLE_CONFIG, **metadata)
+
+def tool_category_config(name: str, **metadata: Any) -> Callable[[type], type]:
+    """Register a class as a tool category configuration resource.
+
+    Args:
+        name: Unique name for the tool category (e.g., 'music', 'software')
+        **metadata: Additional metadata about the tool category
+    """
+    return resource(name, ResourceType.TOOL_CATEGORY_CONFIG, **metadata)
 
 
 def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:

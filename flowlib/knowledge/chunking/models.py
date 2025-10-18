@@ -1,8 +1,10 @@
 """Models for smart chunking flow."""
 
+from typing import Any, Dict
+
 from pydantic import BaseModel, Field
-from typing import Dict, Any
-from flowlib.knowledge.models import DocumentContent, ExtractionConfig, ChunkingStrategy
+
+from flowlib.knowledge.models import ChunkingStrategy, DocumentContent, ExtractionConfig
 
 
 class ChunkingInput(BaseModel):

@@ -4,14 +4,16 @@ No fallbacks, no defaults, no optional fields unless explicitly required.
 """
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import Field
+
 from flowlib.core.models import StrictBaseModel
 
 
 class Neo4jAttributeData(StrictBaseModel):
     """Strict Neo4j attribute data model."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     name: str = Field(..., description="Attribute name")
     value: str = Field(..., description="Attribute value")
     confidence: float = Field(..., description="Confidence score")
@@ -22,7 +24,7 @@ class Neo4jAttributeData(StrictBaseModel):
 class Neo4jNodeData(StrictBaseModel):
     """Strict Neo4j node data model."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     id: str = Field(..., description="Node ID")
     type: str = Field(..., description="Node type")
     attributes: Dict[str, Neo4jAttributeData] = Field(..., description="Node attributes")
@@ -36,7 +38,7 @@ class Neo4jNodeData(StrictBaseModel):
 class Neo4jRelationshipData(StrictBaseModel):
     """Strict Neo4j relationship data model."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     id: str = Field(..., description="Relationship ID")
     type: str = Field(..., description="Relationship type")
     source_id: str = Field(..., description="Source node ID")
@@ -50,7 +52,7 @@ class Neo4jRelationshipData(StrictBaseModel):
 class Neo4jQueryResult(StrictBaseModel):
     """Strict Neo4j query result model."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     nodes: List[Neo4jNodeData] = Field(..., description="Result nodes")
     relationships: List[Neo4jRelationshipData] = Field(..., description="Result relationships")
     total_count: int = Field(..., description="Total result count")
@@ -60,7 +62,7 @@ class Neo4jQueryResult(StrictBaseModel):
 class Neo4jEntitySearchResult(StrictBaseModel):
     """Strict Neo4j entity search result."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     entity_id: str = Field(..., description="Entity ID")
     entity_type: str = Field(..., description="Entity type")
     score: float = Field(..., description="Search relevance score")
@@ -70,7 +72,7 @@ class Neo4jEntitySearchResult(StrictBaseModel):
 class Neo4jBatchOperation(StrictBaseModel):
     """Strict Neo4j batch operation model."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     operation_type: str = Field(..., description="Type of operation")
     entity_data: Dict[str, Any] = Field(..., description="Entity data")
     result: Optional[Dict[str, Any]] = Field(None, description="Operation result")
@@ -81,7 +83,7 @@ class Neo4jBatchOperation(StrictBaseModel):
 class Neo4jConnectionInfo(StrictBaseModel):
     """Strict Neo4j connection information."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     uri: str = Field(..., description="Neo4j URI")
     database: str = Field(..., description="Database name")
     username: str = Field(..., description="Username")
@@ -92,7 +94,7 @@ class Neo4jConnectionInfo(StrictBaseModel):
 class Neo4jConstraintInfo(StrictBaseModel):
     """Strict Neo4j constraint information."""
     # Inherits strict configuration from StrictBaseModel
-    
+
     name: str = Field(..., description="Constraint name")
     type: str = Field(..., description="Constraint type")
     entity_type: str = Field(..., description="Entity type")

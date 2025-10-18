@@ -1,17 +1,18 @@
 """Models for graph storage flow."""
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field
 
 from flowlib.knowledge.models import (
+    DocumentContent,
+    Entity,
+    GraphEdge,
+    GraphNode,
+    GraphStatistics,
     GraphStoreInput,
     GraphStoreOutput,
-    GraphNode,
-    GraphEdge,
-    GraphStatistics,
-    Entity,
     Relationship,
-    DocumentContent
 )
 
 
@@ -46,7 +47,7 @@ class GraphRelationship(BaseModel):
 __all__ = [
     "GraphStoreInput",
     "GraphStoreOutput",
-    "GraphNode", 
+    "GraphNode",
     "GraphEdge",
     "GraphStatistics",
     "Entity",

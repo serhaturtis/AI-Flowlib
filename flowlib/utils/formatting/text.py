@@ -5,7 +5,7 @@ including handling escape sequences and other common text transformations.
 """
 
 import re
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 def process_escape_sequences(text: str) -> str:
@@ -22,17 +22,17 @@ def process_escape_sequences(text: str) -> str:
     """
     if not text:
         return ""
-        
+
     # Replace common literal escape sequences with their character representation
     # Start with double backslashes (\\n) as they may appear in JSON strings
     text = text.replace('\\\\n', '\n')
     text = text.replace('\\n', '\n')
     text = text.replace('\\t', '\t')
     text = text.replace('\\r', '\r')
-    
+
     # Handle unicode escape sequences like \u00A0
     text = re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), text)
-    
+
     return text
 
 
@@ -49,12 +49,12 @@ def truncate_text(text: str, max_length: int, add_ellipsis: bool = True) -> str:
     """
     if not text or len(text) <= max_length:
         return text
-        
+
     truncated = text[:max_length]
     if add_ellipsis:
         # Replace last three chars with ellipsis if needed
         truncated = truncated[:-3] + "..."
-        
+
     return truncated
 
 
@@ -70,9 +70,9 @@ def format_key_value_pairs(pairs: Dict[str, Any], delimiter: str = ": ") -> str:
     """
     if not pairs:
         return ""
-        
+
     lines = []
     for key, value in pairs.items():
         lines.append(f"{key}{delimiter}{value}")
-        
-    return "\n".join(lines) 
+
+    return "\n".join(lines)

@@ -4,23 +4,30 @@ This module provides a concrete implementation of the GraphDBProvider
 for JanusGraph, a distributed graph database based on Apache TinkerPop.
 """
 
-import logging
 import json
-from typing import Dict, List, Optional, Any, cast
+import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional, cast
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from pydantic import Field
+
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
+
 # Removed ProviderType import - using config-driven provider access
 from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
-from pydantic import Field
+from flowlib.providers.graph.janus.models import JanusAttributeData, JanusEntityData
 from flowlib.providers.graph.models import (
-    Entity, EntityAttribute, EntityRelationship, GraphStoreResult,
-    EntitySearchResult, RelationshipSearchResult, GraphQueryResult,
-    GraphDeleteResult
+    Entity,
+    EntityAttribute,
+    EntityRelationship,
+    EntitySearchResult,
+    GraphDeleteResult,
+    GraphQueryResult,
+    GraphStoreResult,
+    RelationshipSearchResult,
 )
-from flowlib.providers.graph.janus.models import JanusEntityData, JanusAttributeData
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +54,19 @@ class _DefaultTraversalStep:
 
 # Define dummy models for type annotations when gremlin-python is not installed
 try:
-    from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection  # type: ignore[import-untyped]
     from gremlin_python.driver.client import Client  # type: ignore[import-untyped]
-    from gremlin_python.process.anonymous_traversal import traversal  # type: ignore[import-untyped]
-    from gremlin_python.process.graph_traversal import __  # type: ignore[import-untyped]
-    from gremlin_python.driver.protocol.graph_binary_message_serializer import GraphBinaryMessageSerializer  # type: ignore[import-untyped]
+    from gremlin_python.driver.driver_remote_connection import (
+        DriverRemoteConnection,  # type: ignore[import-untyped]
+    )
+    from gremlin_python.driver.protocol.graph_binary_message_serializer import (
+        GraphBinaryMessageSerializer,  # type: ignore[import-untyped]
+    )
+    from gremlin_python.process.anonymous_traversal import (
+        traversal,  # type: ignore[import-untyped]
+    )
+    from gremlin_python.process.graph_traversal import (
+        __,  # type: ignore[import-untyped]
+    )
     JANUS_AVAILABLE = True
 except ImportError:
     logger.warning("gremlin-python package not found. Install with 'pip install gremlinpython'")
@@ -74,16 +89,16 @@ class JanusProviderSettings(GraphDBProviderSettings):
     3. Graph traversal configuration
     4. Connection pool and timeout settings
     """
-    
+
     # JanusGraph connection settings
     url: str = Field(default="ws://localhost:8182/gremlin", description="JanusGraph Gremlin server WebSocket URL")
     username: str = Field(default="", description="Username for authentication (if using authentication)")
     password: str = Field(default="", description="Password for authentication (if using authentication)")
-    
+
     # Graph settings
     graph_name: str = Field(default="g", description="Name of the graph instance")
     traversal_source: str = Field(default="g", description="Name of the traversal source")
-    
+
     # Connection settings
     connection_pool_size: int = Field(default=4, description="Size of the connection pool")
     max_batch_size: int = Field(default=100, description="Maximum number of entities to process in a single batch")
@@ -100,7 +115,7 @@ class JanusGraphProvider(GraphDBProvider):
     This provider interfaces with JanusGraph using the Gremlin Python client,
     mapping entities and relationships to JanusGraph's property graph model.
     """
-    
+
     def __init__(self, name: str = "janusgraph", provider_type: str = "graph_db", settings: Optional[JanusProviderSettings] = None):
         """Initialize JanusGraph graph database provider.
         
@@ -112,11 +127,11 @@ class JanusGraphProvider(GraphDBProvider):
         # Create settings explicitly if not provided
         if settings is None:
             settings = JanusProviderSettings()
-        
+
         super().__init__(name=name, provider_type=provider_type, settings=settings)
         self._client: Optional[Client] = None
         self._g = None  # Traversal source
-        
+
     def _parse_entity_data_strict(self, entity_data: Dict[str, Any]) -> JanusEntityData:
         """Parse JanusGraph entity data with strict validation.
         
@@ -142,11 +157,11 @@ class JanusGraphProvider(GraphDBProvider):
             raise ValueError("Entity data missing required 'importance' field")
         if "last_updated" not in entity_data:
             raise ValueError("Entity data missing required 'last_updated' field")
-        
+
         # Parse attributes strictly - handle JSON string or dict
         attributes_raw = entity_data["attributes"]
         attributes = {}
-        
+
         if isinstance(attributes_raw, str):
             try:
                 import json
@@ -157,20 +172,20 @@ class JanusGraphProvider(GraphDBProvider):
             attributes_dict = attributes_raw
         else:
             raise ValueError(f"Attributes must be dict or JSON string, got {type(attributes_raw)}")
-        
+
         # Parse each attribute strictly
         for attr_name, attr_data in attributes_dict.items():
             if not isinstance(attr_data, dict):
                 raise ValueError(f"Attribute '{attr_name}' must be a dict, got {type(attr_data)}")
-            
+
             # Validate all required attribute fields
             required_fields = ["value", "confidence", "source", "timestamp"]
             for field in required_fields:
                 if field not in attr_data:
                     raise ValueError(f"Attribute '{attr_name}' missing required field '{field}'")
-            
+
             attributes[attr_name] = JanusAttributeData(**attr_data)
-        
+
         return JanusEntityData(
             id=entity_data["id"],
             type=entity_data["type"],
@@ -179,7 +194,7 @@ class JanusGraphProvider(GraphDBProvider):
             importance=entity_data["importance"],
             last_updated=entity_data["last_updated"]
         )
-        
+
     async def initialize(self) -> None:
         """Initialize the JanusGraph connection.
         
@@ -206,13 +221,13 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-        
+
         settings = cast(JanusProviderSettings, self.settings)
-        
+
         try:
             # Set up serializer
             message_serializer = GraphBinaryMessageSerializer()
-            
+
             # Create Gremlin client
             self._client = Client(
                 settings.url,
@@ -224,20 +239,20 @@ class JanusGraphProvider(GraphDBProvider):
                 read_timeout=settings.read_timeout,
                 write_timeout=settings.write_timeout
             )
-            
+
             # Create remote connection for traversals
             connection = DriverRemoteConnection(settings.url, settings.traversal_source)
             self._g = traversal().withRemote(connection)
-            
+
             # Verify connection by executing a simple query
             self._client.submit('g.V().limit(1).count()').all().result()
-            
+
             # Create schema (indexes)
             await self._setup_schema()
-            
+
             self._initialized = True
             logger.info(f"JanusGraph provider '{self.name}' initialized successfully")
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to connect to JanusGraph: {str(e)}",
@@ -256,7 +271,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def shutdown(self) -> None:
         """Shut down the JanusGraph connection.
         
@@ -268,7 +283,7 @@ class JanusGraphProvider(GraphDBProvider):
             self._g = None
             self._initialized = False
             logger.info(f"JanusGraph provider '{self.name}' shut down")
-    
+
     async def _setup_schema(self) -> None:
         """Set up JanusGraph schema (indexes).
         
@@ -282,7 +297,7 @@ class JanusGraphProvider(GraphDBProvider):
         try:
             # JanusGraph schema management is typically done via the management API
             # This uses execute_query to send schema management commands
-            
+
             # Create vertex label for Entity if it doesn't exist
             await self._execute_query("""
                 mgmt = graph.openManagement()
@@ -291,7 +306,7 @@ class JanusGraphProvider(GraphDBProvider):
                 }
                 mgmt.commit()
             """)
-            
+
             # Create edge label for RELATES_TO if it doesn't exist
             await self._execute_query("""
                 mgmt = graph.openManagement()
@@ -300,7 +315,7 @@ class JanusGraphProvider(GraphDBProvider):
                 }
                 mgmt.commit()
             """)
-            
+
             # Create property keys
             await self._execute_query("""
                 mgmt = graph.openManagement()
@@ -321,7 +336,7 @@ class JanusGraphProvider(GraphDBProvider):
                 }
                 mgmt.commit()
             """)
-            
+
             # Create composite index for Entity.id
             await self._execute_query("""
                 mgmt = graph.openManagement()
@@ -331,7 +346,7 @@ class JanusGraphProvider(GraphDBProvider):
                 }
                 mgmt.commit()
             """)
-            
+
             # Create index for Entity.type
             await self._execute_query("""
                 mgmt = graph.openManagement()
@@ -341,7 +356,7 @@ class JanusGraphProvider(GraphDBProvider):
                 }
                 mgmt.commit()
             """)
-            
+
             # Create index for edge relation_type
             await self._execute_query("""
                 mgmt = graph.openManagement()
@@ -351,12 +366,12 @@ class JanusGraphProvider(GraphDBProvider):
                 }
                 mgmt.commit()
             """)
-            
+
         except Exception as e:
             logger.warning(f"Failed to set up JanusGraph schema: {str(e)}")
             # Continue initialization even if schema setup fails
             # as the schema might already exist or will be managed externally
-    
+
     async def _execute_query(self, query: str, bindings: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Execute a Gremlin query against JanusGraph.
         
@@ -387,12 +402,12 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-        
+
         try:
             # Execute query with bindings
             bindings = bindings or {}
             result = self._client.submit(query, bindings).all().result()
-            
+
             # Convert result to dictionaries
             records = []
             for item in result:
@@ -413,9 +428,9 @@ class JanusGraphProvider(GraphDBProvider):
                         # Fallback to string representation for non-dict-convertible items
                         logger.debug(f"Could not convert graph item to dict, using string representation: {conversion_error}")
                         records.append({"value": str(item)})
-            
+
             return records
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to execute JanusGraph query: {str(e)}",
@@ -434,18 +449,18 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _element_to_dict(self, element: Any) -> Dict[str, Any]:
         """Convert a Gremlin graph element (vertex/edge) to a dictionary."""
         result: Dict[str, Any] = {}
-        
+
         # Extract element ID
         result["_id"] = str(element.id)
-        
+
         # Extract element label
         if hasattr(element, 'label'):
             result["_label"] = element.label
-            
+
         # Extract properties
         if hasattr(element, 'properties'):
             for key, value in element.properties.items():
@@ -457,7 +472,7 @@ class JanusGraphProvider(GraphDBProvider):
                         result[key] = [v.value for v in value]
                 else:
                     result[key] = value
-        
+
         return result
 
     def _element_to_entity(self, element: Any) -> Optional[Entity]:
@@ -526,7 +541,7 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             # Convert entity to JanusGraph compatible format
             entity_props = {
@@ -536,7 +551,7 @@ class JanusGraphProvider(GraphDBProvider):
                 "importance": entity.importance,
                 "last_updated": entity.last_updated
             }
-            
+
             # Convert attributes to a serializable format
             attributes = {}
             for attr_name, attr in entity.attributes.items():
@@ -548,13 +563,13 @@ class JanusGraphProvider(GraphDBProvider):
                     "timestamp": attr.timestamp
                 }
             entity_props["attributes"] = json.dumps(attributes)
-            
+
             # Check if entity exists (this is case-sensitive)
             existing = await self._execute_query(
                 "g.V().has('Entity', 'id', id).hasNext()",
                 {"id": entity.id}
             )
-            
+
             if existing and len(existing) > 0 and "value" in existing[0] and existing[0]["value"]:
                 # Update existing entity
                 await self._execute_query(
@@ -596,7 +611,7 @@ class JanusGraphProvider(GraphDBProvider):
                         "attributes": json.dumps(attributes)
                     }
                 )
-            
+
             # Add relationships
             for rel in entity.relationships:
                 await self.add_relationship(
@@ -605,7 +620,7 @@ class JanusGraphProvider(GraphDBProvider):
                     rel.relation_type,
                     rel
                 )
-            
+
             return GraphStoreResult(
                 success=True,
                 stored_entities=[entity.id],
@@ -615,7 +630,7 @@ class JanusGraphProvider(GraphDBProvider):
                 error_details={},
                 execution_time_ms=None
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to add entity: {str(e)}",
@@ -634,7 +649,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def get_entity(self, entity_id: str) -> Optional[Entity]:
         """Get an entity by ID from JanusGraph.
         
@@ -664,7 +679,7 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             # Get entity with its properties
             result = await self._execute_query(
@@ -680,15 +695,15 @@ class JanusGraphProvider(GraphDBProvider):
                 """,
                 {"id": entity_id}
             )
-            
+
             if not result:
                 return None
-                
+
             entity_data = result[0]
-            
+
             # Parse entity data using strict parser - no fallbacks
             janus_entity = self._parse_entity_data_strict(entity_data)
-            
+
             # Convert Janus attributes to Entity attributes
             entity_attributes = {}
             for attr_name, janus_attr in janus_entity.attributes.items():
@@ -699,7 +714,7 @@ class JanusGraphProvider(GraphDBProvider):
                     source=janus_attr.source,
                     timestamp=janus_attr.timestamp
                 )
-            
+
             # Get relationships
             rel_result = await self._execute_query(
                 """
@@ -714,7 +729,7 @@ class JanusGraphProvider(GraphDBProvider):
                 """,
                 {"id": entity_id}
             )
-            
+
             relationships = []
             for rel in rel_result:
                 # Validate required relationship fields - no fallbacks
@@ -728,7 +743,7 @@ class JanusGraphProvider(GraphDBProvider):
                     raise ValueError("Relationship missing required 'source' field")
                 if "timestamp" not in rel:
                     raise ValueError("Relationship missing required 'timestamp' field")
-                    
+
                 relationships.append(
                     EntityRelationship(
                         relation_type=rel["relation_type"],
@@ -738,7 +753,7 @@ class JanusGraphProvider(GraphDBProvider):
                         timestamp=rel["timestamp"]
                     )
                 )
-            
+
             # Create Entity object using strict parsed data
             entity = Entity(
                 id=janus_entity.id,
@@ -751,9 +766,9 @@ class JanusGraphProvider(GraphDBProvider):
                 vector_id=None,
                 last_updated=janus_entity.last_updated
             )
-            
+
             return entity
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to get entity: {str(e)}",
@@ -772,7 +787,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def add_relationship(
         self,
         source_id: str,
@@ -829,7 +844,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def _entity_exists(self, entity_id: str) -> bool:
         """Check if an entity exists in JanusGraph.
         
@@ -843,9 +858,9 @@ class JanusGraphProvider(GraphDBProvider):
             "g.V().has('Entity', 'id', id).hasNext()",
             {"id": entity_id}
         )
-        
+
         return bool(result and len(result) > 0 and "value" in result[0] and result[0]["value"])
-    
+
     async def query_relationships(
         self,
         entity_id: str,
@@ -890,7 +905,7 @@ class JanusGraphProvider(GraphDBProvider):
                 if "r" not in rec:
                     raise ValueError("Query result missing required 'r' field")
                 r = rec["r"]
-                
+
                 # Validate target exists - no fallbacks
                 target = None
                 if "target" in rec:
@@ -899,7 +914,7 @@ class JanusGraphProvider(GraphDBProvider):
                     target = rec["source"]
                 else:
                     raise ValueError("Query result missing both 'target' and 'source' fields")
-                    
+
                 # Validate all required relationship fields - no fallbacks
                 if "relation_type" not in r:
                     raise ValueError("Relationship missing required 'relation_type' field")
@@ -911,7 +926,7 @@ class JanusGraphProvider(GraphDBProvider):
                     raise ValueError("Relationship missing required 'timestamp' field")
                 if "id" not in target:
                     raise ValueError("Target entity missing required 'id' field")
-                    
+
                 relationships.append(EntityRelationship(
                     relation_type=r["relation_type"],
                     target_entity=target["id"],
@@ -946,11 +961,11 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def traverse(
-        self, 
-        start_id: str, 
-        relation_types: Optional[List[str]] = None, 
+        self,
+        start_id: str,
+        relation_types: Optional[List[str]] = None,
         max_depth: int = 2
     ) -> List[Entity]:
         """Traverse the graph starting from an entity in JanusGraph.
@@ -983,18 +998,18 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             # Check if start entity exists
             if not await self._entity_exists(start_id):
                 return []
-                
+
             # Build relation type filter
             rel_filter = ""
             if relation_types:
                 rel_types_str = ", ".join([f"'{rel}'" for rel in relation_types])
                 rel_filter = f".has('relation_type', within({rel_types_str}))"
-                
+
             # Perform traversal
             query = f"""
             g.V().has('Entity', 'id', startId)
@@ -1003,31 +1018,31 @@ class JanusGraphProvider(GraphDBProvider):
               .times({max_depth})
               .values('id')
             """
-            
+
             # Execute traversal
             results = await self._execute_query(
                 query,
                 {"startId": start_id}
             )
-            
+
             # Collect entity IDs
             entity_ids = set()
             for result in results:
                 if isinstance(result, dict) and "value" in result:
                     entity_ids.add(result["value"])
-                    
+
             # Add start entity ID
             entity_ids.add(start_id)
-            
+
             # Retrieve full entity objects
             entities = []
             for entity_id in entity_ids:
                 entity = await self.get_entity(entity_id)
                 if entity:
                     entities.append(entity)
-                    
+
             return entities
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to traverse graph: {str(e)}",
@@ -1046,7 +1061,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def query(
         self,
         query: str,
@@ -1147,7 +1162,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def _find_entities_by_type(self, entity_type: str) -> List[Dict[str, Any]]:
         """Find entities by type in JanusGraph."""
         results = await self._execute_query(
@@ -1159,9 +1174,9 @@ class JanusGraphProvider(GraphDBProvider):
             """,
             {"type": entity_type}
         )
-        
+
         return results
-        
+
     async def _find_entities_by_name(self, name: str) -> List[Dict[str, Any]]:
         """Find entities by name attribute in JanusGraph."""
         # This requires searching in the JSON attributes field
@@ -1175,16 +1190,16 @@ class JanusGraphProvider(GraphDBProvider):
             """,
             {"name": name}
         )
-        
+
         return results
-        
+
     async def _find_neighbors(self, entity_id: str, relation_type: Optional[str]) -> List[Dict[str, Any]]:
         """Find neighboring entities in JanusGraph."""
         # Construct filter for relation type
         rel_filter = ""
         if relation_type:
             rel_filter = ".has('relation_type', relType)"
-            
+
         query = f"""
         g.V().has('Entity', 'id', id)
           .outE('RELATES_TO'){rel_filter}
@@ -1195,7 +1210,7 @@ class JanusGraphProvider(GraphDBProvider):
           .by(select('rel').values('relation_type'))
           .by(valueMap())
         """
-        
+
         results = await self._execute_query(
             query,
             {
@@ -1203,9 +1218,9 @@ class JanusGraphProvider(GraphDBProvider):
                 "relType": relation_type
             }
         )
-        
+
         return results
-        
+
     async def _find_path(self, from_id: str, to_id: str, max_depth: int) -> List[Dict[str, Any]]:
         """Find path between entities in JanusGraph."""
         query = """
@@ -1220,7 +1235,7 @@ class JanusGraphProvider(GraphDBProvider):
           .by('id')
           .by(valueMap())
         """
-        
+
         results = await self._execute_query(
             query,
             {
@@ -1228,13 +1243,13 @@ class JanusGraphProvider(GraphDBProvider):
                 "toId": to_id
             }
         )
-        
+
         # Update positions
         for i, result in enumerate(results):
             result["position"] = i
-            
+
         return results
-    
+
     async def delete_entity(self, entity_id: str) -> GraphDeleteResult:
         """Delete an entity and its relationships from JanusGraph.
         
@@ -1264,7 +1279,7 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             # Check if entity exists
             if not await self._entity_exists(entity_id):
@@ -1277,7 +1292,7 @@ class JanusGraphProvider(GraphDBProvider):
                     error_details={},
                     execution_time_ms=None
                 )
-                
+
             # Delete entity and its relationships
             await self._execute_query(
                 """
@@ -1295,7 +1310,7 @@ class JanusGraphProvider(GraphDBProvider):
                 error_details={},
                 execution_time_ms=None
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to delete entity: {str(e)}",
@@ -1314,11 +1329,11 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def delete_relationship(
-        self, 
-        source_id: str, 
-        target_entity: str, 
+        self,
+        source_id: str,
+        target_entity: str,
         relation_type: Optional[str] = None
     ) -> bool:
         """Delete relationship(s) between entities in JanusGraph.
@@ -1351,13 +1366,13 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             # Construct relation type filter
             rel_filter = ""
             if relation_type:
                 rel_filter = ".has('relation_type', relType)"
-                
+
             # Delete matching edges
             result = await self._execute_query(
                 f"""
@@ -1373,7 +1388,7 @@ class JanusGraphProvider(GraphDBProvider):
                     "relType": relation_type
                 }
             )
-            
+
             # Check if any edges were deleted
             if result and len(result) > 0 and "value" in result[0]:
                 deleted_count = result[0]["value"]
@@ -1381,7 +1396,7 @@ class JanusGraphProvider(GraphDBProvider):
                 deleted_count = 0
             # Ensure we return a boolean by explicitly converting
             return bool(deleted_count > 0)
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to delete relationship: {str(e)}",
@@ -1400,7 +1415,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def remove_relationship(
         self,
         source_id: str,
@@ -1441,7 +1456,7 @@ class JanusGraphProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def bulk_add_entities(self, entities: List[Entity]) -> GraphStoreResult:
         """Add multiple entities in bulk to JanusGraph.
         
@@ -1473,22 +1488,22 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             settings = cast(JanusProviderSettings, self.settings)
             added_ids = []
-            
+
             # Process in batches
             batch_size = settings.max_batch_size
             for i in range(0, len(entities), batch_size):
                 batch = entities[i:i+batch_size]
-                
+
                 # Add each entity in the batch
                 for entity in batch:
                     result = await self.add_entity(entity)
                     if result.success:
                         added_ids.extend(result.stored_entities)
-                    
+
             return GraphStoreResult(
                 success=len(added_ids) == len(entities),
                 stored_entities=added_ids,
@@ -1498,7 +1513,7 @@ class JanusGraphProvider(GraphDBProvider):
                 error_details={},
                 execution_time_ms=None
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to bulk add entities: {str(e)}",
@@ -1559,23 +1574,23 @@ class JanusGraphProvider(GraphDBProvider):
 
         try:
             start_time = datetime.now()
-            
+
             # Build Gremlin query based on search criteria
             query_parts = ["g.V().hasLabel('Entity')"]
             params = {}
-            
+
             if entity_type:
                 query_parts.append(".has('type', entity_type)")
                 params["entity_type"] = entity_type
-                
+
             if query:
                 # Search in entity ID or attributes
                 query_parts.append(".where(__.has('id', containing(query_text)).or(__.has('attributes', containing(query_text))))")
                 params["query_text"] = query
-                
+
             # Add limit
             query_parts.append(f".limit({limit})")
-            
+
             # Project the results
             query_parts.append("""
                 .project('id', 'type', 'source', 'importance', 'last_updated', 'attributes')
@@ -1586,19 +1601,19 @@ class JanusGraphProvider(GraphDBProvider):
                 .by('last_updated')
                 .by('attributes')
             """)
-            
+
             gremlin_query = "".join(query_parts)
-            
+
             # Execute query
             results = await self._execute_query(gremlin_query, params)
-            
+
             # Convert to Entity objects
             entities = []
             for result in results:
                 try:
                     # Use strict parser for all entity data
                     janus_entity = self._parse_entity_data_strict(result)
-                    
+
                     # Convert Janus attributes to Entity attributes
                     entity_attributes = {}
                     for attr_name, janus_attr in janus_entity.attributes.items():
@@ -1609,7 +1624,7 @@ class JanusGraphProvider(GraphDBProvider):
                             source=janus_attr.source,
                             timestamp=janus_attr.timestamp
                         )
-                    
+
                     entity = Entity(
                         id=janus_entity.id,
                         type=janus_entity.type,
@@ -1622,14 +1637,14 @@ class JanusGraphProvider(GraphDBProvider):
                         last_updated=janus_entity.last_updated
                     )
                     entities.append(entity)
-                    
+
                 except Exception as e:
                     logger.warning(f"Failed to convert search result to entity: {e}")
                     continue
-                    
+
             end_time = datetime.now()
             execution_time = (end_time - start_time).total_seconds() * 1000
-            
+
             return EntitySearchResult(
                 success=True,
                 entities=entities,
@@ -1642,7 +1657,7 @@ class JanusGraphProvider(GraphDBProvider):
                     "limit": limit
                 }
             )
-            
+
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to search entities: {str(e)}",
@@ -1660,4 +1675,4 @@ class JanusGraphProvider(GraphDBProvider):
                     retry_count=0
                 ),
                 cause=e
-            ) 
+            )

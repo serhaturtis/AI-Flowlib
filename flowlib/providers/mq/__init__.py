@@ -4,9 +4,9 @@ This package contains providers for message queue integration, offering a common
 interface for working with different message queue systems.
 """
 
-from .base import MQProvider, MQProviderSettings, MessageMetadata
-from .rabbitmq.provider import RabbitMQProvider, RabbitMQProviderSettings
+from .base import MessageMetadata, MQProvider, MQProviderSettings
 from .kafka.provider import KafkaMQProvider, KafkaProviderSettings
+from .rabbitmq.provider import RabbitMQProvider, RabbitMQProviderSettings
 
 __all__ = [
     "MQProvider",
@@ -16,4 +16,4 @@ __all__ = [
     "RabbitMQProviderSettings",
     "KafkaMQProvider",
     "KafkaProviderSettings"
-] 
+]

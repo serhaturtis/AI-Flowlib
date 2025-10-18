@@ -25,14 +25,6 @@ class DevOpsAgentConfig(AgentConfigResource):
             llm_name="default-llm",
             temperature=0.5,
             max_iterations=12,
-            enable_memory=True,
             enable_learning=True,
-            enable_thinking=True,
-            auto_decomposition=True,
-            verbose=False,
-            additional_settings={
-                "prefer_automation": True,
-                "check_system_health": True,
-                "validate_deployments": True
-            }
+            verbose=False
         )

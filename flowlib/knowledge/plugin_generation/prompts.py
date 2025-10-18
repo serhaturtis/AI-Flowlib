@@ -1,14 +1,14 @@
 """Prompts for plugin generation."""
 
+from flowlib.providers.llm import PromptConfigOverride
 from flowlib.resources.decorators.decorators import prompt
 from flowlib.resources.models.base import ResourceBase
-from flowlib.providers.llm import PromptConfigOverride
 
 
 @prompt(name="plugin-manifest-generation")
 class PluginManifestPrompt(ResourceBase):
     """Generate plugin manifest metadata."""
-    
+
     template: str = """
 Generate a comprehensive manifest for a knowledge plugin based on the extracted data:
 
@@ -28,7 +28,7 @@ Generate appropriate:
 
 Consider the extracted data quality and coverage when determining metadata.
 """
-    
+
     config: PromptConfigOverride = PromptConfigOverride(
         temperature=0.3,
         max_tokens=800
@@ -38,7 +38,7 @@ Consider the extracted data quality and coverage when determining metadata.
 @prompt(name="plugin-readme-generation")
 class PluginReadmePrompt(ResourceBase):
     """Generate plugin README documentation."""
-    
+
     template: str = """
 Generate comprehensive README documentation for a knowledge plugin:
 
@@ -62,7 +62,7 @@ Generate sections for:
 
 Make it informative and user-friendly for developers who will use this plugin.
 """
-    
+
     config: PromptConfigOverride = PromptConfigOverride(
         temperature=0.4,
         max_tokens=1500
@@ -72,7 +72,7 @@ Make it informative and user-friendly for developers who will use this plugin.
 @prompt(name="plugin-provider-optimization")
 class PluginProviderOptimizationPrompt(ResourceBase):
     """Optimize plugin provider code for specific use cases."""
-    
+
     template: str = """
 Optimize the knowledge plugin provider implementation for:
 
@@ -94,7 +94,7 @@ Suggest optimizations for:
 
 Provide specific code improvements and explain the reasoning.
 """
-    
+
     config: PromptConfigOverride = PromptConfigOverride(
         temperature=0.2,
         max_tokens=2000

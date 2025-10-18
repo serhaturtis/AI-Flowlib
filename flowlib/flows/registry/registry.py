@@ -7,9 +7,9 @@ enabling easy access to flow instances and metadata.
 import logging
 from typing import Any, Dict, List, Optional, Type, Union, cast
 
-from flowlib.flows.models.metadata import FlowMetadata
 from flowlib.core.registry.registry import BaseRegistry
 from flowlib.flows.base.base import Flow
+from flowlib.flows.models.metadata import FlowMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +21,18 @@ class FlowRegistry(BaseRegistry[Flow]):
     This registry stores information about flows, including their input/output models,
     metadata, and instances. The stage system has been removed in favor of subflow composition.
     """
-    
+
     def __init__(self) -> None:
         """Initialize the stage registry with empty collections."""
         # Dictionary mapping flow names to flow info
         self._flows: Dict[str, Dict[str, Any]] = {}
-        
+
         # Store flow instances
         self._flow_instances: Dict[str, object] = {}
-        
+
         # Store flow metadata
         self._flow_metadata: Dict[str, FlowMetadata] = {}
-    
+
     def register_flow(self, flow_name: str, flow_class_or_instance: Optional[Union[Type['Flow'], 'Flow']] = None) -> None:
         """Register a flow with the registry.
         
@@ -43,7 +43,7 @@ class FlowRegistry(BaseRegistry[Flow]):
         if flow_name in self._flows:
             logger.debug(f"Flow '{flow_name}' already exists in registry. Skipping...")
             return
-        
+
         if flow_class_or_instance is None:
             # Register flow name only
             self._flows[flow_name] = {
@@ -63,21 +63,21 @@ class FlowRegistry(BaseRegistry[Flow]):
             else:
                 flow_instance = flow_class_or_instance
                 flow_class = flow_instance.__class__
-            
+
             # Get metadata from the instance if possible
             metadata = {}
             if flow_instance is not None and hasattr(flow_instance, "__flow_metadata__"):
                 metadata = flow_instance.__flow_metadata__
             elif hasattr(flow_class, "__flow_metadata__"):
                 metadata = flow_class.__flow_metadata__
-            
+
             # Register the flow
             self._flows[flow_name] = {
                 "name": flow_name,
                 "metadata": metadata
             }
             self._flow_instances[flow_name] = flow_instance
-            
+
             # Create and store FlowMetadata for the flow
             if flow_instance:
                 try:
@@ -87,9 +87,9 @@ class FlowRegistry(BaseRegistry[Flow]):
                     logger.debug(f"Created and stored metadata for flow: {flow_name}")
                 except Exception as e:
                     logger.warning(f"Failed to create metadata for flow '{flow_name}': {e}")
-            
+
             logger.debug(f"Registered flow: {flow_name}")
-    
+
     # BaseRegistry interface implementation
     def register(self, name: str, obj: object, **metadata: object) -> None:
         """Register an object with the registry (BaseRegistry interface).
@@ -100,7 +100,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             **metadata: Additional metadata about the flow
         """
         self.register_flow(name, cast(Union[Type[Flow], Flow, None], obj))
-    
+
     def get(self, name: str, expected_type: Optional[Type[Any]] = None) -> Flow[Any]:
         """Get a flow by name with optional type checking (BaseRegistry interface).
         
@@ -123,7 +123,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             raise TypeError(f"Flow '{name}' is not of expected type {expected_type}")
 
         return cast(Flow[Any], flow)
-    
+
     def contains(self, name: str) -> bool:
         """Check if a flow exists in the registry (BaseRegistry interface).
         
@@ -134,7 +134,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             True if the flow exists, False otherwise
         """
         return self.contains_flow(name)
-    
+
     def list(self, filter_criteria: Optional[Dict[str, Any]] = None) -> List[str]:
         """List registered flows matching criteria (BaseRegistry interface).
         
@@ -145,18 +145,18 @@ class FlowRegistry(BaseRegistry[Flow]):
             List of flow names matching the criteria
         """
         flows = self.get_flows()
-        
+
         if filter_criteria is None:
             return flows
-        
+
         # Apply filtering logic
         filtered_flows = []
         for flow_name in flows:
             if self._matches_criteria(flow_name, filter_criteria):
                 filtered_flows.append(flow_name)
-        
+
         return filtered_flows
-    
+
     def _matches_criteria(self, flow_name: str, criteria: Dict[str, Any]) -> bool:
         """Check if a flow matches the given criteria.
         
@@ -169,10 +169,10 @@ class FlowRegistry(BaseRegistry[Flow]):
         """
         if flow_name not in self._flows:
             return False
-        
+
         flow_info = self._flows[flow_name]
         flow_metadata = flow_info["metadata"] if "metadata" in flow_info else {}
-        
+
         for key, value in criteria.items():
             if key == "agent_selectable":
                 # Special criteria for agent-selectable flows
@@ -184,15 +184,15 @@ class FlowRegistry(BaseRegistry[Flow]):
                     return False
             else:
                 return False
-        
+
         return True
-    
+
     # Stage registration removed - use subflow composition instead
-    
+
     # Stage retrieval removed - use subflow composition instead
-    
+
     # Stage listing removed - use subflow composition instead
-    
+
     def contains_flow(self, flow_name: str) -> bool:
         """
         Check if a flow is registered.
@@ -204,7 +204,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             bool: True if the flow is registered, False otherwise
         """
         return flow_name in self._flows
-    
+
     def get_flows(self) -> List[str]:
         """
         Get all registered flow names.
@@ -213,7 +213,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             List[str]: The list of flow names.
         """
         return sorted(self._flows.keys())
-    
+
     def get_flow_metadata(self, flow_name: str) -> Optional[FlowMetadata]:
         """
         Get flow metadata by name.
@@ -225,7 +225,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             Flow metadata or None if not found
         """
         return self._flow_metadata[flow_name] if flow_name in self._flow_metadata else None
-    
+
     def get_all_flow_metadata(self) -> dict[str, FlowMetadata]:
         """
         Get metadata for all registered flows.
@@ -234,7 +234,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             Dictionary mapping flow names to their metadata
         """
         return self._flow_metadata.copy()
-    
+
     def get_flow(self, flow_name: str) -> Optional[Any]:
         """
         Get a flow instance by name.
@@ -252,7 +252,7 @@ class FlowRegistry(BaseRegistry[Flow]):
         else:
             logger.debug(f"No flow instance found for: {flow_name}")
             return None
-    
+
     def get_flow_instances(self) -> dict[str, object]:
         """
         Get all registered flow instances.
@@ -261,7 +261,7 @@ class FlowRegistry(BaseRegistry[Flow]):
             Dict[str, Any]: Dictionary mapping flow names to flow instances.
         """
         return self._flow_instances.copy()
-    
+
     def get_agent_selectable_flows(self) -> dict[str, object]:
         """
         Get flow instances that can be selected by the agent.
@@ -276,7 +276,7 @@ class FlowRegistry(BaseRegistry[Flow]):
         for flow_name, flow_instance in self._flow_instances.items():
             # Check if the flow_instance has is_infrastructure attribute or metadata
             is_infrastructure = False
-            
+
             # Check the direct attribute first
             if hasattr(flow_instance, "is_infrastructure"):
                 is_infrastructure = flow_instance.is_infrastructure
@@ -285,21 +285,21 @@ class FlowRegistry(BaseRegistry[Flow]):
                 metadata = flow_instance.__flow_metadata__
                 # Fail-fast approach - explicit check for infrastructure flag
                 is_infrastructure = metadata["is_infrastructure"] if "is_infrastructure" in metadata else False
-                
+
             # Add to result if not an infrastructure flow
             if not is_infrastructure:
                 selectable_flows[flow_name] = flow_instance
-                
+
         logger.debug(f"Found {len(selectable_flows)} agent-selectable flows")
         return selectable_flows
-    
+
     def clear(self) -> None:
         """Clear all registered flows."""
         self._flows.clear()
         self._flow_instances.clear()
         self._flow_metadata.clear()
         logger.debug("Cleared flow registry")
-    
+
     def remove(self, name: str) -> bool:
         """Remove a specific flow registration from the registry.
         
@@ -310,24 +310,24 @@ class FlowRegistry(BaseRegistry[Flow]):
             True if the flow was found and removed, False if not found
         """
         removed = False
-        
+
         if name in self._flows:
             del self._flows[name]
             removed = True
-        
+
         if name in self._flow_instances:
             del self._flow_instances[name]
             removed = True
-        
+
         if name in self._flow_metadata:
             del self._flow_metadata[name]
             removed = True
-        
+
         if removed:
             logger.debug(f"Removed flow '{name}' from registry")
-        
+
         return removed
-    
+
     def update(self, name: str, obj: object, **metadata: object) -> bool:
         """Update or replace an existing flow registration.
         
@@ -340,11 +340,11 @@ class FlowRegistry(BaseRegistry[Flow]):
             True if an existing flow was updated, False if this was a new registration
         """
         existing_found = self.contains(name)
-        
+
         if existing_found:
             # Remove existing
             self.remove(name)
-            
+
             # Re-register
             self.register(name, obj, **metadata)
             logger.debug(f"Updated existing flow '{name}' in registry")
@@ -360,4 +360,4 @@ class FlowRegistry(BaseRegistry[Flow]):
 flow_registry = FlowRegistry()
 
 # Backward compatibility alias
-stage_registry = flow_registry 
+stage_registry = flow_registry

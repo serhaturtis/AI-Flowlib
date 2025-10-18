@@ -1,54 +1,48 @@
 """Task management system for AI agents.
 
-This module provides a complete task management system including:
-- Task generation and classification  
-- Task decomposition and planning
-- Task execution and tool orchestration
-- Common models shared between components
+This module provides a complete task management system following the
+Plan-Execute-Evaluate architecture optimized for local LLMs.
 
 Architecture:
-- task/models.py: Shared models (TodoItem, Plan, RequestContext, etc.)
-- task/generation/: Task classification and enrichment logic
-- task/decomposition/: Task decomposition and planning logic
+- task/models.py: Shared models (TodoItem, RequestContext, etc.)
+- task/core/: Core task components (TodoManager)
+- task/planning/: Structured planning (StructuredPlannerComponent)
 - task/execution/: Task execution and tool orchestration
+- task/evaluation/: Task completion evaluation
 
 Following flowlib principles:
 - No circular dependencies (common models at parent level)
 - Single source of truth for shared types
 - Clean separation of concerns
+- Fail fast with no fallbacks
 """
 
 from .models import (
     # Context models
     RequestContext,
-    
+    # TODO execution models
+    TodoExecutionContext,
+    TodoExecutionResult,
     # TODO models
     TodoItem,
     TodoList,
-    TodoStatus,
     TodoPriority,
+    TodoStatus,
     TodoStatusSummary,
-    
-    
-    # TODO execution models
-    TodoExecutionPlan,
-    TodoExecutionReasoning,
-    TodoExecutionValidation,
 )
 
 __all__ = [
     # Context
     "RequestContext",
-    
+
     # TODO system
     "TodoItem",
-    "TodoList", 
+    "TodoList",
     "TodoStatus",
     "TodoPriority",
     "TodoStatusSummary",
-    
+
     # TODO execution system
-    "TodoExecutionPlan",
-    "TodoExecutionReasoning", 
-    "TodoExecutionValidation",
+    "TodoExecutionContext",
+    "TodoExecutionResult",
 ]

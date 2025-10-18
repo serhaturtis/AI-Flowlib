@@ -26,7 +26,7 @@ def make_serializable(obj: Any) -> Any:
     """
     if obj is None:
         return None
-        
+
     if hasattr(obj, '__dict__'):
         # For object with __dict__, convert to dict
         result = {}
@@ -62,33 +62,33 @@ def format_execution_details(details: Dict[str, Any]) -> Dict[str, Any]:
     """
     if not details:
         return {"error": "No execution details available"}
-        
+
     state = details.get("state")
-    
+
     # Basic details about progress and completion
     formatted = {
         "progress": getattr(state, "progress", 0) if state else 0,
         "complete": getattr(state, "is_complete", False) if state else False
     }
-    
+
     # Format latest plan if available
     if "latest_plan" in details:
         formatted["latest_plan"] = make_serializable(details["latest_plan"])
-        
+
     # Format latest execution if available
     if "latest_execution" in details:
         formatted["latest_execution"] = make_serializable(details["latest_execution"])
-        
+
     # Format latest reflection if available
     if "latest_reflection" in details:
         formatted["latest_reflection"] = make_serializable(details["latest_reflection"])
-        
+
     # Format execution history
     execution_history = details["execution_history"] if "execution_history" in details else []
     formatted["execution_history"] = make_serializable(execution_history)
-    
+
     # Include any additional fields that might be useful
     if "flows" in details:
         formatted["flows"] = make_serializable(details["flows"])
-        
-    return formatted 
+
+    return formatted

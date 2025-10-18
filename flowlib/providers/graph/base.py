@@ -6,13 +6,20 @@ establishing a common interface for entity and relationship operations.
 
 import logging
 from abc import abstractmethod
-from typing import List, Optional, TypeVar, Generic
+from typing import Generic, List, Optional, TypeVar
 
 from flowlib.providers.core.base import Provider, ProviderSettings
 from flowlib.providers.graph.models import (
-    Entity, GraphQueryResult, EntitySearchResult, RelationshipSearchResult, 
-    GraphStoreResult, GraphDeleteResult, GraphStats, 
-    GraphHealthResult, EntityRelationship, GraphQueryParams
+    Entity,
+    EntityRelationship,
+    EntitySearchResult,
+    GraphDeleteResult,
+    GraphHealthResult,
+    GraphQueryParams,
+    GraphQueryResult,
+    GraphStats,
+    GraphStoreResult,
+    RelationshipSearchResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +46,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
     This class defines the common interface for all graph database providers,
     with methods for entity and relationship operations.
     """
-    
+
     def __init__(self, name: str = "graph", provider_type: str = "graph_db", settings: Optional[SettingsT] = None):
         """Initialize graph database provider.
         
@@ -49,7 +56,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             settings: Optional provider settings
         """
         super().__init__(name=name, provider_type=provider_type, settings=settings)
-        
+
     @abstractmethod
     async def add_entity(self, entity: Entity) -> GraphStoreResult:
         """Add or update an entity node.
@@ -64,7 +71,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If entity creation fails
         """
         raise NotImplementedError("Subclasses must implement add_entity()")
-        
+
     @abstractmethod
     async def get_entity(self, entity_id: str) -> Optional[Entity]:
         """Get an entity by ID.
@@ -79,7 +86,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If entity retrieval fails
         """
         raise NotImplementedError("Subclasses must implement get_entity()")
-        
+
     @abstractmethod
     async def add_relationship(
         self,
@@ -131,12 +138,12 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If relationship creation fails
         """
         raise NotImplementedError("Subclasses must implement add_relationship()")
-        
+
     @abstractmethod
     async def query_relationships(
-        self, 
-        entity_id: str, 
-        relation_type: Optional[str] = None, 
+        self,
+        entity_id: str,
+        relation_type: Optional[str] = None,
         direction: str = "outgoing"
     ) -> RelationshipSearchResult:
         """Query relationships for an entity.
@@ -153,12 +160,12 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If relationship query fails
         """
         raise NotImplementedError("Subclasses must implement query_relationships()")
-        
+
     @abstractmethod
     async def traverse(
-        self, 
-        start_id: str, 
-        relation_types: Optional[List[str]] = None, 
+        self,
+        start_id: str,
+        relation_types: Optional[List[str]] = None,
         max_depth: int = 2
     ) -> List[Entity]:
         """Traverse the graph starting from an entity.
@@ -193,11 +200,11 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If traversal fails
         """
         raise NotImplementedError("Subclasses must implement traverse()")
-        
+
     @abstractmethod
     async def query(
-        self, 
-        query: str, 
+        self,
+        query: str,
         params: Optional[GraphQueryParams] = None
     ) -> GraphQueryResult:
         """Execute a native query in the graph database.
@@ -229,7 +236,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If query execution fails
         """
         raise NotImplementedError("Subclasses must implement query()")
-        
+
     async def get_health(self) -> GraphHealthResult:
         """Get provider health information.
         
@@ -261,7 +268,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             except AttributeError as attr_error:
                 # Keep defaults if provider attributes are not accessible
                 logger.debug(f"Could not access provider attributes during error logging: {attr_error}")
-                
+
             logger.error(f"Error checking health for provider '{provider_name}': {str(e)}")
             return GraphHealthResult(
                 healthy=False,
@@ -273,7 +280,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
                     "provider_type": provider_type
                 }
             )
-        
+
     @abstractmethod
     async def delete_entity(self, entity_id: str) -> GraphDeleteResult:
         """Delete an entity by ID.
@@ -288,12 +295,12 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If entity deletion fails
         """
         raise NotImplementedError("Subclasses must implement delete_entity()")
-    
+
     @abstractmethod
     async def delete_relationship(
-        self, 
-        source_id: str, 
-        target_entity: str, 
+        self,
+        source_id: str,
+        target_entity: str,
         relation_type: Optional[str] = None
     ) -> bool:
         """Delete a relationship between two entities.
@@ -310,7 +317,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If relationship deletion fails
         """
         raise NotImplementedError("Subclasses must implement delete_relationship()")
-    
+
     @abstractmethod
     async def bulk_add_entities(self, entities: List[Entity]) -> GraphStoreResult:
         """Bulk add entities.
@@ -325,7 +332,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If bulk add fails
         """
         raise NotImplementedError("Subclasses must implement bulk_add_entities()")
-    
+
     @abstractmethod
     async def search_entities(
         self,
@@ -368,7 +375,7 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
             ProviderError: If removal fails
         """
         raise NotImplementedError("Subclasses must implement remove_relationship()")
-    
+
     async def get_stats(self) -> GraphStats:
         """Get graph database statistics.
         
@@ -378,4 +385,4 @@ class GraphDBProvider(Provider[SettingsT], Generic[SettingsT]):
         Raises:
             ProviderError: If stats retrieval fails
         """
-        raise NotImplementedError("Subclasses must implement get_stats()") 
+        raise NotImplementedError("Subclasses must implement get_stats()")

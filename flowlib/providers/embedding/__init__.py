@@ -4,10 +4,10 @@ This package contains providers for text embedding generation,
 offering a common interface for working with different embedding models.
 """
 
+import logging
+
 from .base import EmbeddingProvider
 from .llama_cpp.provider import LlamaCppEmbeddingProvider
-
-import logging
 
 __all__ = [
     "EmbeddingProvider",

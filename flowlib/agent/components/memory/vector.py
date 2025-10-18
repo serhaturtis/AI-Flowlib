@@ -10,26 +10,30 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, cast
 
 from pydantic import Field
+
 from flowlib.core.models import StrictBaseModel
-from flowlib.providers.vector.base import VectorDBProvider
+from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.embedding.base import EmbeddingProvider
+from flowlib.providers.vector.base import VectorDBProvider
 
 from ...core.errors import MemoryError
-from .models import (
-    MemoryStoreRequest,
-    MemoryRetrieveRequest,
-    MemorySearchRequest
-)
+
 # Import MemoryItem and MemorySearchResult from the proper location
-from .models import MemoryItem, MemorySearchResult, MemorySearchMetadata
-from flowlib.providers.core.registry import provider_registry
+from .models import (
+    MemoryItem,
+    MemoryRetrieveRequest,
+    MemorySearchMetadata,
+    MemorySearchRequest,
+    MemorySearchResult,
+    MemoryStoreRequest,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class VectorMemoryConfig(StrictBaseModel):
     """Configuration for vector memory."""
-    
+
     vector_provider_config: str = Field(
         default="default-vector-db",
         description="Provider config name for vector database"
@@ -65,33 +69,33 @@ class VectorMemoryConfig(StrictBaseModel):
 
 class VectorMemory:
     """Modern vector memory implementation with semantic search capabilities."""
-    
+
     def __init__(self, config: Optional[VectorMemoryConfig] = None):
         """Initialize vector memory with config-driven providers."""
         self._config = config or VectorMemoryConfig()
-        
+
         # Provider instances (resolved during initialization)
         self._vector_provider: Optional[VectorDBProvider] = None
         self._embedding_provider: Optional[EmbeddingProvider] = None
-        
+
         # Contexts tracking
         self._contexts: set[str] = set()
         self._initialized = False
-        
+
         logger.info(f"Initialized VectorMemory with config: {self._config}")
-    
+
     @property
     def initialized(self) -> bool:
         """Check if memory is initialized."""
         return self._initialized
-    
+
     async def initialize(self) -> None:
         """Initialize vector memory and providers."""
         if self._initialized:
             return
-            
+
         logger.info("Initializing VectorMemory...")
-        
+
         try:
             # Get providers using config-driven approach
             vector_provider = await provider_registry.get_by_config(
@@ -115,13 +119,13 @@ class VectorMemory:
                     provider_config=self._config.embedding_provider_config
                 )
             self._embedding_provider = cast(EmbeddingProvider, embedding_provider)
-            
+
             # Ensure collection exists
             await self._ensure_collection()
-            
+
             self._initialized = True
             logger.info("VectorMemory initialized successfully")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize VectorMemory: {e}")
             raise MemoryError(
@@ -129,22 +133,22 @@ class VectorMemory:
                 operation="initialize",
                 cause=e
             ) from e
-    
+
     async def shutdown(self) -> None:
         """Shutdown vector memory."""
         if not self._initialized:
             return
-            
+
         logger.info("Shutting down VectorMemory...")
-        
+
         # Providers are managed by the registry, no explicit cleanup needed
         self._vector_provider = None
         self._embedding_provider = None
         self._contexts.clear()
-        
+
         self._initialized = False
         logger.info("VectorMemory shutdown completed")
-    
+
     async def _ensure_collection(self) -> None:
         """Ensure the vector collection exists using standard interface methods."""
         try:
@@ -152,7 +156,7 @@ class VectorMemory:
             if self._vector_provider is None:
                 raise RuntimeError("Vector provider not initialized")
             collection_exists = await self._vector_provider.index_exists(self._config.collection_name)
-            
+
             if not collection_exists:
                 # Use the standard create_index method from base interface
                 # Use a default dimension if not specified (1536 is OpenAI's default)
@@ -168,41 +172,41 @@ class VectorMemory:
                     logger.warning(f"Failed to create vector index: {self._config.collection_name}")
             else:
                 logger.debug(f"Vector index exists: {self._config.collection_name}")
-                
+
         except AttributeError as e:
             # Provider doesn't have these methods - continue without them
             logger.debug(f"Provider doesn't support index management: {e}")
         except Exception as e:
             logger.warning(f"Could not ensure index exists: {e}")
             # Continue anyway - index might be created on first insert
-    
+
     async def create_context(self, context_name: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Create a memory context."""
         if not self._initialized:
             raise MemoryError("VectorMemory not initialized")
-            
+
         logger.debug(f"Creating context: {context_name}")
-        
+
         # Vector memory doesn't need explicit context creation
         # Contexts are managed through metadata in vector records
         self._contexts.add(context_name)
-        
+
         logger.debug(f"Context '{context_name}' registered")
         return context_name
-    
+
     async def store(self, request: MemoryStoreRequest) -> str:
         """Store a memory item with vector embedding."""
         if not self._initialized:
             raise MemoryError("VectorMemory not initialized")
-            
+
         try:
             # Generate embedding for the content
             content = self._extract_content(request.value)
             embedding = await self._get_embedding(content)
-            
+
             # Create document ID
             doc_id = f"{request.context}_{request.key}"
-            
+
             # Prepare metadata
             metadata = {
                 "context": request.context,
@@ -210,11 +214,11 @@ class VectorMemory:
                 "content": content,
                 "item_type": type(request.value).__name__
             }
-            
+
             # Add custom metadata from request
             if request.metadata:
                 metadata.update(request.metadata)
-            
+
             # Store in vector database using standard interface
             if self._vector_provider is None:
                 raise RuntimeError("Vector provider not initialized")
@@ -224,10 +228,10 @@ class VectorMemory:
                 ids=[doc_id],
                 index_name=self._config.collection_name
             )
-            
+
             logger.debug(f"Stored vector memory item '{request.key}' in context '{request.context}'")
             return request.key
-            
+
         except Exception as e:
             raise MemoryError(
                 f"Failed to store vector memory item '{request.key}': {str(e)}",
@@ -236,12 +240,12 @@ class VectorMemory:
                 key=request.key,
                 cause=e
             ) from e
-    
+
     async def retrieve(self, request: MemoryRetrieveRequest) -> Optional[MemoryItem]:
         """Retrieve a memory item by exact key match."""
         if not self._initialized:
             raise MemoryError("VectorMemory not initialized")
-            
+
         try:
             # Query by metadata filter for exact match using new standard interface
             if self._vector_provider is None:
@@ -254,50 +258,50 @@ class VectorMemory:
                 top_k=1,
                 index_name=self._config.collection_name
             )
-            
+
             if results and len(results) > 0:
                 # Reconstruct memory item from stored data - new format is list of dicts
                 result_item = results[0]
                 doc = result_item.get('document', '')
                 metadata = result_item.get('metadata', {})
-                
+
                 # Create basic memory item - only pass user metadata to MemoryItem
                 # System metadata stays in the vector db, user metadata goes to MemoryItem
                 user_metadata = {}
                 for key_meta, value_meta in metadata.items():
                     if key_meta not in ('context', 'key', 'content', 'item_type'):
                         user_metadata[key_meta] = value_meta
-                
+
                 item = MemoryItem(
                     key=request.key,
                     value=doc,
                     context=request.context if request.context is not None else "default",
                     updated_at=datetime.now()
                 )
-                
+
                 logger.debug(f"Retrieved vector memory item '{request.key}' from context '{request.context}'")
                 return item
             else:
                 logger.debug(f"Vector memory item '{request.key}' not found in context '{request.context}'")
                 return None
-                
+
         except Exception as e:
             raise MemoryError(f"Vector retrieval failed: {e}", operation="retrieve", key=request.key, cause=e)
-    
+
     async def search(self, request: MemorySearchRequest) -> List[MemorySearchResult]:
         """Search memory items using semantic similarity."""
         if not self._initialized:
             raise MemoryError("VectorMemory not initialized")
-            
+
         try:
             # Generate query embedding
             query_embedding = await self._get_embedding(request.query)
-            
+
             # Prepare context filter
             where_filter = {}
             if request.context:
                 where_filter["context"] = request.context
-            
+
             # Perform vector search using standard interface
             if self._vector_provider is None:
                 raise RuntimeError("Vector provider not initialized")
@@ -307,16 +311,16 @@ class VectorMemory:
                 filter=where_filter if where_filter else None,
                 index_name=self._config.collection_name
             )
-            
+
             search_results: List[MemorySearchResult] = []
-            
+
             # Results are now List[SimilaritySearchResult] from standard interface
             for result in results:
                 # Extract data from SimilaritySearchResult object
                 doc = result.text or ""
                 metadata = result.metadata or {}
                 similarity = 1.0 - result.score  # Convert score back to similarity
-                
+
                 # Filter by similarity threshold
                 if similarity >= self._config.similarity_threshold:
                     # Reconstruct memory item
@@ -325,14 +329,14 @@ class VectorMemory:
                         raise ValueError("Memory item metadata must contain 'key' field")
                     if 'context' not in metadata:
                         raise ValueError("Memory item metadata must contain 'context' field")
-                        
+
                     item = MemoryItem(
                         key=metadata['key'],
                         value=doc,
                         context=metadata['context'],
                         updated_at=datetime.now()
                     )
-                    
+
                     search_results.append(MemorySearchResult(
                         item=item,
                         score=similarity,
@@ -344,23 +348,23 @@ class VectorMemory:
                             result_rank=len(search_results) + 1
                         )
                     ))
-            
+
             logger.debug(f"Found {len(search_results)} vector memory results for query '{request.query}'")
             return search_results
-            
+
         except Exception as e:
             raise MemoryError(f"Vector search failed: {e}", operation="search", cause=e)
-    
+
     async def retrieve_relevant(
-        self, 
-        query: str, 
-        context: Optional[str] = None, 
+        self,
+        query: str,
+        context: Optional[str] = None,
         limit: int = 10
     ) -> List[str]:
         """Retrieve relevant memories based on semantic similarity."""
         if not self._initialized:
             raise MemoryError("VectorMemory not initialized")
-            
+
         search_request = MemorySearchRequest(
             query=query,
             context=context,
@@ -370,20 +374,20 @@ class VectorMemory:
             search_type="hybrid",
             metadata_filter=None
         )
-        
+
         search_results = await self.search(search_request)
-        
+
         # Convert to string list format
         return [
             f"{result.item.key}: {result.item.value}"
             for result in search_results
         ]
-    
+
     async def wipe_context(self, context: str) -> None:
         """Remove all items from a specific context."""
         if not self._initialized:
             raise MemoryError("VectorMemory not initialized")
-            
+
         try:
             # Get all documents in this context using standard interface
             if self._vector_provider is None:
@@ -393,22 +397,22 @@ class VectorMemory:
                 top_k=10000,  # Large number to get all
                 index_name=self._config.collection_name
             )
-            
+
             if results and len(results) > 0:
                 ids_to_delete = [result['id'] for result in results]
-                
+
                 if ids_to_delete:
                     await self._vector_provider.delete_vectors(
                         index_name=self._config.collection_name,
                         ids=ids_to_delete
                     )
-                    
+
                     logger.info(f"Wiped vector memory context '{context}', removed {len(ids_to_delete)} items")
                 else:
                     logger.debug(f"Vector memory context '{context}' was empty")
-            
+
             self._contexts.discard(context)
-            
+
         except Exception as e:
             raise MemoryError(
                 f"Failed to wipe vector memory context '{context}': {str(e)}",
@@ -416,7 +420,7 @@ class VectorMemory:
                 context=context,
                 cause=e
             ) from e
-    
+
     async def _get_embedding(self, text: str) -> List[float]:
         """Generate embedding for text using the embedding provider."""
         try:
@@ -443,7 +447,7 @@ class VectorMemory:
             # Explicitly cast to ensure type correctness
             embedding: List[float] = [float(x) for x in embeddings[0]]
             return embedding
-            
+
         except Exception as e:
             raise MemoryError(
                 f"Failed to generate embedding: {str(e)}",
@@ -451,7 +455,7 @@ class VectorMemory:
                 text_length=len(text),
                 cause=e
             ) from e
-    
+
     def _extract_content(self, item: MemoryItem) -> str:
         """Extract searchable content from a memory item."""
         if hasattr(item, 'content'):
@@ -462,7 +466,7 @@ class VectorMemory:
             return str(item.message)
         else:
             return str(item)
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get vector memory statistics."""
         return {

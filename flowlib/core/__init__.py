@@ -5,10 +5,10 @@ Provides strict Pydantic models following CLAUDE.md principles.
 
 # Strict base models - enforce CLAUDE.md principles
 from .models import (
-    StrictBaseModel,
     MutableStrictBaseModel,
+    MutableStrictModel,
+    StrictBaseModel,
     StrictModel,
-    MutableStrictModel
 )
 
 __all__ = [

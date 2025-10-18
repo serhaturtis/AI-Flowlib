@@ -1,9 +1,10 @@
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable, Dict, Optional
+
+from .provider_base import ProviderBase
 
 # Removed ProviderType import - using config-driven provider access
 from .registry import provider_registry
 
-from .provider_base import ProviderBase
 
 def provider(name: str, provider_type: str = "llm", *, settings_class: Optional[type] = None, **metadata: Any) -> Callable[[type], type]:
     """
@@ -14,20 +15,20 @@ def provider(name: str, provider_type: str = "llm", *, settings_class: Optional[
     """
     if settings_class is None:
         raise TypeError(f"Provider '{name}' must supply a 'settings_class' argument (Pydantic v2 class)")
-    
+
     # Validate decorator settings if provided
     if 'settings' in metadata:
         settings_value = metadata['settings']
         if not isinstance(settings_value, (dict, settings_class)):
             raise TypeError(f"Decorator-defined settings for '{name}' must be a dict or an instance of {settings_class.__name__}, got {type(settings_value)}")
-    
+
     def decorator(cls: type) -> type:
         if provider_registry is None:
             raise RuntimeError("Provider registry not initialized")
         # Check contract
         if not isinstance(cls, type) or not issubclass(cls, ProviderBase):
             raise TypeError(f"Provider '{name}' must be a ProviderBase subclass (pydantic v2), got {type(cls)}")
-        
+
         # Create factory function
         def factory(runtime_settings_dict: Optional[Dict[str, Any]] = None) -> Any:
             final_settings_arg = None
@@ -64,14 +65,14 @@ def provider(name: str, provider_type: str = "llm", *, settings_class: Optional[
                 else:
                     # No runtime_settings, no decorator_settings, no settings_class. Pass empty dict.
                     final_settings_arg = {}
-            
+
             # Prepare kwargs for the provider, excluding 'settings' if it was a decorator metadata key, as it's now handled in final_settings_arg
             provider_init_kwargs = {k: v for k, v in metadata.items() if k != 'settings'}
-            
+
             # Ensure logger is available or handle absence
             # logger.debug(f"Provider '{name}': Instantiating with settings from '{source_of_settings}'. Settings object: {type(final_settings_arg)}")
             return cls(name=name, provider_type=provider_type, settings=final_settings_arg, **provider_init_kwargs)
-        
+
         provider_registry.register_factory(
             name=name,
             factory=factory,
@@ -110,4 +111,4 @@ def storage_provider(name: str, **metadata: Any) -> Callable[[type], type]:
 
 def message_queue_provider(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a message queue provider factory."""
-    return provider(name, "message_queue", **metadata) 
+    return provider(name, "message_queue", **metadata)

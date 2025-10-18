@@ -1,21 +1,24 @@
 """Models for bash tool."""
 
-from typing import Optional, Dict
+from typing import Dict, Optional
+
 from pydantic import Field, field_validator
+
 from flowlib.core.models import StrictBaseModel
+
 from ...models import ToolResult, ToolStatus
 
 
 class BashParameters(StrictBaseModel):
     """Parameters for bash tool execution."""
-    
+
     command: str = Field(..., description="Shell command to execute")
     working_directory: str = Field(default=".", description="Working directory for command")
     timeout: int = Field(default=30, description="Timeout in seconds")
     capture_output: bool = Field(default=True, description="Capture stdout and stderr")
     shell: bool = Field(default=True, description="Execute through shell")
     env_vars: Dict[str, str] = Field(default_factory=dict, description="Environment variables to set")
-    
+
     @field_validator('command')
     @classmethod
     def validate_command(cls, v: str) -> str:
@@ -37,7 +40,7 @@ class BashParameters(StrictBaseModel):
 
 class BashResult(ToolResult):
     """Result from bash tool execution."""
-    
+
     command: Optional[str] = Field(default=None, description="Command that was executed")
     exit_code: Optional[int] = Field(default=None, description="Process exit code")
     stdout: Optional[str] = Field(default=None, description="Standard output")
@@ -45,7 +48,7 @@ class BashResult(ToolResult):
     execution_time: Optional[float] = Field(default=None, description="Execution time in seconds")
     timed_out: Optional[bool] = Field(default=None, description="Whether the command timed out")
     working_directory: Optional[str] = Field(default=None, description="Working directory used")
-    
+
     def get_display_content(self) -> str:
         """Get user-friendly display text."""
         if self.status == ToolStatus.SUCCESS:

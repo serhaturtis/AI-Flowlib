@@ -2,17 +2,19 @@
 Utilities for loading and validating agent configurations.
 """
 
-import yaml  # type: ignore[import-untyped]
-import os
 import logging
+import os
 
-from flowlib.agent.models.config import AgentConfig
+import yaml  # type: ignore[import-untyped]
+
 from flowlib.agent.core.errors import ConfigurationError
-from flowlib.resources.registry.registry import resource_registry
-from flowlib.resources.models.model_resource import ModelResource
-from flowlib.providers.core.registry import provider_registry
+from flowlib.agent.models.config import AgentConfig
+
 # Removed ProviderType import - using config-driven provider access
 from flowlib.providers.core.factory import create_and_initialize_provider
+from flowlib.providers.core.registry import provider_registry
+from flowlib.resources.models.model_resource import ModelResource
+from flowlib.resources.registry.registry import resource_registry
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ def initialize_resources_from_config(config: AgentConfig) -> None:
     if not hasattr(config, "resource_config"):
         logger.warning("No resource configuration found in agent config")
         return
-    
+
     resource_config = config.resource_config
     if not resource_config:
         logger.warning("No resource configuration found in agent config")

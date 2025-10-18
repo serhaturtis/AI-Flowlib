@@ -1,14 +1,14 @@
 """Prompts for knowledge orchestration."""
 
+from flowlib.providers.llm import PromptConfigOverride
 from flowlib.resources.decorators.decorators import prompt
 from flowlib.resources.models.base import ResourceBase
-from flowlib.providers.llm import PromptConfigOverride
 
 
 @prompt(name="orchestration-progress-summary")
 class OrchestrationProgressPrompt(ResourceBase):
     """Generate progress summary for orchestration pipeline."""
-    
+
     template: str = """
 Generate a comprehensive progress summary for the knowledge extraction pipeline:
 
@@ -35,7 +35,7 @@ Provide:
 4. Any bottlenecks or issues detected
 5. Recommendations for optimization
 """
-    
+
     config: PromptConfigOverride = PromptConfigOverride(
         temperature=0.3,
         max_tokens=3000
@@ -45,7 +45,7 @@ Provide:
 @prompt(name="orchestration-error-analysis")
 class OrchestrationErrorAnalysisPrompt(ResourceBase):
     """Analyze errors in orchestration pipeline."""
-    
+
     template: str = """
 Analyze the errors that occurred during knowledge extraction pipeline:
 
@@ -69,7 +69,7 @@ Provide:
 
 Focus on actionable insights for pipeline reliability.
 """
-    
+
     config: PromptConfigOverride = PromptConfigOverride(
         temperature=0.2,
         max_tokens=2500
@@ -79,7 +79,7 @@ Focus on actionable insights for pipeline reliability.
 @prompt(name="orchestration-optimization")
 class OrchestrationOptimizationPrompt(ResourceBase):
     """Suggest optimizations for orchestration pipeline."""
-    
+
     template: str = """
 Analyze the knowledge extraction pipeline performance and suggest optimizations:
 
@@ -108,7 +108,7 @@ Suggest optimizations for:
 
 Provide specific, actionable recommendations with expected impact.
 """
-    
+
     config: PromptConfigOverride = PromptConfigOverride(
         temperature=0.4,
         max_tokens=3500

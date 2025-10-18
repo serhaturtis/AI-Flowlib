@@ -1,6 +1,6 @@
 """Read tool package."""
 
-from .tool import ReadTool
 from .flow import ReadParameterGenerationFlow
+from .tool import ReadTool
 
 __all__ = ["ReadTool", "ReadParameterGenerationFlow"]

@@ -5,23 +5,28 @@ for ArangoDB, a multi-model database with strong graph capabilities.
 """
 
 import logging
-from typing import Dict, List, Optional, cast, Mapping, Any, Union
 from datetime import datetime
+from typing import Any, Dict, List, Mapping, Optional, Union, cast
 
 from arango import ArangoClient
-from arango.database import StandardDatabase
 from arango.collection import StandardCollection
+from arango.database import StandardDatabase
 from arango.exceptions import ArangoError
 from pydantic import Field
 
-from flowlib.core.errors.errors import ProviderError, ErrorContext
+from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
 from flowlib.providers.graph.base import GraphDBProvider, GraphDBProviderSettings
 from flowlib.providers.graph.models import (
-    Entity, EntityAttribute, EntityRelationship, GraphStoreResult,
-    RelationshipSearchResult, GraphQueryResult, EntitySearchResult,
-    GraphDeleteResult
+    Entity,
+    EntityAttribute,
+    EntityRelationship,
+    EntitySearchResult,
+    GraphDeleteResult,
+    GraphQueryResult,
+    GraphStoreResult,
+    RelationshipSearchResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,18 +41,18 @@ class ArangoProviderSettings(GraphDBProviderSettings):
     3. Database and graph naming
     4. Collection configuration
     """
-    
+
     # ArangoDB connection settings
     url: str = Field(default="http://localhost:8529", description="ArangoDB server URL (e.g., 'http://localhost:8529')")
     username: str = Field(default="root", description="Username for authentication")
     password: str = Field(default="", description="Password for authentication (should be overridden in production)")
     database: str = Field(default="flowlib", description="Database name")
-    
+
     # ArangoDB graph settings
     graph_name: str = Field(default="memory_graph", description="Graph name")
     entity_collection: str = Field(default="entities", description="Collection name for entities")
     relation_collection: str = Field(default="relationships", description="Collection name for relationships")
-    
+
     # SSL verification
     verify: bool = Field(default=True, description="Whether to verify SSL certificates")
 
@@ -59,7 +64,7 @@ class ArangoProvider(GraphDBProvider):
     This provider interfaces with ArangoDB using the python-arango client,
     mapping entities and relationships to ArangoDB's graph model.
     """
-    
+
     def __init__(self, name: str = "arango", provider_type: str = "graph_db", settings: Optional[ArangoProviderSettings] = None):
         """Initialize ArangoDB graph database provider.
         Args:
@@ -107,26 +112,26 @@ class ArangoProvider(GraphDBProvider):
             raise ValueError("Document data missing required 'last_updated' field")
         if "tags" not in doc_data:
             raise ValueError("Document data missing required 'tags' field")
-        
+
         # Parse attributes strictly
         attributes_raw = doc_data["attributes"]
         attributes = {}
-        
+
         if not isinstance(attributes_raw, dict):
             raise ValueError(f"Attributes must be a dict, got {type(attributes_raw)}")
-        
+
         for attr_name, attr_data in attributes_raw.items():
             if not isinstance(attr_data, dict):
                 raise ValueError(f"Attribute '{attr_name}' must be a dict, got {type(attr_data)}")
-            
+
             # Validate all required attribute fields
             required_fields = ["value", "confidence", "source", "timestamp"]
             for field in required_fields:
                 if field not in attr_data:
                     raise ValueError(f"Attribute '{attr_name}' missing required field '{field}'")
-            
+
             attributes[attr_name] = attr_data
-        
+
         return {
             "id": doc_data["id"],
             "type": doc_data["type"],
@@ -136,7 +141,7 @@ class ArangoProvider(GraphDBProvider):
             "importance": doc_data["importance"],
             "last_updated": doc_data["last_updated"]
         }
-        
+
     async def initialize(self) -> None:
         """Initialize the ArangoDB connection.
         
@@ -147,46 +152,46 @@ class ArangoProvider(GraphDBProvider):
             ProviderError: If ArangoDB driver is not available or connection fails
         """
         settings = cast(ArangoProviderSettings, self.settings)
-        
+
         try:
             # Create the ArangoDB client
             self._client = ArangoClient(
                 hosts=settings.url,
                 verify_override=settings.verify
             )
-            
+
             # Connect to system database first to ensure target database exists
             sys_db = self._client.db(
                 "_system",
                 username=settings.username,
                 password=settings.password
             )
-            
+
             # Create database if it doesn't exist
             if not sys_db.has_database(settings.database):
                 logger.info(f"Creating database '{settings.database}'")
                 sys_db.create_database(settings.database)
-                
+
             # Connect to the target database
             self._db = self._client.db(
                 settings.database,
                 username=settings.username,
                 password=settings.password
             )
-            
+
             # Create collections if they don't exist
             if not self._db.has_collection(settings.entity_collection):
                 logger.info(f"Creating entity collection '{settings.entity_collection}'")
                 self._db.create_collection(settings.entity_collection)
-                
+
             if not self._db.has_collection(settings.relation_collection):
                 logger.info(f"Creating relationship collection '{settings.relation_collection}'")
                 self._db.create_collection(settings.relation_collection, edge=True)
-                
+
             # Get collection references
             self._entity_collection = self._db.collection(settings.entity_collection)
             self._relation_collection = self._db.collection(settings.relation_collection)
-            
+
             # Create graph if it doesn't exist
             if not self._db.has_graph(settings.graph_name):
                 logger.info(f"Creating graph '{settings.graph_name}'")
@@ -200,13 +205,13 @@ class ArangoProvider(GraphDBProvider):
                         }
                     ]
                 )
-                
+
             # Create indexes
             self._setup_indexes()
-            
+
             self._initialized = True
             logger.info(f"ArangoDB provider '{self.name}' initialized successfully")
-            
+
         except ArangoError as e:
             raise ProviderError(
                 message=f"Failed to connect to ArangoDB: {str(e)}",
@@ -243,7 +248,7 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _setup_indexes(self) -> None:
         """Set up indexes for entity and relationship collections."""
         if self._entity_collection is None:
@@ -259,7 +264,7 @@ class ArangoProvider(GraphDBProvider):
 
         # Create index on relationship type
         self._relation_collection.add_hash_index(["relation_type"], unique=False)
-    
+
     async def shutdown(self) -> None:
         """Shut down the ArangoDB connection."""
         self._client = None
@@ -268,7 +273,7 @@ class ArangoProvider(GraphDBProvider):
         self._relation_collection = None
         self._initialized = False
         logger.info(f"ArangoDB provider '{self.name}' shut down")
-        
+
     async def add_entity(self, entity: Entity) -> GraphStoreResult:
         """Add or update an entity node in ArangoDB.
         Args:
@@ -364,7 +369,7 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _entity_to_document(self, entity: Entity) -> Dict[str, object]:
         """Convert Entity object to ArangoDB document format."""
         # Convert attributes to serializable format
@@ -377,7 +382,7 @@ class ArangoProvider(GraphDBProvider):
                 "source": attr.source,
                 "timestamp": attr.timestamp
             }
-            
+
         # Core entity properties
         doc = {
             "id": entity.id,
@@ -388,9 +393,9 @@ class ArangoProvider(GraphDBProvider):
             "attributes": attributes,
             "tags": getattr(entity, 'tags', [])  # Include tags field with fallback to empty list
         }
-        
+
         return doc
-        
+
     async def get_entity(self, entity_id: str) -> Optional[Entity]:
         """Get an entity by ID from ArangoDB.
         Args:
@@ -484,7 +489,7 @@ class ArangoProvider(GraphDBProvider):
                     raise ValueError("Relationship missing required 'source' field")
                 if "timestamp" not in rel:
                     raise ValueError("Relationship missing required 'timestamp' field")
-                    
+
                 relationships.append(
                     EntityRelationship(
                         relation_type=rel["relation_type"],
@@ -512,7 +517,7 @@ class ArangoProvider(GraphDBProvider):
                     source=arango_attr["source"],
                     timestamp=arango_attr["timestamp"]
                 )
-                
+
             # Type guard for tags conversion
             tags_raw = arango_doc.get("tags", [])
             if isinstance(tags_raw, (list, tuple)):
@@ -568,12 +573,12 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _get_doc_key(self, entity_id: str) -> str:
         """Convert entity ID to a valid document key by replacing invalid characters."""
         # Replace characters that are not allowed in ArangoDB keys
         return entity_id.replace("/", "_").replace(" ", "_")
-        
+
     async def add_relationship(
         self,
         source_id: str,
@@ -657,11 +662,11 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def query_relationships(
-        self, 
-        entity_id: str, 
-        relation_type: Optional[str] = None, 
+        self,
+        entity_id: str,
+        relation_type: Optional[str] = None,
         direction: str = "outgoing"
     ) -> RelationshipSearchResult:
         """Query relationships for an entity in ArangoDB.
@@ -694,10 +699,10 @@ class ArangoProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             start_time = datetime.now()
-            
+
             # Get document key from entity ID
             if self._entity_collection is None:
                 raise RuntimeError("Entity collection not initialized")
@@ -734,7 +739,7 @@ class ArangoProvider(GraphDBProvider):
 
             entity_key = doc["_key"]
             collection_name = self.arango_settings.entity_collection
-            
+
             # Construct AQL query based on direction
             if direction == "outgoing":
                 query = f"""
@@ -766,7 +771,7 @@ class ArangoProvider(GraphDBProvider):
                     }}
                 }}
                 """
-                
+
             # Execute the query
             if self._db is None:
                 raise RuntimeError("Database not initialized")
@@ -793,11 +798,11 @@ class ArangoProvider(GraphDBProvider):
                     raise ValueError("Relationship missing required 'target' field")
                 if "properties" not in rel:
                     raise ValueError("Relationship missing required 'properties' field")
-                    
+
                 properties = rel["properties"]
                 if not isinstance(properties, dict):
                     raise ValueError("Relationship properties must be a dict")
-                    
+
                 # Validate required property fields
                 if "confidence" not in properties:
                     raise ValueError("Relationship properties missing required 'confidence' field")
@@ -805,7 +810,7 @@ class ArangoProvider(GraphDBProvider):
                     raise ValueError("Relationship properties missing required 'source' field")
                 if "timestamp" not in properties:
                     raise ValueError("Relationship properties missing required 'timestamp' field")
-                    
+
                 relationships.append(
                     EntityRelationship(
                         relation_type=rel["type"],
@@ -815,9 +820,9 @@ class ArangoProvider(GraphDBProvider):
                         timestamp=properties["timestamp"]
                     )
                 )
-            
+
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
-            
+
             return RelationshipSearchResult(
                 success=True,
                 relationships=relationships,
@@ -827,7 +832,7 @@ class ArangoProvider(GraphDBProvider):
                 execution_time_ms=execution_time,
                 metadata={"direction": direction, "relation_type": relation_type}
             )
-            
+
         except ArangoError as e:
             raise ProviderError(
                 message=f"Failed to query relationships: {str(e)}",
@@ -864,11 +869,11 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def traverse(
-        self, 
-        start_id: str, 
-        relation_types: Optional[List[str]] = None, 
+        self,
+        start_id: str,
+        relation_types: Optional[List[str]] = None,
         max_depth: int = 2
     ) -> List[Entity]:
         """Traverse the graph starting from an entity in ArangoDB.
@@ -901,7 +906,7 @@ class ArangoProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             # Get document key from entity ID
             if self._entity_collection is None:
@@ -931,20 +936,20 @@ class ArangoProvider(GraphDBProvider):
 
             entity_key = doc["_key"]
             collection_name = self.arango_settings.entity_collection
-            
+
             # Build relation type filter
             filter_clause = ""
             if relation_types:
                 relation_list = [f'"{rel_type}"' for rel_type in relation_types]
                 filter_clause = f"FILTER e.relation_type IN [{', '.join(relation_list)}]"
-                
+
             # Construct AQL traversal query
             query = f"""
             FOR v, e, p IN 1..{max_depth} OUTBOUND '{collection_name}/{entity_key}' {self.arango_settings.relation_collection}
             {filter_clause}
             RETURN DISTINCT v.id
             """
-            
+
             # Execute the query
             if self._db is None:
                 raise RuntimeError("Database not initialized")
@@ -967,14 +972,14 @@ class ArangoProvider(GraphDBProvider):
                     entity = await self.get_entity(result)
                     if entity:
                         entities.append(entity)
-                        
+
             # Add start entity if not already included
             start_entity = await self.get_entity(start_id)
             if start_entity and start_id not in ids:
                 entities.insert(0, start_entity)
-                
+
             return entities
-            
+
         except ArangoError as e:
             raise ProviderError(
                 message=f"Failed to traverse graph: {str(e)}",
@@ -1011,10 +1016,10 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def query(
-        self, 
-        query: str, 
+        self,
+        query: str,
         params: Optional[object] = None
     ) -> GraphQueryResult:
         """Execute a simple query language for ArangoDB.
@@ -1159,12 +1164,12 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _execute_aql(self, query: str, params: Optional[Dict[str, object]] = None) -> List[Dict[str, object]]:
         """Execute an AQL query with parameters."""
         if self._db is None:
             raise RuntimeError("Database not initialized")
-        from typing import cast, MutableMapping
+        from typing import MutableMapping, cast
         bind_vars = cast(MutableMapping[str, Any], params or {})
         cursor = self._db.aql.execute(query, bind_vars=bind_vars)
 
@@ -1177,7 +1182,7 @@ class ArangoProvider(GraphDBProvider):
             raise RuntimeError("Async/batch jobs not supported - cursor must be synchronous")
 
         return [doc for doc in cursor]
-        
+
     async def _find_entities_by_type(self, entity_type: str) -> List[Dict[str, object]]:
         """Find entities by type in ArangoDB."""
         query = f"""
@@ -1185,7 +1190,7 @@ class ArangoProvider(GraphDBProvider):
         FILTER e.type == @type
         RETURN {{ id: e.id, entity: e }}
         """
-        
+
         if self._db is None:
             raise RuntimeError("Database not initialized")
         cursor = self._db.aql.execute(query, bind_vars={"type": entity_type})
@@ -1199,7 +1204,7 @@ class ArangoProvider(GraphDBProvider):
             raise RuntimeError("Async/batch jobs not supported - cursor must be synchronous")
 
         return [doc for doc in cursor]
-        
+
     async def _find_entities_by_name(self, name: str) -> List[Dict[str, object]]:
         """Find entities by name in ArangoDB."""
         query = f"""
@@ -1207,7 +1212,7 @@ class ArangoProvider(GraphDBProvider):
         FILTER e.attributes.name.value LIKE @name
         RETURN {{ id: e.id, entity: e }}
         """
-        
+
         if self._db is None:
             raise RuntimeError("Database not initialized")
         cursor = self._db.aql.execute(query, bind_vars={"name": f"%{name}%"})
@@ -1221,7 +1226,7 @@ class ArangoProvider(GraphDBProvider):
             raise RuntimeError("Async/batch jobs not supported - cursor must be synchronous")
 
         return [doc for doc in cursor]
-        
+
     async def _find_neighbors(self, entity_id: str, relation_type: Optional[str]) -> List[Dict[str, object]]:
         """Find neighboring entities in ArangoDB."""
         # Get document key from entity ID
@@ -1252,12 +1257,12 @@ class ArangoProvider(GraphDBProvider):
 
         entity_key = doc["_key"]
         collection_name = self.arango_settings.entity_collection
-        
+
         # Build relation type filter
         filter_clause = ""
         if relation_type:
             filter_clause = f"FILTER e.relation_type == '{relation_type}'"
-            
+
         query = f"""
         FOR v, e IN 1..1 OUTBOUND '{collection_name}/{entity_key}' {self.arango_settings.relation_collection}
         {filter_clause}
@@ -1281,7 +1286,7 @@ class ArangoProvider(GraphDBProvider):
             raise RuntimeError("Async/batch jobs not supported - cursor must be synchronous")
 
         return [doc for doc in cursor]
-        
+
     async def _find_path(self, from_id: str, to_id: str, max_depth: int) -> List[Dict[str, object]]:
         """Find path between entities in ArangoDB."""
         # Get document keys
@@ -1300,7 +1305,7 @@ class ArangoProvider(GraphDBProvider):
         from_key = from_doc["_key"]
         to_key = to_doc["_key"]
         collection_name = self.arango_settings.entity_collection
-        
+
         query = f"""
         LET path = (
             FOR v, e, p IN 1..{max_depth} OUTBOUND 
@@ -1320,7 +1325,7 @@ class ArangoProvider(GraphDBProvider):
             }}
         ) : []
         """
-        
+
         if self._db is None:
             raise RuntimeError("Database not initialized")
         cursor = self._db.aql.execute(query)
@@ -1335,7 +1340,7 @@ class ArangoProvider(GraphDBProvider):
 
         result = cursor.next()
         return result if result else []
-    
+
     async def delete_entity(self, entity_id: str) -> GraphDeleteResult:
         """Delete an entity and its relationships from ArangoDB.
         
@@ -1365,10 +1370,10 @@ class ArangoProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             start_time = datetime.now()
-            
+
             # Get document key from entity ID
             if self._entity_collection is None:
                 raise RuntimeError("Entity collection not initialized")
@@ -1389,7 +1394,7 @@ class ArangoProvider(GraphDBProvider):
                 raise RuntimeError("Async/batch jobs not supported for document retrieval")
 
             entity_key = doc["_key"]
-            
+
             # Delete entity and related edges via AQL
             query = f"""
             LET vertex = DOCUMENT('{self.arango_settings.entity_collection}/{entity_key}')
@@ -1408,9 +1413,9 @@ class ArangoProvider(GraphDBProvider):
             if self._db is None:
                 raise RuntimeError("Database not initialized")
             self._db.aql.execute(query)
-            
+
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
-            
+
             return GraphDeleteResult(
                 success=True,
                 deleted_entities=[entity_id],
@@ -1420,7 +1425,7 @@ class ArangoProvider(GraphDBProvider):
                 error_details={},
                 execution_time_ms=execution_time
             )
-            
+
         except ArangoError as e:
             raise ProviderError(
                 message=f"Failed to delete entity: {str(e)}",
@@ -1457,11 +1462,11 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def delete_relationship(
-        self, 
-        source_id: str, 
-        target_entity: str, 
+        self,
+        source_id: str,
+        target_entity: str,
         relation_type: Optional[str] = None
     ) -> bool:
         """Delete relationship(s) between entities in ArangoDB.
@@ -1494,14 +1499,14 @@ class ArangoProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             # Get document keys
             if self._entity_collection is None:
                 raise RuntimeError("Entity collection not initialized")
             source_doc = self._entity_collection.get({"id": source_id})
             target_doc = self._entity_collection.get({"id": target_entity})
-            
+
             if not source_doc or not target_doc:
                 return False
 
@@ -1512,12 +1517,12 @@ class ArangoProvider(GraphDBProvider):
             source_key = source_doc["_key"]
             target_key = target_doc["_key"]
             collection_name = self.arango_settings.entity_collection
-            
+
             # Build relation type filter
             type_filter = ""
             if relation_type:
                 type_filter = f"FILTER e.relation_type == '{relation_type}'"
-                
+
             # Delete edges via AQL
             query = f"""
             FOR e IN {self.arango_settings.relation_collection}
@@ -1544,7 +1549,7 @@ class ArangoProvider(GraphDBProvider):
 
             # Ensure we return a boolean by explicitly converting
             return bool(deleted > 0)
-            
+
         except ArangoError as e:
             raise ProviderError(
                 message=f"Failed to delete relationship: {str(e)}",
@@ -1581,7 +1586,7 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def remove_relationship(
         self,
         source_id: str,
@@ -1622,7 +1627,7 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def bulk_add_entities(self, entities: List[Entity]) -> GraphStoreResult:
         """Bulk add entities to ArangoDB.
         Args:
@@ -1688,7 +1693,7 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     async def search_entities(
         self,
         query: Optional[str] = None,
@@ -1727,35 +1732,35 @@ class ArangoProvider(GraphDBProvider):
                     retry_count=0
                 )
             )
-            
+
         try:
             start_time = datetime.now()
-            
+
             # Build AQL query
             query_parts = [f"FOR e IN {self.arango_settings.entity_collection}"]
             filters = []
             bind_vars: Dict[str, Union[str, List[str]]] = {}
-            
+
             if query and query.strip():
                 filters.append("(e.id LIKE @query OR e.attributes.name.value LIKE @query)")
                 bind_vars["query"] = f"%{query}%"
-            
+
             if entity_type:
                 filters.append("e.type == @entity_type")
                 bind_vars["entity_type"] = entity_type
-            
+
             if tags:
                 filters.append("LENGTH(INTERSECTION(e.tags, @tags)) > 0")
                 bind_vars["tags"] = tags
-            
+
             if filters:
                 query_parts.append("FILTER " + " AND ".join(filters))
-            
+
             query_parts.append(f"LIMIT {limit}")
             query_parts.append("RETURN e")
-            
+
             aql_query = " ".join(query_parts)
-            from typing import cast, MutableMapping, Any
+            from typing import Any, MutableMapping, cast
 
             if self._db is None:
                 raise RuntimeError("Database not initialized")
@@ -1775,9 +1780,9 @@ class ArangoProvider(GraphDBProvider):
                 entity = self._document_to_entity(doc)
                 if entity:
                     entities.append(entity)
-            
+
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
-            
+
             return EntitySearchResult(
                 success=True,
                 entities=entities,
@@ -1790,7 +1795,7 @@ class ArangoProvider(GraphDBProvider):
                     "limit": limit
                 }
             )
-            
+
         except ArangoError as e:
             raise ProviderError(
                 message=f"Failed to search entities in ArangoDB: {str(e)}",
@@ -1827,13 +1832,13 @@ class ArangoProvider(GraphDBProvider):
                 ),
                 cause=e
             )
-    
+
     def _document_to_entity(self, doc: Dict[str, object]) -> Optional[Entity]:
         """Convert ArangoDB document to Entity object using strict parsing."""
         try:
             # Use strict parser for all document data - no fallbacks
             arango_doc = self._parse_document_data_strict(doc)
-            
+
             # Convert Arango attributes to Entity attributes
             entity_attributes = {}
             attributes_data = arango_doc["attributes"]
@@ -1849,10 +1854,10 @@ class ArangoProvider(GraphDBProvider):
                     source=arango_attr["source"],
                     timestamp=arango_attr["timestamp"]
                 )
-            
+
             # Note: relationships are not included in document search
             # They would need to be fetched separately if needed
-            
+
             # Validate and convert field types
             entity_id = arango_doc["id"]
             if not isinstance(entity_id, str):
@@ -1881,8 +1886,8 @@ class ArangoProvider(GraphDBProvider):
                 vector_id=None,
                 last_updated=str(arango_doc["last_updated"])
             )
-            
+
             return entity
         except Exception as e:
             logger.error(f"Failed to convert document to entity: {e}")
-            return None 
+            return None

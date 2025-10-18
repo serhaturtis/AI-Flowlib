@@ -4,23 +4,24 @@ for use in distributed agent scenarios.
 """
 
 import logging
-from typing import Optional, Dict, List, cast
+from typing import Dict, List, Optional, cast
 
 from pydantic import Field
-from flowlib.core.models import StrictBaseModel
-# Import Provider base class
 
-from .base import BaseStatePersister
 from flowlib.agent.models.state import AgentState, AgentStateModel
+from flowlib.core.models import StrictBaseModel
 
 # Import provider types
 # Removed ProviderType import - using config-driven provider access
 from flowlib.providers.cache.base import CacheProvider
-from flowlib.providers.db.base import DBProvider
 from flowlib.providers.core.base import ProviderSettings
-from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.core.decorators import provider
+from flowlib.providers.core.registry import provider_registry
+from flowlib.providers.db.base import DBProvider
 from flowlib.providers.db.mongodb.provider import MongoDBProvider
+
+# Import Provider base class
+from .base import BaseStatePersister
 
 # Import correct error classes from core.errors instead of non-existent exceptions module
 
@@ -29,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 class StateTTLInfo(StrictBaseModel):
     """State TTL information model."""
-    
+
     ttl_seconds: Optional[int] = Field(default=None, description="TTL in seconds for state storage")
-    
+
     @classmethod
     def extract_from_state(cls, state: AgentState) -> 'StateTTLInfo':
         """Extract TTL information from agent state.
@@ -43,13 +44,13 @@ class StateTTLInfo(StrictBaseModel):
             TTL information model
         """
         ttl_seconds = None
-        
+
         # Explicit path checking without fallbacks
-        if (state.config and 
-            state.config.state_config and 
+        if (state.config and
+            state.config.state_config and
             hasattr(state.config.state_config, 'ttl_seconds')):
             ttl_seconds = state.config.state_config.ttl_seconds
-            
+
         return cls(ttl_seconds=ttl_seconds)
 
 
@@ -58,13 +59,13 @@ class StateTTLInfo(StrictBaseModel):
 # No environment variables
 class RedisStatePersisterSettings(ProviderSettings):
     """Settings specific to the RedisStatePersister."""
-    
+
     redis_provider_name: str = Field(..., min_length=1, description="The registered name of the RedisProvider instance to use.")
     key_prefix: str = Field("agent_state:", description="Prefix for keys in Redis where state is stored.")
 
 @provider(name="redis", provider_type="state_persister", settings_class=RedisStatePersisterSettings)
 # Corrected inheritance: Only inherit from BaseStatePersister (which is a Provider)
-class RedisStatePersister(BaseStatePersister[RedisStatePersisterSettings]): 
+class RedisStatePersister(BaseStatePersister[RedisStatePersisterSettings]):
     """State persister using a Redis cache provider as the backend."""
 
     # __init__ should call super(), which calls BaseStatePersister/Provider init
@@ -138,7 +139,7 @@ class RedisStatePersister(BaseStatePersister[RedisStatePersisterSettings]):
         except Exception as e:
             logger.error(f"Failed to delete state '{task_id}' via persister '{self.name}': {e}", exc_info=True)
             return False
-            
+
     # Implement _list_states_impl if required by the interface
     async def _list_states_impl(self, filter_criteria: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
         # This might be complex with Redis keys, potentially using SCAN
@@ -181,7 +182,7 @@ class MongoStatePersister(BaseStatePersister[MongoStatePersisterSettings]):
             logger.error(f"Failed to initialize MongoStatePersister '{self.name}': {e}", exc_info=True)
             self._mongo_provider = None
             raise
-            
+
     async def _save_state_impl(self, state: AgentState, metadata: Optional[Dict[str, str]] = None) -> bool:
         if not self.initialized or not self._mongo_provider:
             raise RuntimeError(f"{self.name} not initialized.")
@@ -191,7 +192,7 @@ class MongoStatePersister(BaseStatePersister[MongoStatePersisterSettings]):
             state_dict["_id"] = state_id # Use task_id as MongoDB _id
             if metadata:
                 state_dict["metadata"] = metadata  # Add metadata if provided
-            
+
             # Implement upsert logic: try update first, then insert if needed
             update_count = await self._mongo_provider.update_document(
                 collection=self.settings.collection_name,
@@ -230,7 +231,7 @@ class MongoStatePersister(BaseStatePersister[MongoStatePersisterSettings]):
         except Exception as e:
             logger.error(f"Failed to load state '{state_id}' via {self.name}: {e}", exc_info=True)
             raise
-            
+
     async def _delete_state_impl(self, task_id: str) -> bool:
         if not self.initialized or not self._mongo_provider:
             raise RuntimeError(f"{self.name} not initialized.")
@@ -245,7 +246,7 @@ class MongoStatePersister(BaseStatePersister[MongoStatePersisterSettings]):
         except Exception as e:
             logger.error(f"Failed to delete state '{task_id}' via {self.name}: {e}", exc_info=True)
             return False
-            
+
     async def _list_states_impl(self, filter_criteria: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
         # Implementation depends heavily on how metadata/filtering is stored/queried in Mongo
         raise NotImplementedError("_list_states_impl not implemented for MongoStatePersister")
@@ -298,10 +299,10 @@ class PostgresStatePersister(BaseStatePersister[PostgresStatePersisterSettings])
                 self.settings.data_column: state_json_str
                 # Add metadata to a separate column if needed
             }
-            if metadata: 
-                # Need a way to store metadata, e.g., another JSONB column? 
+            if metadata:
+                # Need a way to store metadata, e.g., another JSONB column?
                 logger.warning(f"Metadata provided but not stored by {self.name}")
-                
+
             # Use actual SQL with execute method for upsert
             upsert_sql = f"""
                 INSERT INTO {self.settings.table_name} ({self.settings.id_column}, {self.settings.data_column})
@@ -339,9 +340,9 @@ class PostgresStatePersister(BaseStatePersister[PostgresStatePersisterSettings])
             if self.settings.data_column not in record:
                 raise ValueError(f"State data column '{self.settings.data_column}' missing from record for '{state_id}'")
             state_data = record[self.settings.data_column]
-            if state_data is None: 
+            if state_data is None:
                  raise ValueError(f"State data column '{self.settings.data_column}' missing for '{state_id}'.")
-                 
+
             # Handle potential JSON string or dict/list from DB driver
             if isinstance(state_data, str):
                  state_model = AgentStateModel.model_validate_json(state_data)
@@ -351,13 +352,13 @@ class PostgresStatePersister(BaseStatePersister[PostgresStatePersisterSettings])
                  state = AgentState(initial_state_data=state_model)
             else:
                  raise TypeError(f"Unexpected type {type(state_data)} for state data.")
-                 
+
             logger.debug(f"Loaded state '{state_id}' via {self.name}")
             return state
         except Exception as e:
             logger.error(f"Failed to load state '{state_id}' via {self.name}: {e}", exc_info=True)
             raise
-            
+
     async def _delete_state_impl(self, task_id: str) -> bool:
         if not self.initialized or not self._postgres_provider:
             raise RuntimeError(f"{self.name} not initialized.")
@@ -376,11 +377,11 @@ class PostgresStatePersister(BaseStatePersister[PostgresStatePersisterSettings])
         except Exception as e:
             logger.error(f"Failed to delete state '{task_id}' via {self.name}: {e}", exc_info=True)
             return False
-            
+
     async def _list_states_impl(self, filter_criteria: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
         # Needs implementation based on how metadata/filtering is handled
         raise NotImplementedError("_list_states_impl not implemented for PostgresStatePersister")
 
     async def _shutdown(self) -> None:
         logger.info(f"Shutting down PostgresStatePersister '{self.name}'.")
-        self._postgres_provider = None 
+        self._postgres_provider = None

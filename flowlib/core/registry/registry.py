@@ -5,7 +5,7 @@ flowlib system, providing a common interface for registration and retrieval.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type, TypeVar, Generic
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
 T = TypeVar('T')
 
@@ -15,7 +15,7 @@ class BaseRegistry(ABC, Generic[T]):
     This class defines the complete interface that all registries must implement,
     establishing a consistent pattern for registration, retrieval, and management operations.
     """
-    
+
     @abstractmethod
     def register(self, name: str, obj: T, **metadata: Any) -> None:
         """Register an object with the registry.
@@ -26,7 +26,7 @@ class BaseRegistry(ABC, Generic[T]):
             **metadata: Additional metadata about the object
         """
         pass
-        
+
     @abstractmethod
     def get(self, name: str, expected_type: Optional[Type[Any]] = None) -> T:
         """Get an object by name with optional type checking.
@@ -43,7 +43,7 @@ class BaseRegistry(ABC, Generic[T]):
             TypeError: If the object doesn't match the expected type
         """
         pass
-        
+
     @abstractmethod
     def contains(self, name: str) -> bool:
         """Check if an object exists in the registry.
@@ -55,7 +55,7 @@ class BaseRegistry(ABC, Generic[T]):
             True if the object exists, False otherwise
         """
         pass
-        
+
     @abstractmethod
     def list(self, filter_criteria: Optional[Dict[str, Any]] = None) -> List[str]:
         """List registered objects matching criteria.
@@ -67,7 +67,7 @@ class BaseRegistry(ABC, Generic[T]):
             List of object names matching the criteria
         """
         pass
-    
+
     @abstractmethod
     def clear(self) -> None:
         """Clear all registrations from the registry.
@@ -75,7 +75,7 @@ class BaseRegistry(ABC, Generic[T]):
         This method removes all registered objects and associated metadata.
         """
         pass
-    
+
     @abstractmethod
     def remove(self, name: str) -> bool:
         """Remove a specific registration from the registry.
@@ -87,7 +87,7 @@ class BaseRegistry(ABC, Generic[T]):
             True if the object was found and removed, False if not found
         """
         pass
-    
+
     @abstractmethod
     def update(self, name: str, obj: T, **metadata: Any) -> bool:
         """Update or replace an existing registration.
@@ -101,7 +101,7 @@ class BaseRegistry(ABC, Generic[T]):
             True if an existing object was updated, False if this was a new registration
         """
         pass
-    
+
     # Alias support methods (optional implementation)
     def register_with_aliases(self, canonical_name: str, obj: T, aliases: Optional[List[str]] = None, **metadata: Any) -> None:
         """Register an object with canonical name and optional aliases.
@@ -117,12 +117,12 @@ class BaseRegistry(ABC, Generic[T]):
         """
         # Register the canonical name
         self.register(canonical_name, obj, **metadata)
-        
+
         # Register each alias
         if aliases:
             for alias in aliases:
                 self.register(alias, obj, **metadata)
-    
+
     def create_alias(self, alias_name: str, canonical_name: str) -> bool:
         """Create an alias that points to an existing canonical name.
         
@@ -138,11 +138,11 @@ class BaseRegistry(ABC, Generic[T]):
         """
         if not self.contains(canonical_name):
             return False
-            
+
         obj = self.get(canonical_name)
         self.register(alias_name, obj)
         return True
-    
+
     def remove_alias(self, alias_name: str) -> bool:
         """Remove an alias (but not the canonical object).
         
@@ -156,7 +156,7 @@ class BaseRegistry(ABC, Generic[T]):
         Subclasses can override to preserve canonical objects.
         """
         return self.remove(alias_name)
-    
+
     def list_aliases(self, canonical_name: str) -> List[str]:
         """List all aliases that point to a canonical name.
         

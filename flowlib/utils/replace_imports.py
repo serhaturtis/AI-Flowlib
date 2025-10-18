@@ -1,6 +1,6 @@
+import json
 import os
 import sys
-import json
 from typing import Dict, List
 
 
@@ -42,4 +42,4 @@ def main() -> None:
         print(f"  {filepath}")
 
 if __name__ == "__main__":
-    main() 
+    main()
