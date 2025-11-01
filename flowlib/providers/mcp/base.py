@@ -1,8 +1,10 @@
 """Base classes and models for MCP integration."""
 
+import builtins
 import logging
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, Type
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class MCPTransport(str, Enum):
     """MCP transport protocols."""
+
     STDIO = "stdio"
     SSE = "sse"
     WEBSOCKET = "websocket"
@@ -20,6 +23,7 @@ class MCPTransport(str, Enum):
 
 class MCPMessageType(str, Enum):
     """MCP message types."""
+
     REQUEST = "request"
     RESPONSE = "response"
     NOTIFICATION = "notification"
@@ -27,39 +31,40 @@ class MCPMessageType(str, Enum):
 
 class PydanticSchemaData(BaseModel):
     """Pydantic schema data model."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: str = Field(default="object", description="Schema type")
-    properties: Dict[str, Any] = Field(default_factory=dict, description="Schema properties")
-    required: List[str] = Field(default_factory=list, description="Required fields")
+    properties: dict[str, Any] = Field(default_factory=dict, description="Schema properties")
+    required: list[str] = Field(default_factory=list, description="Required fields")
 
 
 class MCPToolInputSchema(BaseModel):
     """Schema for MCP tool input."""
+
     type: str = "object"
-    properties: Dict[str, Any] = Field(default_factory=dict)
-    required: List[str] = Field(default_factory=list)
+    properties: dict[str, Any] = Field(default_factory=dict)
+    required: list[str] = Field(default_factory=list)
 
     @classmethod
-    def from_pydantic_model(cls, model_class: Type[BaseModel]) -> 'MCPToolInputSchema':
+    def from_pydantic_model(cls, model_class: builtins.type[BaseModel]) -> "MCPToolInputSchema":
         """Create schema from Pydantic model."""
         schema_raw = model_class.model_json_schema()
         # Filter schema to only include fields expected by PydanticSchemaData
         filtered_schema = {
             "type": schema_raw["type"] if "type" in schema_raw else "object",
             "properties": schema_raw["properties"] if "properties" in schema_raw else {},
-            "required": schema_raw["required"] if "required" in schema_raw else []
+            "required": schema_raw["required"] if "required" in schema_raw else [],
         }
         schema_data = PydanticSchemaData.model_validate(filtered_schema)
         return cls(
-            type=schema_data.type,
-            properties=schema_data.properties,
-            required=schema_data.required
+            type=schema_data.type, properties=schema_data.properties, required=schema_data.required
         )
 
 
 class MCPTool(BaseModel):
     """MCP tool definition."""
+
     name: str
     description: str
     input_schema: MCPToolInputSchema
@@ -69,128 +74,146 @@ class MCPTool(BaseModel):
 
 class MCPResource(BaseModel):
     """MCP resource definition."""
+
     uri: str
     name: str
-    description: Optional[str] = None
-    mime_type: Optional[str] = None
+    description: str | None = None
+    mime_type: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
 
 class MCPCapabilities(BaseModel):
     """MCP server/client capabilities."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    tools: Optional[Dict[str, Any]] = None
-    resources: Optional[Dict[str, Any]] = None
-    prompts: Optional[Dict[str, Any]] = None
-    experimental: Optional[Dict[str, Any]] = None
+    tools: dict[str, Any] | None = None
+    resources: dict[str, Any] | None = None
+    prompts: dict[str, Any] | None = None
+    experimental: dict[str, Any] | None = None
 
 
 class MCPParams(BaseModel):
     """Base class for MCP method parameters."""
+
     pass
 
 
 class ToolCallParamsData(BaseModel):
     """Tool call parameters data model."""
+
     model_config = ConfigDict(extra="forbid")
 
-    name: Optional[str] = Field(default=None, description="Tool name")
-    arguments: Dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
+    name: str | None = Field(default=None, description="Tool name")
+    arguments: dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
 
 
 class ResourceReadParamsData(BaseModel):
     """Resource read parameters data model."""
+
     model_config = ConfigDict(extra="forbid")
 
-    uri: Optional[str] = Field(default=None, description="Resource URI")
+    uri: str | None = Field(default=None, description="Resource URI")
 
 
 class MCPInitializeParams(MCPParams):
     """Parameters for initialize method."""
+
     protocolVersion: str = "2024-11-05"
     capabilities: MCPCapabilities
-    clientInfo: Dict[str, str]
+    clientInfo: dict[str, str]
 
 
 class MCPToolCallParams(MCPParams):
     """Parameters for tools/call method."""
+
     name: str
-    arguments: Dict[str, Any] = Field(default_factory=dict)
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class MCPResourceReadParams(MCPParams):
     """Parameters for resources/read method."""
+
     uri: str
 
 
 class MCPResult(BaseModel):
     """Base class for MCP method results."""
+
     pass
 
 
 class MCPInitializeResult(MCPResult):
     """Result from initialize method."""
+
     protocolVersion: str
     capabilities: MCPCapabilities
-    serverInfo: Dict[str, str]
+    serverInfo: dict[str, str]
 
 
 class MCPToolsListResult(MCPResult):
     """Result from tools/list method."""
-    tools: List[MCPTool] = Field(default_factory=list)
+
+    tools: list[MCPTool] = Field(default_factory=list)
 
 
 class MCPResourcesListResult(MCPResult):
     """Result from resources/list method."""
-    resources: List[MCPResource] = Field(default_factory=list)
+
+    resources: list[MCPResource] = Field(default_factory=list)
 
 
 class MCPToolCallResult(MCPResult):
     """Result from tools/call method."""
-    content: List[Dict[str, Any]] = Field(default_factory=list)
-    isError: Optional[bool] = None
+
+    content: list[dict[str, Any]] = Field(default_factory=list)
+    isError: bool | None = None
 
 
 class MCPResourceReadResult(MCPResult):
     """Result from resources/read method."""
-    contents: List[Dict[str, Any]] = Field(default_factory=list)
+
+    contents: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class MCPMessage(BaseModel):
     """Base MCP message."""
-    id: Optional[str] = None
+
+    id: str | None = None
     type: MCPMessageType
-    method: Optional[str] = None
-    params: Optional[Dict[str, Any]] = None
-    result: Optional[Any] = None
-    error: Optional[Dict[str, Any]] = None
+    method: str | None = None
+    params: dict[str, Any] | None = None
+    result: Any | None = None
+    error: dict[str, Any] | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
 
 class MCPRequest(MCPMessage):
     """MCP request message."""
+
     type: MCPMessageType = MCPMessageType.REQUEST
     method: str
     id: str  # Required for requests
-    params: Optional[Dict[str, Any]] = None
+    params: dict[str, Any] | None = None
 
 
 class MCPResponse(MCPMessage):
     """MCP response message."""
+
     type: MCPMessageType = MCPMessageType.RESPONSE
     id: str  # Required for responses
-    result: Optional[Any] = None
-    error: Optional[Dict[str, Any]] = None
+    result: Any | None = None
+    error: dict[str, Any] | None = None
 
 
 class MCPNotification(MCPMessage):
     """MCP notification message."""
+
     type: MCPMessageType = MCPMessageType.NOTIFICATION
     method: str
-    params: Optional[Dict[str, Any]] = None
+    params: dict[str, Any] | None = None
 
 
 class MCPConnection(Protocol):
@@ -212,18 +235,15 @@ class MCPConnection(Protocol):
 class MCPError(Exception):
     """Base MCP error."""
 
-    def __init__(self, message: str, code: int = -1, data: Optional[Dict[str, Any]] = None):
+    def __init__(self, message: str, code: int = -1, data: dict[str, Any] | None = None):
         super().__init__(message)
         self.message = message
         self.code = code
         self.data = data
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert error to dictionary format for MCP messages."""
-        result = {
-            "code": self.code,
-            "message": self.message
-        }
+        result = {"code": self.code, "message": self.message}
         if self.data is not None:
             result["data"] = self.data
         return result
@@ -257,10 +277,10 @@ class BaseMCPClient:
 
     def __init__(self, name: str = "flowlib-client"):
         self.name = name
-        self.connection: Optional[MCPConnection] = None
+        self.connection: MCPConnection | None = None
         self.capabilities = MCPCapabilities()
-        self._tools: Dict[str, MCPTool] = {}
-        self._resources: Dict[str, MCPResource] = {}
+        self._tools: dict[str, MCPTool] = {}
+        self._resources: dict[str, MCPResource] = {}
         self._request_id = 0
 
     async def initialize(self, connection: MCPConnection) -> None:
@@ -273,7 +293,9 @@ class BaseMCPClient:
         # List available tools and resources
         await self._discover_capabilities()
 
-        logger.info(f"MCP client '{self.name}' initialized with {len(self._tools)} tools and {len(self._resources)} resources")
+        logger.info(
+            f"MCP client '{self.name}' initialized with {len(self._tools)} tools and {len(self._resources)} resources"
+        )
 
     async def _handshake(self) -> None:
         """Perform MCP handshake."""
@@ -284,11 +306,8 @@ class BaseMCPClient:
             params={
                 "protocolVersion": "2024-11-05",
                 "capabilities": self.capabilities.model_dump(exclude_none=True),
-                "clientInfo": {
-                    "name": self.name,
-                    "version": "1.0.0"
-                }
-            }
+                "clientInfo": {"name": self.name, "version": "1.0.0"},
+            },
         )
 
         assert self.connection is not None, "MCP connection not established"
@@ -322,15 +341,12 @@ class BaseMCPClient:
         except Exception as e:
             logger.warning(f"Failed to list resources: {e}")
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Call a tool on the server."""
         if name not in self._tools:
             raise MCPToolNotFoundError(name)
 
-        response = await self._send_request("tools/call", {
-            "name": name,
-            "arguments": arguments
-        })
+        response = await self._send_request("tools/call", {"name": name, "arguments": arguments})
 
         if response.error:
             raise MCPError(f"Tool call failed: {response.error}")
@@ -342,25 +358,22 @@ class BaseMCPClient:
         if uri not in self._resources:
             raise MCPResourceNotFoundError(uri)
 
-        response = await self._send_request("resources/read", {
-            "uri": uri
-        })
+        response = await self._send_request("resources/read", {"uri": uri})
 
         if response.error:
             raise MCPError(f"Resource read failed: {response.error}")
 
         return response.result
 
-    async def _send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> MCPMessage:
+    async def _send_request(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> MCPMessage:
         """Send request and wait for response."""
         if not self.connection:
             raise MCPConnectionError("Not connected")
 
         request = MCPMessage(
-            id=str(self._get_next_id()),
-            type=MCPMessageType.REQUEST,
-            method=method,
-            params=params
+            id=str(self._get_next_id()), type=MCPMessageType.REQUEST, method=method, params=params
         )
 
         await self.connection.send(request)
@@ -373,11 +386,11 @@ class BaseMCPClient:
         self._request_id += 1
         return self._request_id
 
-    def get_available_tools(self) -> Dict[str, MCPTool]:
+    def get_available_tools(self) -> dict[str, MCPTool]:
         """Get available tools."""
         return self._tools.copy()
 
-    def get_available_resources(self) -> Dict[str, MCPResource]:
+    def get_available_resources(self) -> dict[str, MCPResource]:
         """Get available resources."""
         return self._resources.copy()
 
@@ -394,14 +407,11 @@ class BaseMCPServer:
     def __init__(self, name: str = "flowlib-server", version: str = "1.0.0"):
         self.name = name
         self.version = version
-        self.capabilities = MCPCapabilities(
-            tools={},
-            resources={}
-        )
-        self._tools: Dict[str, MCPTool] = {}
-        self._resources: Dict[str, MCPResource] = {}
-        self._tool_handlers: Dict[str, Callable[..., Any]] = {}
-        self._resource_handlers: Dict[str, Callable[..., Any]] = {}
+        self.capabilities = MCPCapabilities(tools={}, resources={})
+        self._tools: dict[str, MCPTool] = {}
+        self._resources: dict[str, MCPResource] = {}
+        self._tool_handlers: dict[str, Callable[..., Any]] = {}
+        self._resource_handlers: dict[str, Callable[..., Any]] = {}
 
     def register_tool(self, tool: MCPTool, handler: Callable[..., Any]) -> None:
         """Register a tool with its handler."""
@@ -432,14 +442,14 @@ class BaseMCPServer:
                 return MCPMessage(
                     id=request.id,
                     type=MCPMessageType.RESPONSE,
-                    error={"code": -32601, "message": f"Method not found: {request.method}"}
+                    error={"code": -32601, "message": f"Method not found: {request.method}"},
                 )
         except Exception as e:
             logger.error(f"Error handling request: {e}", exc_info=True)
             return MCPMessage(
                 id=request.id,
                 type=MCPMessageType.RESPONSE,
-                error={"code": -32603, "message": f"Internal error: {str(e)}"}
+                error={"code": -32603, "message": f"Internal error: {str(e)}"},
             )
 
     async def _handle_initialize(self, request: MCPMessage) -> MCPMessage:
@@ -450,21 +460,14 @@ class BaseMCPServer:
             result={
                 "protocolVersion": "2024-11-05",
                 "capabilities": self.capabilities.model_dump(exclude_none=True),
-                "serverInfo": {
-                    "name": self.name,
-                    "version": self.version
-                }
-            }
+                "serverInfo": {"name": self.name, "version": self.version},
+            },
         )
 
     async def _handle_list_tools(self, request: MCPMessage) -> MCPMessage:
         """Handle tools/list request."""
         tools = [tool.model_dump() for tool in self._tools.values()]
-        return MCPMessage(
-            id=request.id,
-            type=MCPMessageType.RESPONSE,
-            result={"tools": tools}
-        )
+        return MCPMessage(id=request.id, type=MCPMessageType.RESPONSE, result={"tools": tools})
 
     async def _handle_call_tool(self, request: MCPMessage) -> MCPMessage:
         """Handle tools/call request."""
@@ -477,32 +480,26 @@ class BaseMCPServer:
             return MCPMessage(
                 id=request.id,
                 type=MCPMessageType.RESPONSE,
-                error={"code": -32601, "message": f"Tool not found: {tool_name}"}
+                error={"code": -32601, "message": f"Tool not found: {tool_name}"},
             )
 
         try:
             handler = self._tool_handlers[tool_name]
             result = await handler(arguments)
 
-            return MCPMessage(
-                id=request.id,
-                type=MCPMessageType.RESPONSE,
-                result=result
-            )
+            return MCPMessage(id=request.id, type=MCPMessageType.RESPONSE, result=result)
         except Exception as e:
             return MCPMessage(
                 id=request.id,
                 type=MCPMessageType.RESPONSE,
-                error={"code": -32603, "message": f"Tool execution failed: {str(e)}"}
+                error={"code": -32603, "message": f"Tool execution failed: {str(e)}"},
             )
 
     async def _handle_list_resources(self, request: MCPMessage) -> MCPMessage:
         """Handle resources/list request."""
         resources = [resource.model_dump() for resource in self._resources.values()]
         return MCPMessage(
-            id=request.id,
-            type=MCPMessageType.RESPONSE,
-            result={"resources": resources}
+            id=request.id, type=MCPMessageType.RESPONSE, result={"resources": resources}
         )
 
     async def _handle_read_resource(self, request: MCPMessage) -> MCPMessage:
@@ -515,23 +512,19 @@ class BaseMCPServer:
             return MCPMessage(
                 id=request.id,
                 type=MCPMessageType.RESPONSE,
-                error={"code": -32601, "message": f"Resource not found: {uri}"}
+                error={"code": -32601, "message": f"Resource not found: {uri}"},
             )
 
         try:
             handler = self._resource_handlers[uri]
             result = await handler()
 
-            return MCPMessage(
-                id=request.id,
-                type=MCPMessageType.RESPONSE,
-                result=result
-            )
+            return MCPMessage(id=request.id, type=MCPMessageType.RESPONSE, result=result)
         except Exception as e:
             return MCPMessage(
                 id=request.id,
                 type=MCPMessageType.RESPONSE,
-                error={"code": -32603, "message": f"Resource read failed: {str(e)}"}
+                error={"code": -32603, "message": f"Resource read failed: {str(e)}"},
             )
 
     def stop(self) -> None:
@@ -546,37 +539,42 @@ class BaseMCPServer:
 
 class MCPProviderSettings(ProviderSettings):
     """Settings for MCP provider."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     transport: MCPTransport = MCPTransport.STDIO
-    host: Optional[str] = None
-    port: Optional[int] = None
-    path: Optional[str] = None
+    host: str | None = None
+    port: int | None = None
+    path: str | None = None
     timeout: float = 30.0
     max_retries: int = 3
 
     # STDIO transport settings
-    command: Optional[str] = None
-    args: List[str] = Field(default_factory=list)
-    env: Dict[str, str] = Field(default_factory=dict)
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
 
     # Network transport settings
-    server_url: Optional[str] = None
-    auth_token: Optional[str] = None
+    server_url: str | None = None
+    auth_token: str | None = None
 
 
 class MCPProvider(Provider[MCPProviderSettings]):
     """Base MCP provider class."""
 
-    def __init__(self, name: str = "mcp", provider_type: str = "mcp", settings: Optional[MCPProviderSettings] = None):
+    def __init__(
+        self,
+        name: str = "mcp",
+        provider_type: str = "mcp",
+        settings: MCPProviderSettings | None = None,
+    ):
         # Initialize parent Provider
         settings_obj = settings or MCPProviderSettings()
         super().__init__(name=name, provider_type=provider_type, settings=settings_obj)
         self._transport = None
-        self._tools: Dict[str, MCPTool] = {}
-        self._client: Optional[BaseMCPClient] = None
-        self._server: Optional[BaseMCPServer] = None
-
+        self._tools: dict[str, MCPTool] = {}
+        self._client: BaseMCPClient | None = None
+        self._server: BaseMCPServer | None = None
 
     async def initialize(self) -> None:
         """Initialize the provider."""
@@ -586,11 +584,11 @@ class MCPProvider(Provider[MCPProviderSettings]):
         """Shutdown the provider."""
         raise NotImplementedError("Subclasses must implement shutdown()")
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Call a tool."""
         raise NotImplementedError("Subclasses must implement call_tool()")
 
-    async def list_tools(self) -> List[Dict[str, Any]]:
+    async def list_tools(self) -> list[dict[str, Any]]:
         """List available tools."""
         raise NotImplementedError("Subclasses must implement list_tools()")
 
@@ -606,15 +604,21 @@ class MCPProvider(Provider[MCPProviderSettings]):
             self._server = BaseMCPServer()
         return self._server
 
-    def _create_request(self, method: str, id: str, params: Optional[Dict[str, Any]] = None) -> MCPRequest:
+    def _create_request(
+        self, method: str, id: str, params: dict[str, Any] | None = None
+    ) -> MCPRequest:
         """Create an MCP request message."""
         return MCPRequest(method=method, id=id, params=params)
 
-    def _create_response(self, id: str, result: Optional[Dict[str, Any]] = None, error: Optional[MCPError] = None) -> MCPResponse:
+    def _create_response(
+        self, id: str, result: dict[str, Any] | None = None, error: MCPError | None = None
+    ) -> MCPResponse:
         """Create an MCP response message."""
         error_dict = error.to_dict() if error else None
         return MCPResponse(id=id, result=result, error=error_dict)
 
-    def _create_notification(self, method: str, params: Optional[Dict[str, Any]] = None) -> MCPNotification:
+    def _create_notification(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> MCPNotification:
         """Create an MCP notification message."""
         return MCPNotification(method=method, params=params)

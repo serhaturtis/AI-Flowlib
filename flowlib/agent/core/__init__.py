@@ -26,5 +26,5 @@ __all__ = [
     "ExecutionError",
     "StatePersistenceError",
     "NotInitializedError",
-    "ComponentError"
+    "ComponentError",
 ]

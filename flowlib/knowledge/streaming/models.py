@@ -18,5 +18,5 @@ __all__ = [
     "ExtractionConfig",
     "CheckpointData",
     "PluginManifest",
-    "StreamingDocumentBatch"
+    "StreamingDocumentBatch",
 ]

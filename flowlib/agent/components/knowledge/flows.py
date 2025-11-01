@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Flow Input/Output Models
 
+
 class AgentKnowledgeExtractionInput(StrictBaseModel):
     """Input for agent knowledge extraction flow."""
 
@@ -55,24 +56,26 @@ class AgentKnowledgeRetrievalOutput(StrictBaseModel):
 
 # Knowledge Flows
 
+
 @flow(  # type: ignore[arg-type]
     name="agent-knowledge-extraction",
     description="Extract knowledge from text for agent learning workflows",
-    is_infrastructure=False
+    is_infrastructure=False,
 )
 class AgentKnowledgeExtractionFlow:
     """Flow for extracting knowledge in agent workflows."""
 
     @pipeline(
-        input_model=AgentKnowledgeExtractionInput,
-        output_model=AgentKnowledgeExtractionOutput
+        input_model=AgentKnowledgeExtractionInput, output_model=AgentKnowledgeExtractionOutput
     )
-    async def run_pipeline(self, input_data: AgentKnowledgeExtractionInput) -> AgentKnowledgeExtractionOutput:
+    async def run_pipeline(
+        self, input_data: AgentKnowledgeExtractionInput
+    ) -> AgentKnowledgeExtractionOutput:
         """Extract knowledge using the knowledge component.
-        
+
         Args:
             input_data: Extraction input data
-            
+
         Returns:
             Extraction output with knowledge
         """
@@ -86,14 +89,14 @@ class AgentKnowledgeExtractionFlow:
             learning_result = await knowledge_component.learn_from_content(
                 content=input_data.text,
                 context=input_data.context,
-                domain_hint=input_data.domain_hint
+                domain_hint=input_data.domain_hint,
             )
 
             return AgentKnowledgeExtractionOutput(
                 success=learning_result.success,
                 knowledge=learning_result.knowledge,
                 message=learning_result.message,
-                processing_time_seconds=learning_result.processing_time_seconds
+                processing_time_seconds=learning_result.processing_time_seconds,
             )
 
         except Exception as e:
@@ -102,7 +105,7 @@ class AgentKnowledgeExtractionFlow:
                 success=False,
                 knowledge=KnowledgeSet(),
                 message=f"Extraction failed: {str(e)}",
-                processing_time_seconds=0.0
+                processing_time_seconds=0.0,
             )
 
     def _get_knowledge_component(self) -> KnowledgeComponent:
@@ -110,6 +113,7 @@ class AgentKnowledgeExtractionFlow:
         # This would be injected by the flow runner
         # For now, placeholder following flowlib patterns
         from flowlib.agent.core.component_registry import component_registry
+
         component = component_registry.get("knowledge")
         if not component:
             raise RuntimeError("Knowledge component not available in registry")
@@ -119,21 +123,20 @@ class AgentKnowledgeExtractionFlow:
 @flow(  # type: ignore[arg-type]
     name="agent-knowledge-retrieval",
     description="Retrieve knowledge for agent workflows",
-    is_infrastructure=False
+    is_infrastructure=False,
 )
 class AgentKnowledgeRetrievalFlow:
     """Flow for retrieving knowledge in agent workflows."""
 
-    @pipeline(
-        input_model=AgentKnowledgeRetrievalInput,
-        output_model=AgentKnowledgeRetrievalOutput
-    )
-    async def run_pipeline(self, input_data: AgentKnowledgeRetrievalInput) -> AgentKnowledgeRetrievalOutput:
+    @pipeline(input_model=AgentKnowledgeRetrievalInput, output_model=AgentKnowledgeRetrievalOutput)
+    async def run_pipeline(
+        self, input_data: AgentKnowledgeRetrievalInput
+    ) -> AgentKnowledgeRetrievalOutput:
         """Retrieve knowledge using the knowledge component.
-        
+
         Args:
             input_data: Retrieval input data
-            
+
         Returns:
             Retrieval output with knowledge
         """
@@ -148,7 +151,7 @@ class AgentKnowledgeRetrievalFlow:
                 query=input_data.query,
                 knowledge_types=[],  # All types
                 limit=input_data.limit,
-                context_filter=input_data.context_filter if input_data.context_filter else None
+                context_filter=input_data.context_filter if input_data.context_filter else None,
             )
 
             # Perform knowledge retrieval
@@ -157,15 +160,13 @@ class AgentKnowledgeRetrievalFlow:
             return AgentKnowledgeRetrievalOutput(
                 knowledge=retrieval_result.knowledge,
                 query=retrieval_result.query,
-                total_found=retrieval_result.total_found
+                total_found=retrieval_result.total_found,
             )
 
         except Exception as e:
             logger.error(f"Agent knowledge retrieval failed: {e}")
             return AgentKnowledgeRetrievalOutput(
-                knowledge=KnowledgeSet(),
-                query=input_data.query,
-                total_found=0
+                knowledge=KnowledgeSet(), query=input_data.query, total_found=0
             )
 
     def _get_knowledge_component(self) -> KnowledgeComponent:
@@ -173,6 +174,7 @@ class AgentKnowledgeRetrievalFlow:
         # This would be injected by the flow runner
         # For now, placeholder following flowlib patterns
         from flowlib.agent.core.component_registry import component_registry
+
         component = component_registry.get("knowledge")
         if not component:
             raise RuntimeError("Knowledge component not available in registry")

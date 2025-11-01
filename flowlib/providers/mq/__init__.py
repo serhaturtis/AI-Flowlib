@@ -15,5 +15,5 @@ __all__ = [
     "RabbitMQProvider",
     "RabbitMQProviderSettings",
     "KafkaMQProvider",
-    "KafkaProviderSettings"
+    "KafkaProviderSettings",
 ]

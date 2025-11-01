@@ -5,7 +5,7 @@ adapted to flowlib's architecture and CLAUDE.md principles.
 """
 
 from enum import Enum
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Protocol
 
 from pydantic import ConfigDict, Field
 from rich.console import Console
@@ -17,6 +17,7 @@ from flowlib.core.models import StrictBaseModel
 
 class PermissionLevel(Enum):
     """Permission levels for operations."""
+
     ALLOW = "allow"
     ASK = "ask"
     DENY = "deny"
@@ -24,23 +25,25 @@ class PermissionLevel(Enum):
 
 class PermissionRequest(StrictBaseModel):
     """Permission request model."""
+
     model_config = ConfigDict(extra="forbid", validate_assignment=True, strict=True)
 
     operation_type: str = Field(..., description="Type of operation (edit, write, bash, etc.)")
-    session_id: Optional[str] = Field(default=None, description="Session ID")
-    message_id: Optional[str] = Field(default=None, description="Message ID")
-    call_id: Optional[str] = Field(default=None, description="Tool call ID")
+    session_id: str | None = Field(default=None, description="Session ID")
+    message_id: str | None = Field(default=None, description="Message ID")
+    call_id: str | None = Field(default=None, description="Tool call ID")
     title: str = Field(..., description="Human-readable operation description")
     details: str = Field(default="", description="Additional operation details")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
 class PermissionResponse(StrictBaseModel):
     """Permission response model."""
+
     model_config = ConfigDict(extra="forbid", validate_assignment=True, strict=True)
 
     granted: bool = Field(..., description="Whether permission was granted")
-    reason: Optional[str] = Field(default=None, description="Reason for decision")
+    reason: str | None = Field(default=None, description="Reason for decision")
 
 
 class PermissionHandler(Protocol):
@@ -54,7 +57,7 @@ class PermissionHandler(Protocol):
 class InteractivePermissionHandler:
     """Interactive permission handler using rich console."""
 
-    def __init__(self, console: Optional[Console] = None):
+    def __init__(self, console: Console | None = None):
         self.console = console or Console()
 
     async def request_permission(self, request: PermissionRequest) -> PermissionResponse:
@@ -72,12 +75,7 @@ class InteractivePermissionHandler:
             for key, value in request.metadata.items():
                 content += f"  {key}: {value}\n"
 
-        panel = Panel(
-            content,
-            title="🔐 Permission Required",
-            border_style="yellow",
-            expand=False
-        )
+        panel = Panel(content, title="🔐 Permission Required", border_style="yellow", expand=False)
 
         self.console.print(panel)
 
@@ -85,15 +83,9 @@ class InteractivePermissionHandler:
         try:
             granted = Confirm.ask("Do you want to allow this operation?", console=self.console)
 
-            return PermissionResponse(
-                granted=granted,
-                reason="User interactive decision"
-            )
+            return PermissionResponse(granted=granted, reason="User interactive decision")
         except KeyboardInterrupt:
-            return PermissionResponse(
-                granted=False,
-                reason="User interrupted permission request"
-            )
+            return PermissionResponse(granted=False, reason="User interrupted permission request")
 
 
 class AutoPermissionHandler:
@@ -106,16 +98,16 @@ class AutoPermissionHandler:
         """Automatically grant or deny permission."""
         return PermissionResponse(
             granted=self.default_allow,
-            reason=f"Auto-handler: {'allowed' if self.default_allow else 'denied'}"
+            reason=f"Auto-handler: {'allowed' if self.default_allow else 'denied'}",
         )
 
 
 class PermissionManager:
     """Manages permissions for REPL tool operations."""
 
-    def __init__(self, handler: Optional[PermissionHandler] = None):
+    def __init__(self, handler: PermissionHandler | None = None):
         self.handler = handler or InteractivePermissionHandler()
-        self.permissions: Dict[str, PermissionLevel] = {
+        self.permissions: dict[str, PermissionLevel] = {
             "edit": PermissionLevel.ASK,
             "write": PermissionLevel.ASK,
             "bash": PermissionLevel.ASK,
@@ -138,16 +130,10 @@ class PermissionManager:
         permission_level = self.get_permission(request.operation_type)
 
         if permission_level == PermissionLevel.ALLOW:
-            return PermissionResponse(
-                granted=True,
-                reason="Operation automatically allowed"
-            )
+            return PermissionResponse(granted=True, reason="Operation automatically allowed")
 
         if permission_level == PermissionLevel.DENY:
-            return PermissionResponse(
-                granted=False,
-                reason="Operation denied by permission policy"
-            )
+            return PermissionResponse(granted=False, reason="Operation denied by permission policy")
 
         # ASK level - request permission from handler
         return await self.handler.request_permission(request)
@@ -165,22 +151,22 @@ async def request_permission(
     operation_type: str,
     title: str,
     details: str = "",
-    session_id: Optional[str] = None,
-    message_id: Optional[str] = None,
-    call_id: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    session_id: str | None = None,
+    message_id: str | None = None,
+    call_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> bool:
     """Request permission for an operation.
-    
+
     Args:
         operation_type: Type of operation (edit, write, bash, etc.)
         title: Human-readable description
         details: Additional details about the operation
         session_id: Optional session ID
-        message_id: Optional message ID  
+        message_id: Optional message ID
         call_id: Optional tool call ID
         metadata: Optional additional metadata
-        
+
     Returns:
         bool: True if permission granted, False otherwise
     """
@@ -191,7 +177,7 @@ async def request_permission(
         call_id=call_id,
         title=title,
         details=details,
-        metadata=metadata or {}
+        metadata=metadata or {},
     )
 
     response = await permission_manager.check_permission(request)

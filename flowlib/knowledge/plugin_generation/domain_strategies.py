@@ -1,30 +1,31 @@
 """Domain-specific generation strategies for knowledge plugins."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.resources.models.base import ResourceBase
 
 from .models import DomainStrategy, DomainStrategyConfig
 
 
 class DomainExtractionConfig(BaseModel):
     """Configuration for domain-specific extraction."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    entity_types: List[str] = Field(description="Expected entity types for this domain")
-    relationship_types: List[str] = Field(description="Expected relationship types")
-    extraction_focus: List[str] = Field(description="Key areas to focus extraction on")
+    entity_types: list[str] = Field(description="Expected entity types for this domain")
+    relationship_types: list[str] = Field(description="Expected relationship types")
+    extraction_focus: list[str] = Field(description="Key areas to focus extraction on")
     chunking_strategy: str = Field(default="default", description="Chunking strategy to use")
-    validation_rules: Dict[str, Any] = Field(default_factory=dict, description="Validation rules")
+    validation_rules: dict[str, Any] = Field(default_factory=dict, description="Validation rules")
 
 
 class BaseDomainStrategy(ABC):
     """Base class for domain-specific generation strategies."""
 
-    def __init__(self, config: Optional[DomainStrategyConfig] = None):
+    def __init__(self, config: DomainStrategyConfig | None = None):
         self.config = config or DomainStrategyConfig(strategy=DomainStrategy.GENERIC)
 
     @property
@@ -59,7 +60,7 @@ class BaseDomainStrategy(ABC):
         """Get domain-specific concept extraction prompt name."""
         pass
 
-    def validate_extracted_data(self, data: Dict[str, Any]) -> List[str]:
+    def validate_extracted_data(self, data: dict[str, Any]) -> list[str]:
         """Validate extracted data according to domain rules."""
         errors = []
         config = self.get_extraction_config()
@@ -92,12 +93,28 @@ class GenericDomainStrategy(BaseDomainStrategy):
     def get_extraction_config(self) -> DomainExtractionConfig:
         return DomainExtractionConfig(
             entity_types=[
-                "system", "component", "standard", "protocol", "framework",
-                "tool", "concept", "organization", "product", "technology"
+                "system",
+                "component",
+                "standard",
+                "protocol",
+                "framework",
+                "tool",
+                "concept",
+                "organization",
+                "product",
+                "technology",
             ],
             relationship_types=[
-                "implements", "extends", "uses", "depends_on", "interfaces_with",
-                "complies_with", "replaces", "contains", "part_of", "related_to"
+                "implements",
+                "extends",
+                "uses",
+                "depends_on",
+                "interfaces_with",
+                "complies_with",
+                "replaces",
+                "contains",
+                "part_of",
+                "related_to",
             ],
             extraction_focus=[
                 "Technical standards and specifications",
@@ -106,8 +123,8 @@ class GenericDomainStrategy(BaseDomainStrategy):
                 "Frameworks and methodologies",
                 "Important concepts and patterns",
                 "Organizations and companies",
-                "Products and technologies"
-            ]
+                "Products and technologies",
+            ],
         )
 
     def get_entity_extraction_prompt(self) -> str:
@@ -122,9 +139,10 @@ class GenericDomainStrategy(BaseDomainStrategy):
 
 # Software Engineering Domain Strategy with specialized prompts
 @prompt("se-entity-extraction-llm")
-class SoftwareEngineeringEntityPrompt(ResourceBase):
-    template: str = Field(default="""You are analyzing software engineering documentation.
-        
+class SoftwareEngineeringEntityPrompt:
+    template: str = Field(
+        default="""You are analyzing software engineering documentation.
+
 Extract all software-related entities from the following text. For each entity, provide:
 - name: The entity name
 - type: The type (class, function, method, api, library, framework, service, database, interface, protocol, architecture_pattern, design_pattern, tool, language, platform)
@@ -150,24 +168,28 @@ Text to analyze:
 {{text}}
 
 Extract entities that would be valuable for a software engineer or developer.
-Output a JSON object with an 'entities' array.""")
+Output a JSON object with an 'entities' array."""
+    )
 
-    config: dict = Field(default={
-        "temperature": 0.2,  # Lower temperature for precise technical extraction
-        "max_tokens": 1200   # More tokens for detailed technical entities
-    })
+    config: dict = Field(
+        default={
+            "temperature": 0.2,  # Lower temperature for precise technical extraction
+            "max_tokens": 1200,  # More tokens for detailed technical entities
+        }
+    )
 
 
 @prompt("se-relationship-extraction-llm")
-class SoftwareEngineeringRelationshipPrompt(ResourceBase):
-    template: str = Field(default="""You are analyzing relationships in software engineering documentation.
+class SoftwareEngineeringRelationshipPrompt:
+    template: str = Field(
+        default="""You are analyzing relationships in software engineering documentation.
 
 Given these software entities:
 {{entity_list}}
 
 Extract all technical relationships between these entities from the text. For each relationship:
 - source: The source entity
-- target: The target entity  
+- target: The target entity
 - type: Relationship type (inherits, implements, extends, uses, depends_on, calls, imports, deploys_to, communicates_with, configures, manages, exposes, consumes, stores_in, retrieves_from, compiles_to, runs_on, interfaces_with, version_of)
 - description: Technical explanation of the relationship
 - confidence: 0.0-1.0 confidence score
@@ -182,17 +204,21 @@ Focus on software engineering relationships that show:
 Text to analyze:
 {{text}}
 
-Output a JSON object with a 'relationships' array.""")
+Output a JSON object with a 'relationships' array."""
+    )
 
-    config: dict = Field(default={
-        "temperature": 0.2,  # Lower temperature for precise technical relationships
-        "max_tokens": 1000   # Sufficient for technical relationships
-    })
+    config: dict = Field(
+        default={
+            "temperature": 0.2,  # Lower temperature for precise technical relationships
+            "max_tokens": 1000,  # Sufficient for technical relationships
+        }
+    )
 
 
 @prompt("se-concept-extraction-llm")
-class SoftwareEngineeringConceptPrompt(ResourceBase):
-    template: str = Field(default="""You are analyzing software engineering documentation.
+class SoftwareEngineeringConceptPrompt:
+    template: str = Field(
+        default="""You are analyzing software engineering documentation.
 
 Extract the {{max_concepts}} most important software engineering concepts. For each:
 - concept: The concept name
@@ -211,12 +237,15 @@ Focus on concepts that are crucial for software development:
 Text to analyze:
 {{text}}
 
-Output a JSON object with a 'concepts' array.""")
+Output a JSON object with a 'concepts' array."""
+    )
 
-    config: dict = Field(default={
-        "temperature": 0.2,  # Lower temperature for precise technical concepts
-        "max_tokens": 1400   # More tokens for detailed technical explanations
-    })
+    config: dict = Field(
+        default={
+            "temperature": 0.2,  # Lower temperature for precise technical concepts
+            "max_tokens": 1400,  # More tokens for detailed technical explanations
+        }
+    )
 
 
 class SoftwareEngineeringDomainStrategy(BaseDomainStrategy):
@@ -233,16 +262,50 @@ class SoftwareEngineeringDomainStrategy(BaseDomainStrategy):
     def get_extraction_config(self) -> DomainExtractionConfig:
         return DomainExtractionConfig(
             entity_types=[
-                "class", "function", "method", "api", "library", "framework",
-                "service", "database", "interface", "protocol", "architecture_pattern",
-                "design_pattern", "tool", "language", "platform", "endpoint",
-                "repository", "module", "package", "dependency", "environment"
+                "class",
+                "function",
+                "method",
+                "api",
+                "library",
+                "framework",
+                "service",
+                "database",
+                "interface",
+                "protocol",
+                "architecture_pattern",
+                "design_pattern",
+                "tool",
+                "language",
+                "platform",
+                "endpoint",
+                "repository",
+                "module",
+                "package",
+                "dependency",
+                "environment",
             ],
             relationship_types=[
-                "inherits", "implements", "extends", "uses", "depends_on", "calls",
-                "imports", "deploys_to", "communicates_with", "configures", "manages",
-                "exposes", "consumes", "stores_in", "retrieves_from", "compiles_to",
-                "runs_on", "interfaces_with", "version_of", "builds", "tests"
+                "inherits",
+                "implements",
+                "extends",
+                "uses",
+                "depends_on",
+                "calls",
+                "imports",
+                "deploys_to",
+                "communicates_with",
+                "configures",
+                "manages",
+                "exposes",
+                "consumes",
+                "stores_in",
+                "retrieves_from",
+                "compiles_to",
+                "runs_on",
+                "interfaces_with",
+                "version_of",
+                "builds",
+                "tests",
             ],
             extraction_focus=[
                 "Code structures (classes, functions, methods, interfaces)",
@@ -254,14 +317,14 @@ class SoftwareEngineeringDomainStrategy(BaseDomainStrategy):
                 "Programming languages and runtime environments",
                 "Architecture and design patterns",
                 "Protocols and communication standards",
-                "Software engineering methodologies"
+                "Software engineering methodologies",
             ],
             chunking_strategy="code_aware",  # Future: implement code-aware chunking
             validation_rules={
                 "require_technical_attributes": True,
                 "validate_api_endpoints": True,
-                "check_dependency_consistency": True
-            }
+                "check_dependency_consistency": True,
+            },
         )
 
     def get_entity_extraction_prompt(self) -> str:
@@ -279,7 +342,7 @@ class DomainStrategyRegistry:
     """Registry for domain-specific generation strategies."""
 
     def __init__(self) -> None:
-        self._strategies: Dict[DomainStrategy, BaseDomainStrategy] = {}
+        self._strategies: dict[DomainStrategy, BaseDomainStrategy] = {}
         self._register_default_strategies()
 
     def _register_default_strategies(self) -> None:
@@ -288,7 +351,9 @@ class DomainStrategyRegistry:
         self._strategies[DomainStrategy.SOFTWARE_ENGINEERING] = SoftwareEngineeringDomainStrategy()
         # Future strategies will be added here
 
-    def get_strategy(self, domain: DomainStrategy, config: Optional[DomainStrategyConfig] = None) -> BaseDomainStrategy:
+    def get_strategy(
+        self, domain: DomainStrategy, config: DomainStrategyConfig | None = None
+    ) -> BaseDomainStrategy:
         """Get a domain strategy instance."""
         if domain not in self._strategies:
             raise ValueError(f"Unknown domain strategy: {domain}")
@@ -296,13 +361,10 @@ class DomainStrategyRegistry:
         strategy_class = type(self._strategies[domain])
         return strategy_class(config)
 
-    def list_available_strategies(self) -> Dict[DomainStrategy, Dict[str, str]]:
+    def list_available_strategies(self) -> dict[DomainStrategy, dict[str, str]]:
         """List all available strategies with their metadata."""
         return {
-            domain: {
-                "name": strategy.strategy_name,
-                "description": strategy.description
-            }
+            domain: {"name": strategy.strategy_name, "description": strategy.description}
             for domain, strategy in self._strategies.items()
         }
 

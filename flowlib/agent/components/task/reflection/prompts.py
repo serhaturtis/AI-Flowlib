@@ -3,14 +3,14 @@
 from pydantic import Field
 
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.resources.models.base import ResourceBase
 
 
 @prompt(name="execution-reflection-prompt")
-class ExecutionReflectionPrompt(ResourceBase):
+class ExecutionReflectionPrompt:
     """Prompt for reflecting on execution results to determine if re-planning is needed."""
 
-    template: str = Field(default="""Goal: {{original_goal}}
+    template: str = Field(
+        default="""Goal: {{original_goal}}
 
 Planned:
 {{planned_steps}}
@@ -29,4 +29,5 @@ Next action:
 - clarify: Need user input, must provide clarification_question
 
 If replan: Include replanning_guidance
-If clarify: Include clarification_question""")
+If clarify: Include clarification_question"""
+    )

@@ -6,7 +6,8 @@ All provider access is done through get_by_config() with centralized configurati
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from collections.abc import Callable
+from typing import Any
 
 from flowlib.core.errors.errors import ErrorContext, ExecutionError
 from flowlib.core.registry.registry import BaseRegistry
@@ -21,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 class ProviderRegistry(BaseRegistry[Provider]):
     """Provider registry for managing all providers in the system.
-    
+
     This registry provides both config-driven and direct access to providers:
     - get_provider() for direct provider access by name and type
-    - get_by_config() for config-driven provider retrieval  
+    - get_by_config() for config-driven provider retrieval
     - Centralized provider configuration management
     - Automatic provider initialization and lifecycle management
     """
@@ -32,23 +33,23 @@ class ProviderRegistry(BaseRegistry[Provider]):
     def __init__(self) -> None:
         """Initialize clean provider registry."""
         # Core storage for providers: (provider_type, name) -> provider
-        self._providers: Dict[Tuple[str, str], Provider] = {}
+        self._providers: dict[tuple[str, str], Provider] = {}
 
         # Factory storage for dynamic provider creation
-        self._factories: Dict[Tuple[str, str], Callable[[Optional[Dict[str, Any]]], Provider]] = {}
-        self._factory_metadata: Dict[Tuple[str, str], Dict[str, str]] = {}
+        self._factories: dict[tuple[str, str], Callable[[dict[str, Any] | None], Provider]] = {}
+        self._factory_metadata: dict[tuple[str, str], dict[str, str]] = {}
 
         # Async initialization tracking
-        self._initialized_providers: Dict[Tuple[str, str], Provider] = {}
-        self._initialization_locks: Dict[Tuple[str, str], asyncio.Lock] = {}
+        self._initialized_providers: dict[tuple[str, str], Provider] = {}
+        self._initialization_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     def register_provider(self, provider: Provider, **metadata: str) -> None:
         """Register a provider instance.
-        
+
         Args:
             provider: Provider to register (must be a ProviderBase subclass)
             **metadata: Additional metadata about the provider
-            
+
         Raises:
             TypeError: If the provider is not a ProviderBase subclass
             ValueError: If provider lacks required attributes
@@ -63,13 +64,13 @@ class ProviderRegistry(BaseRegistry[Provider]):
             if not provider.name:
                 raise ValueError("Provider must have a non-empty name")
         except AttributeError:
-            raise ValueError("Provider must have a 'name' attribute")
+            raise ValueError("Provider must have a 'name' attribute") from None
 
         try:
             if not provider.provider_type:
                 raise ValueError("Provider must have a non-empty provider_type")
         except AttributeError:
-            raise ValueError("Provider must have a 'provider_type' attribute")
+            raise ValueError("Provider must have a 'provider_type' attribute") from None
 
         key = (provider.provider_type, provider.name)
         self._providers[key] = provider
@@ -78,24 +79,29 @@ class ProviderRegistry(BaseRegistry[Provider]):
 
     def register(self, name: str, obj: Provider, **metadata: str) -> None:
         """Register an object by name (BaseRegistry interface).
-        
+
         Args:
             name: Name for the object (for providers, this should be config name)
             obj: Object to register (must be a Provider)
             **metadata: Additional metadata
         """
-        if hasattr(obj, 'name') and hasattr(obj, 'provider_type'):
+        if hasattr(obj, "name") and hasattr(obj, "provider_type"):
             # This is a provider object - use the provider-specific method
             self.register_provider(obj, **metadata)
         else:
             raise TypeError(
-                "ProviderRegistry only accepts Provider objects. "
-                f"Got {type(obj).__name__}."
+                f"ProviderRegistry only accepts Provider objects. Got {type(obj).__name__}."
             )
 
-    def register_factory(self, provider_type: str, name: str, factory: Callable[[Optional[Dict[str, Any]]], Provider], **metadata: str) -> None:
+    def register_factory(
+        self,
+        provider_type: str,
+        name: str,
+        factory: Callable[[dict[str, Any] | None], Provider],
+        **metadata: str,
+    ) -> None:
         """Register a factory for creating providers.
-        
+
         Args:
             provider_type: Type of provider (e.g., llm, database)
             name: Unique name for this provider
@@ -110,19 +116,19 @@ class ProviderRegistry(BaseRegistry[Provider]):
 
     async def get_by_config(self, config_name: str) -> Provider:
         """Get a provider instance using a configuration resource.
-        
+
         This is the ONLY way to access providers in the clean registry.
-        
+
         Args:
             config_name: Name of the configuration resource
-            
+
         Returns:
             Initialized and configured provider instance
-            
+
         Raises:
             KeyError: If config not found
             ExecutionError: If provider initialization fails
-            
+
         Example:
             llm = await provider_registry.get_by_config("default-llm")
             vector_db = await provider_registry.get_by_config("default-vector-db")
@@ -150,7 +156,9 @@ class ProviderRegistry(BaseRegistry[Provider]):
             # Get or create the provider with settings from config
             raw_settings = config.get_settings()
             settings = raw_settings
-            provider = await self._get_or_create_provider(provider_category, provider_type, settings)
+            provider = await self._get_or_create_provider(
+                provider_category, provider_type, settings
+            )
 
             logger.info(
                 f"Successfully resolved provider '{provider_type}' "
@@ -170,19 +178,21 @@ class ProviderRegistry(BaseRegistry[Provider]):
                     error_type="ProviderConfigResolutionError",
                     error_location="get_by_config",
                     component="provider_registry",
-                    operation="resolve_provider_by_config"
+                    operation="resolve_provider_by_config",
                 ),
-                cause=e
+                cause=e,
             ) from e
 
-    async def _get_or_create_provider(self, provider_category: str, provider_type: str, settings: Optional[Dict[str, Any]] = None) -> Provider:
+    async def _get_or_create_provider(
+        self, provider_category: str, provider_type: str, settings: dict[str, Any] | None = None
+    ) -> Provider:
         """Get or create a provider with automatic initialization.
-        
+
         Args:
             provider_category: Category of provider (e.g., 'llm', 'database')
             provider_type: Type of provider (e.g., 'googleai', 'postgres')
             settings: Optional settings dict to pass to factory
-            
+
         Returns:
             Initialized provider instance
         """
@@ -205,7 +215,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
                 # Try direct provider first
                 if key in self._providers:
                     provider = self._providers[key]
-                    if hasattr(provider, 'initialized') and not provider.initialized:
+                    if hasattr(provider, "initialized") and not provider.initialized:
                         await provider.initialize()
                     self._initialized_providers[key] = provider
                     return provider
@@ -216,7 +226,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
                     # Create provider from factory
                     provider = factory(settings)
 
-                    if hasattr(provider, 'initialize'):
+                    if hasattr(provider, "initialize"):
                         await provider.initialize()
 
                     self.register_provider(provider)
@@ -237,17 +247,19 @@ class ProviderRegistry(BaseRegistry[Provider]):
                         error_type="ProviderInitializationError",
                         error_location="_get_or_create_provider",
                         component="provider_registry",
-                        operation="initialize_provider"
+                        operation="initialize_provider",
                     ),
-                    cause=e
-                )
+                    cause=e,
+) from e
 
     # REMOVED: _configure_provider_with_config - Settings now passed at creation time
     # Settings are now passed to the factory at provider creation time via
     # _get_or_create_provider(provider_category, provider_type, settings)
     # This follows our principle of single source of truth - no double configuration
 
-    def _infer_provider_category_from_config(self, provider_type: str, config: ProviderConfigResource) -> str:
+    def _infer_provider_category_from_config(
+        self, provider_type: str, config: ProviderConfigResource
+    ) -> str:
         """Infer provider category from config type and provider type."""
         from flowlib.resources.models.config_resource import (
             CacheConfigResource,
@@ -302,7 +314,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
             "rabbitmq": "message_queue",
             "kafka": "message_queue",
             "imap-smtp": "email",
-            "gmail-api": "email"
+            "gmail-api": "email",
         }
 
         if provider_type not in provider_category_map:
@@ -310,16 +322,20 @@ class ProviderRegistry(BaseRegistry[Provider]):
             raise ValueError(f"Unknown provider type: {provider_type}")
         return provider_category_map[provider_type]
 
-    def _list_available_configs(self) -> List[str]:
+    def _list_available_configs(self) -> list[str]:
         """List available provider configurations for debugging."""
         try:
-            configs: List[str] = []
+            configs: list[str] = []
             config_types = [
-                ResourceType.MODEL_CONFIG, ResourceType.LLM_CONFIG,
-                ResourceType.DATABASE_CONFIG, ResourceType.VECTOR_DB_CONFIG,
-                ResourceType.CACHE_CONFIG, ResourceType.STORAGE_CONFIG,
-                ResourceType.EMBEDDING_CONFIG, ResourceType.GRAPH_DB_CONFIG,
-                ResourceType.MESSAGE_QUEUE_CONFIG
+                ResourceType.MODEL_CONFIG,
+                ResourceType.LLM_CONFIG,
+                ResourceType.DATABASE_CONFIG,
+                ResourceType.VECTOR_DB_CONFIG,
+                ResourceType.CACHE_CONFIG,
+                ResourceType.STORAGE_CONFIG,
+                ResourceType.EMBEDDING_CONFIG,
+                ResourceType.GRAPH_DB_CONFIG,
+                ResourceType.MESSAGE_QUEUE_CONFIG,
             ]
 
             for config_type in config_types:
@@ -339,21 +355,21 @@ class ProviderRegistry(BaseRegistry[Provider]):
             logger.error(f"Failed to list available configs: {e}")
             raise
 
-    def list_providers(self) -> List[str]:
+    def list_providers(self) -> list[str]:
         """List all registered providers."""
         providers = []
-        for (provider_type, name) in self._providers.keys():
+        for provider_type, name in self._providers.keys():
             providers.append(f"{provider_type}:{name}")
-        for (provider_type, name) in self._factories.keys():
+        for provider_type, name in self._factories.keys():
             providers.append(f"{provider_type}:{name} (factory)")
         return providers
 
     def contains(self, name: str) -> bool:
         """Check if a provider config exists by name (BaseRegistry interface).
-        
+
         Args:
             name: Name of the configuration to check
-            
+
         Returns:
             True if the configuration exists, False otherwise
         """
@@ -361,14 +377,15 @@ class ProviderRegistry(BaseRegistry[Provider]):
             # Check if config exists in resource registry
             config = resource_registry.get(name)
             from flowlib.resources.models.config_resource import ProviderConfigResource
+
             return isinstance(config, ProviderConfigResource)
         except KeyError:
             return False
 
     # Abstract method implementations required by BaseRegistry
-    def get(self, name: str, expected_type: Optional[Type[Provider]] = None) -> Provider:
+    def get(self, name: str, expected_type: type[Provider] | None = None) -> Provider:
         """Get provider by config name (BaseRegistry interface).
-        
+
         This method is not supported in async-first architecture.
         Use 'await get_by_config(name)' instead.
         """
@@ -377,14 +394,14 @@ class ProviderRegistry(BaseRegistry[Provider]):
             "Use 'await get_by_config(name)' instead."
         )
 
-    def list(self, filter_criteria: Optional[Dict[str, str]] = None) -> List[str]:
+    def list(self, filter_criteria: dict[str, str] | None = None) -> list[str]:
         """List provider configs (BaseRegistry interface)."""
         try:
             configs = self._list_available_configs()
             if filter_criteria:
                 # Simple filtering by provider_type if specified
-                if 'provider_type' in filter_criteria:
-                    provider_type = filter_criteria['provider_type']
+                if "provider_type" in filter_criteria:
+                    provider_type = filter_criteria["provider_type"]
                     configs = [c for c in configs if provider_type in c.lower()]
             return configs
         except Exception:
@@ -392,7 +409,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
 
     def clear(self) -> None:
         """Clear all registrations from the registry.
-        
+
         This method removes all registered providers, factories, and initialized providers.
         It also performs proper shutdown of any active provider instances.
         """
@@ -400,6 +417,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
         if self._initialized_providers:
             try:
                 import asyncio
+
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # Create a task to shutdown providers
@@ -420,10 +438,10 @@ class ProviderRegistry(BaseRegistry[Provider]):
 
     def remove(self, name: str) -> bool:
         """Remove a specific provider registration from the registry.
-        
+
         Args:
             name: Name of the provider configuration to remove
-            
+
         Returns:
             True if the provider was found and removed, False if not found
         """
@@ -439,6 +457,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
                 from flowlib.resources.models.config_resource import (
                     ProviderConfigResource,
                 )
+
                 if isinstance(config, ProviderConfigResource):
                     config_provider_type = config.get_provider_type()
                     if config_provider_type == provider_type:
@@ -451,9 +470,10 @@ class ProviderRegistry(BaseRegistry[Provider]):
             # Shutdown if initialized
             if key in self._initialized_providers:
                 provider = self._initialized_providers[key]
-                if hasattr(provider, 'shutdown'):
+                if hasattr(provider, "shutdown"):
                     try:
                         import asyncio
+
                         loop = asyncio.get_event_loop()
                         if loop.is_running():
                             asyncio.create_task(provider.shutdown())
@@ -485,12 +505,12 @@ class ProviderRegistry(BaseRegistry[Provider]):
 
     def update(self, name: str, obj: Provider, **metadata: str) -> bool:
         """Update or replace an existing provider registration.
-        
+
         Args:
             name: Name of the provider configuration to update
             obj: New provider object to register
             **metadata: Additional metadata about the provider
-            
+
         Returns:
             True if an existing provider was updated, False if this was a new registration
         """
@@ -511,7 +531,6 @@ class ProviderRegistry(BaseRegistry[Provider]):
             logger.debug(f"Registered new provider configuration '{name}' in registry")
             return False
 
-
     async def initialize_all(self) -> None:
         """Initialize all registered providers."""
         for key in list(self._providers.keys()) + list(self._factories.keys()):
@@ -524,7 +543,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
     async def shutdown_all(self) -> None:
         """Shutdown all initialized providers."""
         for key, provider in list(self._initialized_providers.items()):
-            if hasattr(provider, 'shutdown'):
+            if hasattr(provider, "shutdown"):
                 try:
                     await provider.shutdown()
                     logger.info(f"Shut down provider {key}")

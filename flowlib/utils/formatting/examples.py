@@ -4,7 +4,6 @@ This module provides examples of how to use the formatting utilities
 in various contexts within the flowlib ecosystem.
 """
 
-
 # Import all the formatting utilities
 from flowlib.utils.formatting import (
     extract_json,
@@ -32,7 +31,7 @@ def example_conversation_formatting() -> None:
     conversation = [
         {"speaker": "User", "content": "Hello, can you help me with a task?"},
         {"speaker": "Assistant", "content": "Of course! What do you need help with?"},
-        {"speaker": "User", "content": "I need to create a report about climate change."}
+        {"speaker": "User", "content": "I need to create a report about climate change."},
     ]
 
     # Format conversation for prompt
@@ -44,7 +43,7 @@ def example_conversation_formatting() -> None:
     state = {
         "task": "Create a report about climate change",
         "progress": 0.5,
-        "last_action": "Research key statistics"
+        "last_action": "Research key statistics",
     }
 
     formatted_state = format_state(state)
@@ -57,14 +56,14 @@ def example_conversation_formatting() -> None:
             "action": "execute_flow",
             "flow": "web-search",
             "reasoning": "Need to find the latest climate data",
-            "reflection": "Found useful information about global temperature trends"
+            "reflection": "Found useful information about global temperature trends",
         },
         {
             "action": "execute_flow",
             "flow": "create-outline",
             "reasoning": "Need to organize the information into a report structure",
-            "reflection": "Created a coherent outline with key sections"
-        }
+            "reflection": "Created a coherent outline with key sections",
+        },
     ]
 
     formatted_history = format_history(history)
@@ -77,13 +76,13 @@ def example_json_extraction() -> None:
     # Example text with embedded JSON
     text_with_json = """
     I've analyzed the data and here are the results:
-    
+
     {
         "temperature_increase": 1.5,
         "sea_level_rise": "0.3 meters",
         "main_causes": ["fossil fuels", "deforestation", "agriculture"]
     }
-    
+
     Let me know if you need anything else.
     """
 

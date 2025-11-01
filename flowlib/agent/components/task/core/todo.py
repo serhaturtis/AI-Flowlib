@@ -8,17 +8,17 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Annotated, Any
 from uuid import uuid4
 
 from pydantic import BeforeValidator, Field
-from typing_extensions import Annotated
 
 from flowlib.core.models import MutableStrictBaseModel, StrictBaseModel
 
 
 class TodoStatus(Enum):
     """Status of a TODO item."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -29,13 +29,14 @@ class TodoStatus(Enum):
 
 class TodoPriority(Enum):
     """Priority levels for TODO items."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     URGENT = "urgent"
 
 
-def validate_todo_status(value: Union[TodoStatus, str, object]) -> TodoStatus:
+def validate_todo_status(value: TodoStatus | str | object) -> TodoStatus:
     """Convert string to TodoStatus enum."""
     if isinstance(value, TodoStatus):
         return value
@@ -47,7 +48,7 @@ def validate_todo_status(value: Union[TodoStatus, str, object]) -> TodoStatus:
     return TodoStatus.PENDING
 
 
-def validate_todo_priority(value: Union[TodoPriority, str, object]) -> TodoPriority:
+def validate_todo_priority(value: TodoPriority | str | object) -> TodoPriority:
     """Convert string to TodoPriority enum."""
     if isinstance(value, TodoPriority):
         return value
@@ -83,103 +84,97 @@ class TodoItem(StrictBaseModel):
 
     # Status and priority with validation
     status: Annotated[TodoStatus, BeforeValidator(validate_todo_status)] = Field(
-        default=TodoStatus.PENDING,
-        description="Current status"
+        default=TodoStatus.PENDING, description="Current status"
     )
     priority: Annotated[TodoPriority, BeforeValidator(validate_todo_priority)] = Field(
-        default=TodoPriority.MEDIUM,
-        description="Task priority"
+        default=TodoPriority.MEDIUM, description="Task priority"
     )
 
     # Timestamps - system-managed fields
     created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
-    updated_at: Optional[datetime] = Field(default=None, description="Last update timestamp")
-    started_at: Optional[datetime] = Field(default=None, description="When task started")
-    completed_at: Optional[datetime] = Field(default=None, description="When task completed")
+    updated_at: datetime | None = Field(default=None, description="Last update timestamp")
+    started_at: datetime | None = Field(default=None, description="When task started")
+    completed_at: datetime | None = Field(default=None, description="When task completed")
 
     # Duration tracking
-    estimated_duration: Optional[timedelta] = Field(default=None, description="Estimated completion time")
-    actual_duration: Optional[timedelta] = Field(default=None, description="Actual completion time")
+    estimated_duration: timedelta | None = Field(
+        default=None, description="Estimated completion time"
+    )
+    actual_duration: timedelta | None = Field(default=None, description="Actual completion time")
 
     # Dependencies and relationships
-    depends_on: List[str] = Field(default_factory=list, description="TODO IDs this depends on")
-    blocks: List[str] = Field(default_factory=list, description="TODO IDs this blocks")
-    parent_id: Optional[str] = Field(default=None, description="Parent TODO ID if this is a subtask")
-    children: List[str] = Field(default_factory=list, description="Child TODO IDs")
+    depends_on: list[str] = Field(default_factory=list, description="TODO IDs this depends on")
+    blocks: list[str] = Field(default_factory=list, description="TODO IDs this blocks")
+    parent_id: str | None = Field(
+        default=None, description="Parent TODO ID if this is a subtask"
+    )
+    children: list[str] = Field(default_factory=list, description="Child TODO IDs")
 
     # Execution details - stored as Any to avoid circular dependencies
     # The execution module will handle the typed versions
-    assigned_tool: Optional[str] = Field(default=None, description="Tool assigned for execution")
-    execution_context: Optional[Any] = Field(
+    assigned_tool: str | None = Field(default=None, description="Tool assigned for execution")
+    execution_context: Any | None = Field(
         default=None, description="Structured context for tool execution"
     )
-    result: Optional[Any] = Field(default=None, description="Structured execution result")
-    error_message: Optional[str] = Field(default=None, description="Error message if failed")
+    result: Any | None = Field(default=None, description="Structured execution result")
+    error_message: str | None = Field(default=None, description="Error message if failed")
     retry_count: int = Field(default=0, ge=0, description="Number of retry attempts")
     max_retries: int = Field(default=3, ge=0, description="Maximum retry attempts")
 
     # Metadata
-    tags: List[str] = Field(default_factory=list, description="Classification tags")
-    notes: List[str] = Field(default_factory=list, description="Additional notes")
+    tags: list[str] = Field(default_factory=list, description="Classification tags")
+    notes: list[str] = Field(default_factory=list, description="Additional notes")
 
     def mark_in_progress(self) -> TodoItem:
         """Mark TODO as in progress."""
         now = datetime.now()
-        return self.model_copy(update={
-            'status': TodoStatus.IN_PROGRESS,
-            'started_at': now,
-            'updated_at': now
-        })
+        return self.model_copy(
+            update={"status": TodoStatus.IN_PROGRESS, "started_at": now, "updated_at": now}
+        )
 
-    def mark_completed(self, result: Optional[Any] = None) -> TodoItem:
+    def mark_completed(self, result: Any | None = None) -> TodoItem:
         """Mark TODO as completed."""
         now = datetime.now()
-        update_data = {
-            'status': TodoStatus.COMPLETED,
-            'completed_at': now,
-            'updated_at': now
-        }
+        update_data = {"status": TodoStatus.COMPLETED, "completed_at": now, "updated_at": now}
 
         if result is not None:
-            update_data['result'] = result
+            update_data["result"] = result
 
         if self.started_at:
-            update_data['actual_duration'] = now - self.started_at
+            update_data["actual_duration"] = now - self.started_at
 
         return self.model_copy(update=update_data)
 
     def mark_failed(self, error: str) -> TodoItem:
         """Mark TODO as failed."""
-        return self.model_copy(update={
-            'status': TodoStatus.FAILED,
-            'error_message': error,
-            'updated_at': datetime.now()
-        })
+        return self.model_copy(
+            update={
+                "status": TodoStatus.FAILED,
+                "error_message": error,
+                "updated_at": datetime.now(),
+            }
+        )
 
-    def mark_blocked(self, reason: Optional[str] = None) -> TodoItem:
+    def mark_blocked(self, reason: str | None = None) -> TodoItem:
         """Mark TODO as blocked."""
-        update_data = {
-            'status': TodoStatus.BLOCKED,
-            'updated_at': datetime.now()
-        }
+        update_data = {"status": TodoStatus.BLOCKED, "updated_at": datetime.now()}
 
         if reason:
-            update_data['error_message'] = reason
+            update_data["error_message"] = reason
 
         return self.model_copy(update=update_data)
 
     def increment_retry(self) -> TodoItem:
         """Increment retry count."""
-        return self.model_copy(update={
-            'retry_count': self.retry_count + 1,
-            'updated_at': datetime.now()
-        })
+        return self.model_copy(
+            update={"retry_count": self.retry_count + 1, "updated_at": datetime.now()}
+        )
 
     def can_retry(self) -> bool:
         """Check if TODO can be retried."""
         return self.retry_count < self.max_retries
 
-    def is_ready_to_execute(self, completed_todos: List[str]) -> bool:
+    def is_ready_to_execute(self, completed_todos: list[str]) -> bool:
         """Check if TODO is ready for execution based on dependencies."""
         if self.status != TodoStatus.PENDING:
             return False
@@ -187,35 +182,41 @@ class TodoItem(StrictBaseModel):
         # Check if all dependencies are completed
         return all(dep_id in completed_todos for dep_id in self.depends_on)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         # Use mode='json' to properly serialize enums and nested models
-        data = self.model_dump(mode='json')
+        data = self.model_dump(mode="json")
 
         # Convert datetime objects to ISO format
-        for field in ['created_at', 'updated_at', 'started_at', 'completed_at']:
+        for field in ["created_at", "updated_at", "started_at", "completed_at"]:
             if data.get(field):
-                data[field] = data[field].isoformat() if isinstance(data[field], datetime) else data[field]
+                data[field] = (
+                    data[field].isoformat() if isinstance(data[field], datetime) else data[field]
+                )
 
         # Convert timedelta objects from ISO format back to seconds for compatibility
-        for field in ['estimated_duration', 'actual_duration']:
-            if data.get(field) and isinstance(data[field], str) and data[field].startswith('PT'):
+        for field in ["estimated_duration", "actual_duration"]:
+            if data.get(field) and isinstance(data[field], str) and data[field].startswith("PT"):
                 # Convert ISO 8601 duration back to seconds
                 duration_str = data[field]
                 seconds = 0.0
 
-                if 'H' in duration_str:
-                    hours = int(duration_str.split('H')[0].split('T')[1])
+                if "H" in duration_str:
+                    hours = int(duration_str.split("H")[0].split("T")[1])
                     seconds += hours * 3600
-                    duration_str = duration_str.split('H')[1] if 'H' in duration_str else duration_str
+                    duration_str = (
+                        duration_str.split("H")[1] if "H" in duration_str else duration_str
+                    )
 
-                if 'M' in duration_str:
-                    minutes = int(duration_str.split('M')[0].split('T')[-1])
+                if "M" in duration_str:
+                    minutes = int(duration_str.split("M")[0].split("T")[-1])
                     seconds += minutes * 60
-                    duration_str = duration_str.split('M')[1] if 'M' in duration_str else duration_str
+                    duration_str = (
+                        duration_str.split("M")[1] if "M" in duration_str else duration_str
+                    )
 
-                if 'S' in duration_str:
-                    secs = float(duration_str.split('S')[0].split('T')[-1])
+                if "S" in duration_str:
+                    secs = float(duration_str.split("S")[0].split("T")[-1])
                     seconds += secs
 
                 data[field] = seconds
@@ -223,10 +224,10 @@ class TodoItem(StrictBaseModel):
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> TodoItem:
+    def from_dict(cls, data: dict[str, Any]) -> TodoItem:
         """Create TodoItem from dictionary."""
         # Convert ISO datetime strings back to datetime objects
-        for field in ['created_at', 'updated_at', 'started_at', 'completed_at']:
+        for field in ["created_at", "updated_at", "started_at", "completed_at"]:
             if data.get(field) and isinstance(data[field], str):
                 try:
                     data[field] = datetime.fromisoformat(data[field])
@@ -234,7 +235,7 @@ class TodoItem(StrictBaseModel):
                     data[field] = None
 
         # Convert seconds back to timedelta objects
-        for field in ['estimated_duration', 'actual_duration']:
+        for field in ["estimated_duration", "actual_duration"]:
             if data.get(field) and isinstance(data[field], (int, float)):
                 data[field] = timedelta(seconds=data[field])
 
@@ -247,9 +248,9 @@ class TodoItem(StrictBaseModel):
 class TodoList(MutableStrictBaseModel):
     """Collection of TODO items with operations."""
 
-    items: List[TodoItem] = Field(default_factory=list, description="TODO items in this list")
+    items: list[TodoItem] = Field(default_factory=list, description="TODO items in this list")
     name: str = Field(default="default", description="List name")
-    description: Optional[str] = Field(default=None, description="List description")
+    description: str | None = Field(default=None, description="List description")
     created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
 
     def add_todo(self, todo: TodoItem) -> None:
@@ -264,7 +265,7 @@ class TodoList(MutableStrictBaseModel):
                 return True
         return False
 
-    def get_todo(self, todo_id: str) -> Optional[TodoItem]:
+    def get_todo(self, todo_id: str) -> TodoItem | None:
         """Get TODO by ID."""
         for item in self.items:
             if item.id == todo_id:
@@ -279,11 +280,11 @@ class TodoList(MutableStrictBaseModel):
                 return True
         return False
 
-    def get_by_status(self, status: TodoStatus) -> List[TodoItem]:
+    def get_by_status(self, status: TodoStatus) -> list[TodoItem]:
         """Get all TODOs with specified status."""
         return [item for item in self.items if item.status == status]
 
-    def get_ready_to_execute(self) -> List[TodoItem]:
+    def get_ready_to_execute(self) -> list[TodoItem]:
         """Get TODOs ready for execution (no unmet dependencies)."""
         completed_ids = [item.id for item in self.items if item.status == TodoStatus.COMPLETED]
         return [item for item in self.items if item.is_ready_to_execute(completed_ids)]
@@ -299,12 +300,12 @@ class TodoList(MutableStrictBaseModel):
 
         return TodoStatusSummary(
             total=len(self.items),
-            pending=status_counts.get('pending', 0),
-            in_progress=status_counts.get('in_progress', 0),
-            completed=status_counts.get('completed', 0),
-            cancelled=status_counts.get('cancelled', 0),
-            failed=status_counts.get('failed', 0),
-            blocked=status_counts.get('blocked', 0)
+            pending=status_counts.get("pending", 0),
+            in_progress=status_counts.get("in_progress", 0),
+            completed=status_counts.get("completed", 0),
+            cancelled=status_counts.get("cancelled", 0),
+            failed=status_counts.get("failed", 0),
+            blocked=status_counts.get("blocked", 0),
         )
 
     def clear_completed(self) -> int:
@@ -313,24 +314,28 @@ class TodoList(MutableStrictBaseModel):
         self.items = [item for item in self.items if item.status != TodoStatus.COMPLETED]
         return initial_count - len(self.items)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            'name': self.name,
-            'description': self.description,
-            'created_at': self.created_at.isoformat(),
-            'items': [item.to_dict() for item in self.items]
+            "name": self.name,
+            "description": self.description,
+            "created_at": self.created_at.isoformat(),
+            "items": [item.to_dict() for item in self.items],
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> TodoList:
+    def from_dict(cls, data: dict[str, Any]) -> TodoList:
         """Create TodoList from dictionary."""
-        items = [TodoItem.from_dict(item_data) for item_data in data.get('items', [])]
-        created_at = datetime.fromisoformat(data['created_at']) if isinstance(data.get('created_at'), str) else datetime.now()
+        items = [TodoItem.from_dict(item_data) for item_data in data.get("items", [])]
+        created_at = (
+            datetime.fromisoformat(data["created_at"])
+            if isinstance(data.get("created_at"), str)
+            else datetime.now()
+        )
 
         return cls(
-            name=data.get('name', 'default'),
-            description=data.get('description'),
+            name=data.get("name", "default"),
+            description=data.get("description"),
             created_at=created_at,
-            items=items
+            items=items,
         )

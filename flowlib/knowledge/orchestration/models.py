@@ -1,6 +1,6 @@
 """Models for knowledge orchestration flow."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -24,12 +24,12 @@ class OrchestrationRequest(StrictBaseModel):
     # Processing configuration
     chunk_size: int = Field(default=1000, description="Text chunk size")
     chunk_overlap: int = Field(default=200, description="Chunk overlap size")
-    max_files: Optional[int] = Field(default=None, description="Maximum files to process")
+    max_files: int | None = Field(default=None, description="Maximum files to process")
 
     # Document types to process
-    supported_formats: List[DocumentType] = Field(
+    supported_formats: list[DocumentType] = Field(
         default_factory=lambda: [DocumentType.PDF, DocumentType.TXT, DocumentType.MARKDOWN],
-        description="Supported document formats"
+        description="Supported document formats",
     )
 
     # Processing options
@@ -38,11 +38,19 @@ class OrchestrationRequest(StrictBaseModel):
     create_summaries: bool = Field(default=True, description="Create document summaries")
     detect_topics: bool = Field(default=True, description="Detect topics")
 
-    # Database configuration
-    vector_provider_name: Optional[str] = Field(default="chroma", description="Vector database provider")
-    graph_provider_name: Optional[str] = Field(default="neo4j", description="Graph database provider")
-    vector_config: Optional[Dict[str, Any]] = Field(default=None, description="Vector database config")
-    graph_config: Optional[Dict[str, Any]] = Field(default=None, description="Graph database config")
+    # Database configuration (config-driven)
+    vector_provider_config: str | None = Field(
+        default="default-vector-db", description="Vector provider configuration name"
+    )
+    graph_provider_config: str | None = Field(
+        default="default-graph-db", description="Graph provider configuration name"
+    )
+    vector_config: dict[str, Any] | None = Field(
+        default=None, description="Vector database additional config"
+    )
+    graph_config: dict[str, Any] | None = Field(
+        default=None, description="Graph database additional config"
+    )
 
 
 class OrchestrationProgress(StrictBaseModel):
@@ -51,7 +59,9 @@ class OrchestrationProgress(StrictBaseModel):
     current_stage: str = Field(default="initialization", description="Current processing stage")
     total_documents: int = Field(default=0, description="Total documents to process")
     processed_documents: int = Field(default=0, description="Documents processed")
-    current_document: Optional[str] = Field(default=None, description="Current document being processed")
+    current_document: str | None = Field(
+        default=None, description="Current document being processed"
+    )
 
     # Stage progress
     extraction_complete: bool = Field(default=False, description="Document extraction complete")
@@ -80,25 +90,25 @@ class OrchestrationResult(StrictBaseModel):
     progress: OrchestrationProgress = Field(..., description="Final progress state")
 
     # Processing results
-    documents: List[DocumentContent] = Field(default_factory=list, description="Processed documents")
-    entities: List[Entity] = Field(default_factory=list, description="Extracted entities")
-    relationships: List[Relationship] = Field(default_factory=list, description="Extracted relationships")
+    documents: list[DocumentContent] = Field(
+        default_factory=list, description="Processed documents"
+    )
+    entities: list[Entity] = Field(default_factory=list, description="Extracted entities")
+    relationships: list[Relationship] = Field(
+        default_factory=list, description="Extracted relationships"
+    )
 
     # Database information
-    vector_collection: Optional[str] = Field(default=None, description="Vector collection name")
-    graph_database: Optional[str] = Field(default=None, description="Graph database name")
+    vector_collection: str | None = Field(default=None, description="Vector collection name")
+    graph_database: str | None = Field(default=None, description="Graph database name")
 
     # File outputs
-    output_files: List[str] = Field(default_factory=list, description="Generated output files")
-    export_directory: Optional[str] = Field(default=None, description="Export directory path")
+    output_files: list[str] = Field(default_factory=list, description="Generated output files")
+    export_directory: str | None = Field(default=None, description="Export directory path")
 
     # Statistics
     processing_time_seconds: float = Field(default=0.0, description="Total processing time")
     total_size_bytes: int = Field(default=0, description="Total processed data size")
 
 
-__all__ = [
-    "OrchestrationRequest",
-    "OrchestrationProgress",
-    "OrchestrationResult"
-]
+__all__ = ["OrchestrationRequest", "OrchestrationProgress", "OrchestrationResult"]

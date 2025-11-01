@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.knowledge.models import (
@@ -51,7 +51,7 @@ class SmartChunkingFlow:
             summary=document.summary,
             key_topics=document.key_topics,
             language_detected=document.language_detected,
-            reading_time_minutes=document.reading_time_minutes
+            reading_time_minutes=document.reading_time_minutes,
         )
 
         # Generate chunking statistics
@@ -59,23 +59,18 @@ class SmartChunkingFlow:
 
         logger.info(f"Chunking complete: {len(new_chunks)} chunks created")
 
-        return ChunkingOutput(
-            document=enhanced_document,
-            chunking_stats=stats
-        )
+        return ChunkingOutput(document=enhanced_document, chunking_stats=stats)
 
     async def _paragraph_aware_chunking(
-        self,
-        document: DocumentContent,
-        config: Any
-    ) -> List[TextChunk]:
+        self, document: DocumentContent, config: Any
+    ) -> list[TextChunk]:
         """Create chunks respecting paragraph boundaries."""
 
         text = document.full_text
         chunks = []
 
         # Split by double newlines (paragraphs)
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
 
         current_chunk = ""
         current_start_char = 0
@@ -95,7 +90,7 @@ class SmartChunkingFlow:
                         text=current_chunk,
                         chunk_index=chunk_index,
                         start_char=current_start_char,
-                        document_id=document.document_id
+                        document_id=document.document_id,
                     )
                     chunks.append(chunk)
                     chunk_index += 1
@@ -105,8 +100,7 @@ class SmartChunkingFlow:
                 if len(paragraph) > config.max_chunk_size:
                     # Split large paragraphs by sentences
                     paragraph_chunks = await self._split_paragraph_by_sentences(
-                        paragraph, config, chunk_index,
-                        current_start_char, document.document_id
+                        paragraph, config, chunk_index, current_start_char, document.document_id
                     )
                     chunks.extend(paragraph_chunks)
                     chunk_index += len(paragraph_chunks)
@@ -121,17 +115,15 @@ class SmartChunkingFlow:
                 text=current_chunk,
                 chunk_index=chunk_index,
                 start_char=current_start_char,
-                document_id=document.document_id
+                document_id=document.document_id,
             )
             chunks.append(chunk)
 
         return chunks
 
     async def _sentence_aware_chunking(
-        self,
-        document: DocumentContent,
-        config: Any
-    ) -> List[TextChunk]:
+        self, document: DocumentContent, config: Any
+    ) -> list[TextChunk]:
         """Create chunks respecting sentence boundaries."""
 
         text = document.full_text
@@ -154,7 +146,7 @@ class SmartChunkingFlow:
                         text=current_chunk,
                         chunk_index=chunk_index,
                         start_char=current_start_char,
-                        document_id=document.document_id
+                        document_id=document.document_id,
                     )
                     chunks.append(chunk)
                     chunk_index += 1
@@ -169,28 +161,22 @@ class SmartChunkingFlow:
                 text=current_chunk,
                 chunk_index=chunk_index,
                 start_char=current_start_char,
-                document_id=document.document_id
+                document_id=document.document_id,
             )
             chunks.append(chunk)
 
         return chunks
 
     async def _semantic_aware_chunking(
-        self,
-        document: DocumentContent,
-        config: Any
-    ) -> List[TextChunk]:
+        self, document: DocumentContent, config: Any
+    ) -> list[TextChunk]:
         """Create chunks based on semantic boundaries (future implementation)."""
 
         # For now, fall back to paragraph-aware chunking
         logger.info("Semantic chunking not yet implemented, falling back to paragraph-aware")
         return await self._paragraph_aware_chunking(document, config)
 
-    async def _fixed_size_chunking(
-        self,
-        document: DocumentContent,
-        config: Any
-    ) -> List[TextChunk]:
+    async def _fixed_size_chunking(self, document: DocumentContent, config: Any) -> list[TextChunk]:
         """Create fixed-size chunks (existing behavior)."""
 
         text = document.full_text
@@ -210,7 +196,7 @@ class SmartChunkingFlow:
                 text=chunk_text,
                 chunk_index=chunk_index,
                 start_char=start,
-                document_id=document.document_id
+                document_id=document.document_id,
             )
             chunks.append(chunk)
 
@@ -223,13 +209,8 @@ class SmartChunkingFlow:
         return chunks
 
     async def _split_paragraph_by_sentences(
-        self,
-        paragraph: str,
-        config: Any,
-        start_chunk_index: int,
-        start_char: int,
-        document_id: str
-    ) -> List[TextChunk]:
+        self, paragraph: str, config: Any, start_chunk_index: int, start_char: int, document_id: str
+    ) -> list[TextChunk]:
         """Split large paragraphs by sentences."""
 
         sentences = self._split_into_sentences(paragraph)
@@ -251,7 +232,7 @@ class SmartChunkingFlow:
                         text=current_chunk,
                         chunk_index=chunk_index,
                         start_char=current_start,
-                        document_id=document_id
+                        document_id=document_id,
                     )
                     chunks.append(chunk)
                     chunk_index += 1
@@ -260,8 +241,7 @@ class SmartChunkingFlow:
                 # Handle very long sentences by character splitting
                 if len(sentence) > config.max_chunk_size:
                     char_chunks = self._split_by_characters(
-                        sentence, config.max_chunk_size,
-                        chunk_index, current_start, document_id
+                        sentence, config.max_chunk_size, chunk_index, current_start, document_id
                     )
                     chunks.extend(char_chunks)
                     chunk_index += len(char_chunks)
@@ -276,43 +256,38 @@ class SmartChunkingFlow:
                 text=current_chunk,
                 chunk_index=chunk_index,
                 start_char=current_start,
-                document_id=document_id
+                document_id=document_id,
             )
             chunks.append(chunk)
 
         return chunks
 
-    def _split_into_sentences(self, text: str) -> List[str]:
+    def _split_into_sentences(self, text: str) -> list[str]:
         """Split text into sentences using regex."""
 
         # Simple sentence splitting (can be enhanced with spaCy/NLTK)
-        sentence_pattern = r'(?<=[.!?])\s+'
+        sentence_pattern = r"(?<=[.!?])\s+"
         sentences = re.split(sentence_pattern, text)
 
         # Clean up empty sentences
         return [s.strip() for s in sentences if s.strip()]
 
     def _split_by_characters(
-        self,
-        text: str,
-        chunk_size: int,
-        start_index: int,
-        start_char: int,
-        document_id: str
-    ) -> List[TextChunk]:
+        self, text: str, chunk_size: int, start_index: int, start_char: int, document_id: str
+    ) -> list[TextChunk]:
         """Split text by characters as last resort."""
 
         chunks = []
         chunk_index = start_index
 
         for i in range(0, len(text), chunk_size):
-            chunk_text = text[i:i + chunk_size]
+            chunk_text = text[i : i + chunk_size]
 
             chunk = self._create_text_chunk(
                 text=chunk_text,
                 chunk_index=chunk_index,
                 start_char=start_char + i,
-                document_id=document_id
+                document_id=document_id,
             )
             chunks.append(chunk)
             chunk_index += 1
@@ -320,11 +295,7 @@ class SmartChunkingFlow:
         return chunks
 
     def _create_text_chunk(
-        self,
-        text: str,
-        chunk_index: int,
-        start_char: int,
-        document_id: str
+        self, text: str, chunk_index: int, start_char: int, document_id: str
     ) -> TextChunk:
         """Create a TextChunk instance with proper metadata."""
 
@@ -338,27 +309,30 @@ class SmartChunkingFlow:
             end_char=start_char + len(text),
             document_id=document_id,
             word_count=len(text.split()),
-            char_count=len(text)
+            char_count=len(text),
         )
 
     def _generate_chunking_stats(
-        self,
-        original_chunks: List[TextChunk],
-        new_chunks: List[TextChunk],
-        config: Any
-    ) -> Dict[str, Any]:
+        self, original_chunks: list[TextChunk], new_chunks: list[TextChunk], config: Any
+    ) -> dict[str, Any]:
         """Generate statistics about the chunking process."""
 
         return {
             "strategy_used": config.chunking_strategy,
             "original_chunk_count": len(original_chunks),
             "new_chunk_count": len(new_chunks),
-            "average_chunk_size": sum(chunk.char_count for chunk in new_chunks) / len(new_chunks) if new_chunks else 0,
+            "average_chunk_size": sum(chunk.char_count for chunk in new_chunks) / len(new_chunks)
+            if new_chunks
+            else 0,
             "max_chunk_size_configured": config.max_chunk_size,
             "min_chunk_size_configured": config.min_chunk_size,
             "overlap_size": config.overlap_size,
             "total_characters": sum(chunk.char_count for chunk in new_chunks),
             "total_words": sum(chunk.word_count for chunk in new_chunks),
-            "chunks_over_limit": len([c for c in new_chunks if c.char_count > config.max_chunk_size]),
-            "chunks_under_minimum": len([c for c in new_chunks if c.char_count < config.min_chunk_size])
+            "chunks_over_limit": len(
+                [c for c in new_chunks if c.char_count > config.max_chunk_size]
+            ),
+            "chunks_under_minimum": len(
+                [c for c in new_chunks if c.char_count < config.min_chunk_size]
+            ),
         }

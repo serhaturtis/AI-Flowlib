@@ -6,7 +6,7 @@ following flowlib's AgentComponent patterns and strict validation principles.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.providers.core.registry import provider_registry
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 class KnowledgeComponent(AgentComponent):
     """Unified knowledge component for learning, storage, and retrieval.
-    
+
     This component follows flowlib's single responsibility principle by providing
     a clean interface for all knowledge operations while delegating to specialized
     providers for actual implementation.
@@ -38,7 +38,7 @@ class KnowledgeComponent(AgentComponent):
 
     def __init__(self, config: KnowledgeComponentConfig, name: str = "knowledge"):
         """Initialize the knowledge component.
-        
+
         Args:
             config: Knowledge component configuration
             name: Component name
@@ -47,9 +47,9 @@ class KnowledgeComponent(AgentComponent):
         self._config = config
 
         # Provider instances (initialized during _initialize_impl)
-        self._llm_provider: Optional[LLMProvider] = None
-        self._vector_provider: Optional[VectorDBProvider] = None
-        self._graph_provider: Optional[GraphDBProvider] = None
+        self._llm_provider: LLMProvider | None = None
+        self._vector_provider: VectorDBProvider | None = None
+        self._graph_provider: GraphDBProvider | None = None
 
     async def _initialize_impl(self) -> None:
         """Initialize the knowledge component and its providers."""
@@ -57,7 +57,9 @@ class KnowledgeComponent(AgentComponent):
 
         # Initialize LLM provider (required for learning operations)
         # Note: Agent controls whether learn_from_content() is called via enable_learning flag
-        self._llm_provider = cast(LLMProvider, await provider_registry.get_by_config(self._config.llm_config))
+        self._llm_provider = cast(
+            LLMProvider, await provider_registry.get_by_config(self._config.llm_config)
+        )
         if not self._llm_provider:
             raise RuntimeError(f"LLM provider '{self._config.llm_config}' not available")
         logger.debug(f"Initialized LLM provider: {self._config.llm_config}")
@@ -65,7 +67,10 @@ class KnowledgeComponent(AgentComponent):
         # Initialize vector database provider (optional for storage/retrieval)
         if self._config.enable_storage or self._config.enable_retrieval:
             try:
-                self._vector_provider = cast(VectorDBProvider, await provider_registry.get_by_config(self._config.vector_db_config))
+                self._vector_provider = cast(
+                    VectorDBProvider,
+                    await provider_registry.get_by_config(self._config.vector_db_config),
+                )
                 if self._vector_provider:
                     logger.debug(f"Initialized vector provider: {self._config.vector_db_config}")
             except Exception as e:
@@ -73,7 +78,10 @@ class KnowledgeComponent(AgentComponent):
 
             # Initialize graph database provider (optional for storage/retrieval)
             try:
-                self._graph_provider = cast(GraphDBProvider, await provider_registry.get_by_config(self._config.graph_db_config))
+                self._graph_provider = cast(
+                    GraphDBProvider,
+                    await provider_registry.get_by_config(self._config.graph_db_config),
+                )
                 if self._graph_provider:
                     logger.debug(f"Initialized graph provider: {self._config.graph_db_config}")
             except Exception as e:
@@ -94,18 +102,24 @@ class KnowledgeComponent(AgentComponent):
 
     # Core Knowledge Operations
 
-    async def learn_from_content(self, content: str, context: str, focus_areas: Optional[List[str]] = None, domain_hint: Optional[str] = None) -> LearningResult:
+    async def learn_from_content(
+        self,
+        content: str,
+        context: str,
+        focus_areas: list[str] | None = None,
+        domain_hint: str | None = None,
+    ) -> LearningResult:
         """Learn knowledge from content with intelligent extraction.
-        
+
         Args:
             content: Content to learn from
             context: Context information
             focus_areas: Optional areas to focus extraction on
             domain_hint: Optional domain hint for extraction
-            
+
         Returns:
             Learning result with extracted knowledge
-            
+
         Raises:
             NotInitializedError: If component not initialized
             RuntimeError: If LLM provider unavailable
@@ -125,7 +139,7 @@ class KnowledgeComponent(AgentComponent):
                 content=content,
                 context=context,
                 focus_areas=focus_areas or [],
-                domain_hint=domain_hint
+                domain_hint=domain_hint,
             )
 
             # Extract knowledge using LLM
@@ -138,7 +152,7 @@ class KnowledgeComponent(AgentComponent):
                 knowledge=knowledge_set,
                 processing_time_seconds=processing_time,
                 message=f"Successfully extracted {knowledge_set.total_items} knowledge items",
-                metadata={"extraction_method": "llm_structured", "domain_hint": domain_hint}
+                metadata={"extraction_method": "llm_structured", "domain_hint": domain_hint},
             )
 
         except Exception as e:
@@ -150,15 +164,15 @@ class KnowledgeComponent(AgentComponent):
                 knowledge=KnowledgeSet(),  # Empty knowledge set
                 processing_time_seconds=processing_time,
                 message=f"Learning failed: {str(e)}",
-                metadata={"error": str(e)}
+                metadata={"error": str(e)},
             )
 
     async def store_knowledge(self, request: StorageRequest) -> None:
         """Store knowledge with intelligent routing to available providers.
-        
+
         Args:
             request: Storage request with knowledge and context
-            
+
         Raises:
             NotInitializedError: If component not initialized
             RuntimeError: If storage is disabled
@@ -186,13 +200,13 @@ class KnowledgeComponent(AgentComponent):
 
     async def retrieve_knowledge(self, request: RetrievalRequest) -> RetrievalResult:
         """Retrieve knowledge using intelligent search across available providers.
-        
+
         Args:
             request: Retrieval request with query and filters
-            
+
         Returns:
             Retrieval result with found knowledge
-            
+
         Raises:
             NotInitializedError: If component not initialized
             RuntimeError: If retrieval is disabled
@@ -221,7 +235,7 @@ class KnowledgeComponent(AgentComponent):
             knowledge=combined_knowledge,
             query=request.query,
             relevance_scores={},  # Could be populated with actual scores
-            total_found=combined_knowledge.total_items
+            total_found=combined_knowledge.total_items,
         )
 
     # Private Implementation Methods
@@ -235,11 +249,13 @@ class KnowledgeComponent(AgentComponent):
         extraction_prompt = resource_registry.get("knowledge-extraction-prompt")
 
         # Prepare prompt variables - use Dict[str, Any] for compatibility
-        prompt_vars: Dict[str, Any] = {
+        prompt_vars: dict[str, Any] = {
             "content": learning_input.content,
             "context": learning_input.context,
-            "focus_areas": ", ".join(learning_input.focus_areas) if learning_input.focus_areas else "general",
-            "domain_hint": learning_input.domain_hint or "general"
+            "focus_areas": ", ".join(learning_input.focus_areas)
+            if learning_input.focus_areas
+            else "general",
+            "domain_hint": learning_input.domain_hint or "general",
         }
 
         # Use structured generation to extract knowledge
@@ -247,7 +263,7 @@ class KnowledgeComponent(AgentComponent):
             prompt=cast(PromptTemplate, extraction_prompt),
             prompt_variables=prompt_vars,
             output_type=KnowledgeSet,
-            model_name="default-model"
+            model_name="default-model",
         )
 
         # Result is guaranteed to be KnowledgeSet from structured generation
@@ -269,7 +285,9 @@ class KnowledgeComponent(AgentComponent):
 
     async def _store_in_vector(self, knowledge: KnowledgeSet, context_id: str) -> None:
         """Store knowledge in vector database."""
-        logger.debug(f"Storing {len(knowledge.entities + knowledge.concepts)} items in vector database")
+        logger.debug(
+            f"Storing {len(knowledge.entities + knowledge.concepts)} items in vector database"
+        )
         # Implementation would use self._vector_provider
         # For now, this is a placeholder following no-fallback principle
 
@@ -291,7 +309,9 @@ class KnowledgeComponent(AgentComponent):
         # Implementation would use self._graph_provider
         return KnowledgeSet()  # Placeholder
 
-    def _combine_search_results(self, vector_results: KnowledgeSet, graph_results: KnowledgeSet, request: RetrievalRequest) -> KnowledgeSet:
+    def _combine_search_results(
+        self, vector_results: KnowledgeSet, graph_results: KnowledgeSet, request: RetrievalRequest
+    ) -> KnowledgeSet:
         """Combine search results intelligently."""
         # Simple combination - could be enhanced with ranking/deduplication
         combined = KnowledgeSet(
@@ -299,7 +319,7 @@ class KnowledgeComponent(AgentComponent):
             concepts=vector_results.concepts + graph_results.concepts,
             relationships=vector_results.relationships + graph_results.relationships,
             patterns=vector_results.patterns + graph_results.patterns,
-            metadata={"combined_from": ["vector", "graph"]}
+            metadata={"combined_from": ["vector", "graph"]},
         )
 
         # Apply limit
@@ -312,9 +332,9 @@ class KnowledgeComponent(AgentComponent):
 
         # Simple truncation - could be enhanced with ranking
         return KnowledgeSet(
-            entities=knowledge.entities[:limit//4],
-            concepts=knowledge.concepts[:limit//4],
-            relationships=knowledge.relationships[:limit//4],
-            patterns=knowledge.patterns[:limit//4],
-            metadata=knowledge.metadata
+            entities=knowledge.entities[: limit // 4],
+            concepts=knowledge.concepts[: limit // 4],
+            relationships=knowledge.relationships[: limit // 4],
+            patterns=knowledge.patterns[: limit // 4],
+            metadata=knowledge.metadata,
         )

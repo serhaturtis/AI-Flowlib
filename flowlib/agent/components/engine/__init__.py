@@ -2,6 +2,4 @@
 
 from .component import EngineComponent
 
-__all__ = [
-    "EngineComponent"
-]
+__all__ = ["EngineComponent"]

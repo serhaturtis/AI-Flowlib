@@ -4,7 +4,6 @@ Simple string-based role system with tool categories for flexible access control
 """
 
 import logging
-from typing import Dict, List, Optional
 
 from flowlib.resources.models.constants import ResourceType
 from flowlib.resources.models.role_config_resource import (
@@ -20,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class ToolPermissionError(Exception):
     """Raised when an agent lacks permission to use a tool."""
+
     pass
 
 
@@ -38,10 +38,11 @@ class ToolRoleManager:
         """Lazy import of resource registry to avoid circular dependencies."""
         if self._resource_registry is None:
             from flowlib.resources.registry.registry import resource_registry
+
             self._resource_registry = resource_registry
         return self._resource_registry
 
-    def get_allowed_tools(self, agent_role: Optional[str]) -> List[str]:
+    def get_allowed_tools(self, agent_role: str | None) -> list[str]:
         """Get list of tools allowed for an agent role.
 
         Args:
@@ -62,14 +63,16 @@ class ToolRoleManager:
         for tool_name in all_tools:
             try:
                 metadata = tool_registry.get_metadata(tool_name)
-                if metadata and self._is_tool_allowed_for_role(agent_role, metadata, allowed_categories):
+                if metadata and self._is_tool_allowed_for_role(
+                    agent_role, metadata, allowed_categories
+                ):
                     allowed_tools.append(tool_name)
             except KeyError:
                 continue
 
         return allowed_tools
 
-    def validate_tool_access(self, agent_role: Optional[str], tool_name: str) -> bool:
+    def validate_tool_access(self, agent_role: str | None, tool_name: str) -> bool:
         """Validate if an agent role can access a specific tool.
 
         Args:
@@ -101,9 +104,11 @@ class ToolRoleManager:
                 )
 
         except KeyError:
-            raise ToolPermissionError(f"Tool '{tool_name}' not found in registry")
+            raise ToolPermissionError(f"Tool '{tool_name}' not found in registry") from None
 
-    def _is_tool_allowed_for_role(self, agent_role: str, metadata: ToolMetadata, allowed_categories: List[str]) -> bool:
+    def _is_tool_allowed_for_role(
+        self, agent_role: str, metadata: ToolMetadata, allowed_categories: list[str]
+    ) -> bool:
         """Check if a tool is allowed for an agent role.
 
         Args:
@@ -125,7 +130,7 @@ class ToolRoleManager:
         # Default: check if tool category is allowed for this role
         return metadata.tool_category in allowed_categories
 
-    def get_role_capabilities(self, agent_role: str) -> Dict[str, List[str]]:
+    def get_role_capabilities(self, agent_role: str) -> dict[str, list[str]]:
         """Get capabilities for an agent role.
 
         Args:
@@ -142,10 +147,10 @@ class ToolRoleManager:
             "role": [agent_role],
             "description": [role_config.description],
             "allowed_categories": role_config.tool_categories,
-            "allowed_tools": self.get_allowed_tools(agent_role)
+            "allowed_tools": self.get_allowed_tools(agent_role),
         }
 
-    def list_all_roles(self) -> Dict[str, str]:
+    def list_all_roles(self) -> dict[str, str]:
         """List all available agent roles.
 
         Returns:
@@ -154,12 +159,12 @@ class ToolRoleManager:
         registry = self._get_resource_registry()
         roles = {}
         resources_by_type = registry.get_by_type(ResourceType.ROLE_CONFIG)
-        for resource_name, role_config in resources_by_type.items():
+        for _resource_name, role_config in resources_by_type.items():
             if isinstance(role_config, RoleConfigResource):
                 roles[role_config.agent_role] = role_config.description
         return roles
 
-    def list_all_categories(self) -> Dict[str, str]:
+    def list_all_categories(self) -> dict[str, str]:
         """List all available tool categories.
 
         Returns:
@@ -168,12 +173,12 @@ class ToolRoleManager:
         registry = self._get_resource_registry()
         categories = {}
         resources_by_type = registry.get_by_type(ResourceType.TOOL_CATEGORY_CONFIG)
-        for resource_name, category_config in resources_by_type.items():
+        for _resource_name, category_config in resources_by_type.items():
             if isinstance(category_config, ToolCategoryConfigResource):
                 categories[category_config.category_name] = category_config.description
         return categories
 
-    def get_tools_by_category(self, category: str) -> List[str]:
+    def get_tools_by_category(self, category: str) -> list[str]:
         """Get all tools in a specific category.
 
         Args:
@@ -195,7 +200,7 @@ class ToolRoleManager:
 
         return tools
 
-    def _get_role_config(self, agent_role: str) -> Optional[RoleConfigResource]:
+    def _get_role_config(self, agent_role: str) -> RoleConfigResource | None:
         """Get role configuration from resource registry.
 
         Args:
@@ -206,12 +211,12 @@ class ToolRoleManager:
         """
         registry = self._get_resource_registry()
         resources_by_type = registry.get_by_type(ResourceType.ROLE_CONFIG)
-        for resource_name, role_config in resources_by_type.items():
+        for _resource_name, role_config in resources_by_type.items():
             if isinstance(role_config, RoleConfigResource) and role_config.agent_role == agent_role:
                 return role_config
         return None
 
-    def _get_role_tool_categories(self, agent_role: str) -> List[str]:
+    def _get_role_tool_categories(self, agent_role: str) -> list[str]:
         """Get tool categories allowed for a role.
 
         Args:

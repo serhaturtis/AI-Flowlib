@@ -6,7 +6,7 @@ and management operations that were previously in BaseAgent.
 """
 
 import logging
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ConfigurationError
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class AgentConfigManager(AgentComponent):
     """Handles agent configuration management.
-    
+
     This component is responsible for:
     - Configuration preparation and validation
     - Configuration merging and defaults
@@ -26,12 +26,12 @@ class AgentConfigManager(AgentComponent):
 
     def __init__(self, name: str = "config_manager"):
         """Initialize the configuration manager.
-        
+
         Args:
             name: Component name
         """
         super().__init__(name)
-        self._config: Optional[AgentConfig] = None
+        self._config: AgentConfig | None = None
 
     async def _initialize_impl(self) -> None:
         """Initialize the configuration manager."""
@@ -41,17 +41,19 @@ class AgentConfigManager(AgentComponent):
         """Shutdown the configuration manager."""
         logger.info("Configuration manager shutdown")
 
-    def prepare_config(self, config: Optional[Union[Dict[str, Any], AgentConfig]] = None) -> AgentConfig:
+    def prepare_config(
+        self, config: dict[str, Any] | AgentConfig | None = None
+    ) -> AgentConfig:
         """Prepare configuration for the agent.
-        
+
         This is the SINGLE path for configuration construction.
-        
+
         Args:
             config: Configuration dictionary or AgentConfig instance
-            
+
         Returns:
             Prepared AgentConfig instance
-            
+
         Raises:
             ConfigurationError: If configuration is invalid or cannot be built
         """
@@ -68,11 +70,15 @@ class AgentConfigManager(AgentComponent):
 
             # If None, create default config
             elif config is None:
-                raise ConfigurationError("Configuration is required - no default agent configuration allowed")
+                raise ConfigurationError(
+                    "Configuration is required - no default agent configuration allowed"
+                )
 
             # Invalid config type
             else:
-                raise ConfigurationError(f"Invalid config type: {type(config)}. Expected dict or AgentConfig.")
+                raise ConfigurationError(
+                    f"Invalid config type: {type(config)}. Expected dict or AgentConfig."
+                )
 
         except Exception as e:
             if isinstance(e, ConfigurationError):
@@ -93,20 +99,20 @@ class AgentConfigManager(AgentComponent):
             raise ConfigurationError("Configuration not set. Call prepare_config() first.")
         return self._config
 
-    def update_config(self, config: Union[Dict[str, Any], AgentConfig]) -> AgentConfig:
+    def update_config(self, config: dict[str, Any] | AgentConfig) -> AgentConfig:
         """Update the current configuration.
-        
+
         Args:
             config: New configuration
-            
+
         Returns:
             Updated AgentConfig instance
         """
         return self.prepare_config(config)
 
-    def get_config_dict(self) -> Dict[str, Any]:
+    def get_config_dict(self) -> dict[str, Any]:
         """Get configuration as dictionary.
-        
+
         Returns:
             Configuration as dictionary
         """

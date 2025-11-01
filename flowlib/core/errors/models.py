@@ -4,7 +4,7 @@ No fallbacks, no defaults, no optional fields unless explicitly required.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import Field
 
@@ -13,9 +13,10 @@ from flowlib.core.models import StrictBaseModel
 
 class ErrorContextData(StrictBaseModel):
     """Strict error context data model.
-    
+
     All fields are required. No optionals, no defaults.
     """
+
     # Inherits strict configuration from StrictBaseModel
     flow_name: str = Field(..., description="Name of the flow where error occurred")
     error_type: str = Field(..., description="Type of error")
@@ -32,6 +33,7 @@ class ErrorContextData(StrictBaseModel):
 
 class ValidationErrorDetail(StrictBaseModel):
     """Strict validation error detail."""
+
     # Inherits strict configuration from StrictBaseModel
 
     location: str = Field(..., description="Field or location of validation error")
@@ -41,6 +43,7 @@ class ValidationErrorDetail(StrictBaseModel):
 
 class ProviderErrorContext(StrictBaseModel):
     """Strict provider error context."""
+
     # Inherits strict configuration from StrictBaseModel
 
     provider_name: str = Field(..., description="Name of the provider")
@@ -51,6 +54,7 @@ class ProviderErrorContext(StrictBaseModel):
 
 class ResourceErrorContext(StrictBaseModel):
     """Strict resource error context."""
+
     # Inherits strict configuration from StrictBaseModel
 
     resource_id: str = Field(..., description="ID of the resource")
@@ -60,6 +64,7 @@ class ResourceErrorContext(StrictBaseModel):
 
 class StateErrorContext(StrictBaseModel):
     """Strict state error context."""
+
     # Inherits strict configuration from StrictBaseModel
 
     state_name: str = Field(..., description="Name of the state")
@@ -70,6 +75,7 @@ class StateErrorContext(StrictBaseModel):
 
 class ConfigurationErrorContext(StrictBaseModel):
     """Strict configuration error context."""
+
     # Inherits strict configuration from StrictBaseModel
 
     config_key: str = Field(..., description="Configuration key that failed")
@@ -80,16 +86,18 @@ class ConfigurationErrorContext(StrictBaseModel):
 
 class ExecutionErrorContext(StrictBaseModel):
     """Strict execution error context."""
+
     # Inherits strict configuration from StrictBaseModel
 
     flow_name: str = Field(..., description="Name of flow being executed")
     step_name: str = Field(..., description="Current step in execution")
-    input_data: Dict[str, Any] = Field(..., description="Input data to the step")
+    input_data: dict[str, Any] = Field(..., description="Input data to the step")
     execution_id: str = Field(..., description="Unique execution ID")
 
 
 class ErrorMetadata(StrictBaseModel):
     """Strict error metadata."""
+
     # Inherits strict configuration from StrictBaseModel
 
     error_id: str = Field(..., description="Unique error ID")
@@ -100,6 +108,7 @@ class ErrorMetadata(StrictBaseModel):
 
 class ErrorDetails(StrictBaseModel):
     """Complete error details with all required fields."""
+
     # Inherits strict configuration from StrictBaseModel
 
     metadata: ErrorMetadata = Field(..., description="Error metadata")
@@ -108,7 +117,6 @@ class ErrorDetails(StrictBaseModel):
     traceback: str = Field(..., description="Stack trace")
 
     # Specific context based on error type
-    validation_errors: List[ValidationErrorDetail] = Field(
-        default_factory=list,
-        description="Validation error details if applicable"
+    validation_errors: list[ValidationErrorDetail] = Field(
+        default_factory=list, description="Validation error details if applicable"
     )

@@ -19,7 +19,7 @@ from .models import (
 @flow(  # type: ignore[arg-type]
     name="completion-evaluation",
     description="Evaluate whether a task has been completed successfully",
-    is_infrastructure=False
+    is_infrastructure=False,
 )
 class CompletionEvaluationFlow:
     """Evaluates task completion in the Plan-and-Execute loop."""
@@ -50,7 +50,7 @@ class CompletionEvaluationFlow:
             "original_goal": input_data.original_goal,
             "plan_reasoning": input_data.plan_reasoning,
             "executed_steps": steps_text,
-            "expected_outcome": input_data.expected_outcome
+            "expected_outcome": input_data.expected_outcome,
         }
 
         # Get evaluation from LLM
@@ -58,15 +58,11 @@ class CompletionEvaluationFlow:
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=LLMEvaluationResult,
             model_name="default-model",
-            prompt_variables=cast(dict[str, object], prompt_vars)
+            prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
         # Convert confidence string to float
-        confidence_map = {
-            "low": 0.3,
-            "medium": 0.6,
-            "high": 0.9
-        }
+        confidence_map = {"low": 0.3, "medium": 0.6, "high": 0.9}
         confidence = confidence_map.get(llm_result.completion_confidence.lower(), 0.6)
 
         # Validate consistency - fail fast if LLM contradicts itself
@@ -84,7 +80,7 @@ class CompletionEvaluationFlow:
             next_action=llm_result.next_action,
             clarification_question=llm_result.clarification_question,
             evaluation_time_ms=(time.time() - start_time) * 1000,  # Programmatic
-            llm_calls_made=1  # Programmatic
+            llm_calls_made=1,  # Programmatic
         )
 
         processing_time = (time.time() - start_time) * 1000
@@ -92,7 +88,7 @@ class CompletionEvaluationFlow:
         return EvaluationOutput(
             result=evaluation_result,
             success=True,  # Programmatic
-            processing_time_ms=processing_time  # Programmatic
+            processing_time_ms=processing_time,  # Programmatic
         )
 
     def _format_executed_steps(self, steps: list[dict]) -> str:
@@ -107,6 +103,8 @@ class CompletionEvaluationFlow:
             result = step.get("result", "No result")
             success = step.get("success", False)
             status_indicator = "✓" if success else "✗"
-            formatted.append(f"{idx}. [{status_indicator}] {tool}: {description}\n   Result: {result}\n   Success: {success}")
+            formatted.append(
+                f"{idx}. [{status_indicator}] {tool}: {description}\n   Result: {result}\n   Success: {success}"
+            )
 
         return "\n".join(formatted)

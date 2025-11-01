@@ -8,6 +8,7 @@ as all provider access is now config-driven.
 # Provider categories (used internally by the registry)
 PROVIDER_CATEGORIES = {
     "llm",
+    "multimodal_llm",
     "vector_db",
     "database",
     "cache",
@@ -19,22 +20,24 @@ PROVIDER_CATEGORIES = {
     "embedding",
     "state_persister",
     "mcp_client",
-    "mcp_server"
+    "mcp_server",
 }
 
 # Default provider configuration names
 DEFAULT_CONFIGS = {
     "default-llm": "llm",
+    "default-multimodal-llm": "multimodal_llm",
     "default-vector-db": "vector_db",
     "default-graph-db": "graph_db",
     "default-cache": "cache",
     "default-embedding": "embedding",
-    "default-database": "database"
+    "default-database": "database",
 }
 
 # Provider type mapping - only providers that actually exist in the codebase
 PROVIDER_TYPE_MAP = {
     "llamacpp": "llm",
+    "llamacpp_multimodal": "multimodal_llm",
     "google_ai": "llm",
     "postgres": "database",
     "mongodb": "database",
@@ -51,5 +54,5 @@ PROVIDER_TYPE_MAP = {
     "arango": "graph_db",
     "janusgraph": "graph_db",
     "rabbitmq": "message_queue",
-    "kafka": "message_queue"
+    "kafka": "message_queue",
 }

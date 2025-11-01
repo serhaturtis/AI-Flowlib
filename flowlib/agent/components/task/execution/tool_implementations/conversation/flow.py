@@ -1,6 +1,6 @@
 """Flow for conversation tool direct response generation."""
 
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 from pydantic import Field
 
@@ -10,8 +10,6 @@ from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
 
-from .prompts import ConversationResponseGenerationPrompt
-
 
 class ConversationInput(StrictBaseModel):
     """Input for conversation flow."""
@@ -19,7 +17,9 @@ class ConversationInput(StrictBaseModel):
     task_content: str = Field(..., description="User message to respond to")
     working_directory: str = Field(..., description="Working directory context")
     agent_persona: str = Field(..., description="Agent's persona/personality")
-    conversation_history: list[dict] = Field(default_factory=list, description="Recent conversation history")
+    conversation_history: list[dict] = Field(
+        default_factory=list, description="Recent conversation history"
+    )
 
 
 class ConversationOutput(StrictBaseModel):
@@ -46,27 +46,25 @@ class ConversationFlow:
         llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
 
         # Generate response directly using the user's message
-        response_prompt = resource_registry.get("conversation_response_generation", ConversationResponseGenerationPrompt)
+        response_prompt = resource_registry.get("conversation_response_generation")
 
         # Format conversation history
         history_text = self._format_conversation_history(request.conversation_history)
 
-        response_variables: Dict[str, Any] = {
+        response_variables: dict[str, Any] = {
             "message": request.task_content,
             "persona": request.agent_persona,
-            "conversation_history": history_text
+            "conversation_history": history_text,
         }
 
         response_obj = await llm.generate_structured(
             prompt=cast(PromptTemplate, response_prompt),
             output_type=ConversationResponseModel,
             model_name="default-model",
-            prompt_variables=response_variables
+            prompt_variables=response_variables,
         )
 
-        return ConversationOutput(
-            response=response_obj.response.strip()
-        )
+        return ConversationOutput(response=response_obj.response.strip())
 
     def _format_conversation_history(self, history: list[dict]) -> str:
         """Format conversation history for prompt."""

@@ -9,20 +9,20 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
 # Type variables for input and output
-InputT = TypeVar('InputT')
-OutputT = TypeVar('OutputT')
+InputT = TypeVar("InputT")
+OutputT = TypeVar("OutputT")
 
 
 class BaseAgentFlow(Generic[InputT, OutputT], ABC):
     """Base class for agent flows with clean dependency injection.
-    
+
     This class provides:
     - Automatic provider resolution through FlowContext
     - Clean separation of data and configuration
@@ -31,23 +31,21 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
     """
 
     def __init__(self) -> None:
-        self.context: Optional[ExecutionContext] = None
-        self.start_time: Optional[float] = None
+        self.context: ExecutionContext | None = None
+        self.start_time: float | None = None
 
     async def execute(
-        self,
-        input_data: InputT,
-        processing_options: Optional[dict] = None
+        self, input_data: InputT, processing_options: dict | None = None
     ) -> OutputT:
         """Execute the flow with clean dependency injection.
-        
+
         Args:
             input_data: Pure data input (no configuration)
             processing_options: Optional processing configuration
-            
+
         Returns:
             Flow output
-            
+
         Raises:
             FlowExecutionError: If flow execution fails
         """
@@ -71,24 +69,17 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
                 agent_name="flow_agent",
                 agent_persona="Flow executor",
                 working_directory=os.getcwd(),
-                current_message=""
+                current_message="",
             )
 
-            task = TaskContext(
-                description="Flow execution task"
-            )
+            task = TaskContext(description="Flow execution task")
 
-            component = ComponentContext(
-                component_type="task_execution"
-            )
+            component = ComponentContext(component_type="task_execution")
 
             learning = LearningContext()
 
             self.context = ExecutionContext(
-                session=session,
-                task=task,
-                component=component,
-                learning=learning
+                session=session, task=task, component=component, learning=learning
             )
 
             # Execute the flow
@@ -105,15 +96,13 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
             execution_time = time.time() - self.start_time if self.start_time else 0
             logger.error(f"{self.__class__.__name__} failed after {execution_time:.2f}s: {e}")
             raise FlowExecutionError(
-                flow_name=self.__class__.__name__,
-                execution_time=execution_time,
-                original_error=e
+                flow_name=self.__class__.__name__, execution_time=execution_time, original_error=e
             ) from e
 
     @abstractmethod
     async def run_pipeline(self, input_data: InputT) -> OutputT:
         """Implement the core flow logic.
-        
+
         Subclasses should implement this method with their specific logic.
         The FlowContext is available as self.context for provider access.
         """
@@ -122,16 +111,19 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
     async def get_llm(self) -> Any:
         """Convenience method to get LLM provider from registry."""
         from flowlib.providers.core.registry import provider_registry
+
         return await provider_registry.get_by_config("default-llm")
 
     async def get_graph(self) -> Any:
         """Convenience method to get graph provider from registry."""
         from flowlib.providers.core.registry import provider_registry
+
         return await provider_registry.get_by_config("default-graph-db")
 
     async def get_vector(self) -> Any:
         """Convenience method to get vector provider from registry."""
         from flowlib.providers.core.registry import provider_registry
+
         return await provider_registry.get_by_config("default-vector-db")
 
     def get_confidence_threshold(self) -> float:
@@ -151,31 +143,31 @@ class FlowExecutionError(Exception):
 
 # Utility functions for common flow patterns
 
+
 async def execute_flow_with_timeout(
     flow: BaseAgentFlow,
     input_data: InputT,
     timeout_seconds: int = 60,
-    processing_options: Optional[dict] = None
+    processing_options: dict | None = None,
 ) -> OutputT:
     """Execute a flow with timeout protection.
-    
+
     Args:
         flow: Flow instance to execute
         input_data: Input data for the flow
         timeout_seconds: Maximum execution time
         processing_options: Optional processing configuration
-        
+
     Returns:
         Flow output
-        
+
     Raises:
         asyncio.TimeoutError: If flow exceeds timeout
         FlowExecutionError: If flow execution fails
     """
     try:
         return await asyncio.wait_for(
-            flow.execute(input_data, processing_options),
-            timeout=timeout_seconds
+            flow.execute(input_data, processing_options), timeout=timeout_seconds
         )
     except asyncio.TimeoutError:
         logger.error(f"Flow {flow.__class__.__name__} timed out after {timeout_seconds}s")
@@ -183,21 +175,22 @@ async def execute_flow_with_timeout(
 
 
 async def execute_flows_in_parallel(
-    flows_and_inputs: list[tuple[BaseAgentFlow, InputT, Optional[dict]]],
-    max_concurrent: int = 3
+    flows_and_inputs: list[tuple[BaseAgentFlow, InputT, dict | None]], max_concurrent: int = 3
 ) -> list[OutputT]:
     """Execute multiple flows in parallel with concurrency control.
-    
+
     Args:
         flows_and_inputs: List of (flow, input_data, processing_options) tuples
         max_concurrent: Maximum number of concurrent flow executions
-        
+
     Returns:
         List of flow outputs in the same order as inputs
     """
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def execute_with_semaphore(flow_info: tuple[BaseAgentFlow, InputT, Optional[dict]]) -> OutputT:
+    async def execute_with_semaphore(
+        flow_info: tuple[BaseAgentFlow, InputT, dict | None],
+    ) -> OutputT:
         flow, input_data, processing_options = flow_info
         async with semaphore:
             result: OutputT = await flow.execute(input_data, processing_options)

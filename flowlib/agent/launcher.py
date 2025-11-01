@@ -1,7 +1,7 @@
 """Unified agent launcher - replaces all run_* scripts and runners."""
 
 import logging
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 from pydantic import Field
 
@@ -19,21 +19,17 @@ logger = logging.getLogger(__name__)
 class LauncherConfig(StrictBaseModel):
     """Configuration for agent launcher."""
 
-    project_path: Optional[str] = Field(
-        default=None,
-        description="Project path. None uses ~/.flowlib/"
+    project_path: str | None = Field(
+        default=None, description="Project path. None uses ~/.flowlib/"
     )
     agent_config_name: str = Field(
-        ...,
-        description="Agent configuration name from resource registry"
+        ..., description="Agent configuration name from resource registry"
     )
     execution_mode: ExecutionMode = Field(
-        ...,
-        description="Execution mode (repl, daemon, autonomous, remote)"
+        ..., description="Execution mode (repl, daemon, autonomous, remote)"
     )
-    execution_config: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Mode-specific configuration"
+    execution_config: dict[str, Any] = Field(
+        default_factory=dict, description="Mode-specific configuration"
     )
 
 
@@ -51,7 +47,7 @@ class AgentLauncher:
         ... )
     """
 
-    def __init__(self, project_path: Optional[str] = None):
+    def __init__(self, project_path: str | None = None):
         """Initialize launcher with project.
 
         Args:
@@ -75,7 +71,7 @@ class AgentLauncher:
         self,
         agent_config_name: str,
         mode: ExecutionMode,
-        execution_config: Optional[Dict[str, Any]] = None
+        execution_config: dict[str, Any] | None = None,
     ) -> None:
         """Launch agent in specified execution mode.
 
@@ -91,9 +87,7 @@ class AgentLauncher:
         if not self._initialized:
             await self.initialize()
 
-        logger.info(
-            f"Launching agent '{agent_config_name}' in mode '{mode.value}'"
-        )
+        logger.info(f"Launching agent '{agent_config_name}' in mode '{mode.value}'")
 
         # Load agent configuration
         agent = await self._create_agent(agent_config_name)
@@ -124,22 +118,15 @@ class AgentLauncher:
         from flowlib.config.role_manager import role_manager
 
         try:
-            actual_config_name = role_manager.get_role_assignment(
-                agent_config_name
-            )
+            actual_config_name = role_manager.get_role_assignment(agent_config_name)
             if actual_config_name:
                 agent_config_resource = resource_registry.get(actual_config_name)
-                logger.info(
-                    f"Loaded agent config '{agent_config_name}' -> "
-                    f"'{actual_config_name}'"
-                )
+                logger.info(f"Loaded agent config '{agent_config_name}' -> '{actual_config_name}'")
             else:
                 agent_config_resource = resource_registry.get(agent_config_name)
                 logger.info(f"Loaded agent config '{agent_config_name}' directly")
         except Exception as e:
-            raise ValueError(
-                f"Could not load agent configuration '{agent_config_name}': {e}"
-            )
+            raise ValueError(f"Could not load agent configuration '{agent_config_name}': {e}") from e
 
         # Cast and extract configuration
         config_resource = cast(AgentConfigResource, agent_config_resource)
@@ -157,13 +144,11 @@ class AgentLauncher:
             working_memory=WorkingMemoryConfig(default_ttl_seconds=3600),
             vector_memory=VectorMemoryConfig(
                 vector_provider_config="default-vector-db",
-                embedding_provider_config="default-embedding"
+                embedding_provider_config="default-embedding",
             ),
-            knowledge_memory=KnowledgeMemoryConfig(
-                graph_provider_config="default-graph-db"
-            ),
+            knowledge_memory=KnowledgeMemoryConfig(graph_provider_config="default-graph-db"),
             fusion_llm_config=config_resource.llm_name,
-            store_execution_history=True
+            store_execution_history=True,
         )
 
         # Build AgentConfig
@@ -178,11 +163,8 @@ class AgentLauncher:
             enable_learning=config_resource.enable_learning,
             memory=memory_config,
             state_config=StatePersistenceConfig(
-                persistence_type="file",
-                base_path="./agent_states",
-                auto_save=True,
-                auto_load=False
-            )
+                persistence_type="file", base_path="./agent_states", auto_save=True, auto_load=False
+            ),
         )
 
         # Create and initialize agent
@@ -193,9 +175,7 @@ class AgentLauncher:
         return agent
 
     def _create_strategy(
-        self,
-        mode: ExecutionMode,
-        execution_config: Dict[str, Any]
+        self, mode: ExecutionMode, execution_config: dict[str, Any]
     ) -> ExecutionStrategy:
         """Create execution strategy for specified mode.
 

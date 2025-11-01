@@ -1,7 +1,7 @@
 """Agent registry for tracking and accessing agent classes."""
 
+import builtins
 import logging
-from typing import Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -9,22 +9,26 @@ from flowlib.core.registry.registry import BaseRegistry
 
 logger = logging.getLogger(__name__)
 
+
 class AgentInfo(BaseModel):
     """Information about a registered agent."""
+
     model_config = ConfigDict(extra="forbid")
 
-    agent_class: Type = Field(..., description="The agent class")
-    metadata: Dict[str, Union[str, int, bool]] = Field(default_factory=dict, description="Agent metadata")
+    agent_class: type = Field(..., description="The agent class")
+    metadata: dict[str, str | int | bool] = Field(
+        default_factory=dict, description="Agent metadata"
+    )
 
 
-class AgentRegistry(BaseRegistry[Type]):
+class AgentRegistry(BaseRegistry[type]):
     """Registry for agent classes."""
 
     def __init__(self) -> None:
         """Initialize the agent registry."""
-        self._agents: Dict[str, AgentInfo] = {}
+        self._agents: dict[str, AgentInfo] = {}
 
-    def register(self, name: str, obj: Type, **metadata: Union[str, int, bool]) -> None:
+    def register(self, name: str, obj: type, **metadata: str | int | bool) -> None:
         """Register an agent class.
 
         Args:
@@ -41,24 +45,21 @@ class AgentRegistry(BaseRegistry[Type]):
             # To disallow overwriting, uncomment the following line:
             # raise ValueError(f"Agent '{name}' is already registered.")
 
-        self._agents[name] = AgentInfo(
-            agent_class=obj,
-            metadata=metadata
-        )
-        class_name = getattr(obj, '__name__', str(obj))
+        self._agents[name] = AgentInfo(agent_class=obj, metadata=metadata)
+        class_name = getattr(obj, "__name__", str(obj))
         logger.debug(f"Registered agent: {name} (Class: {class_name})")
 
     # BaseRegistry interface implementation
-    def get(self, name: str, expected_type: Optional[Type] = None) -> Type:
+    def get(self, name: str, expected_type: type | None = None) -> type:
         """Get an agent class by name with optional type checking (BaseRegistry interface).
-        
+
         Args:
             name: Name of the agent to retrieve
             expected_type: Optional type for type checking
-            
+
         Returns:
             The registered agent class
-            
+
         Raises:
             KeyError: If the agent doesn't exist
             TypeError: If the agent doesn't match the expected type
@@ -74,21 +75,21 @@ class AgentRegistry(BaseRegistry[Type]):
 
     def contains(self, name: str) -> bool:
         """Check if an agent exists in the registry (BaseRegistry interface).
-        
+
         Args:
             name: Name to check
-            
+
         Returns:
             True if the agent exists, False otherwise
         """
         return name in self._agents
 
-    def list(self, filter_criteria: Optional[Dict[str, Union[str, int, bool]]] = None) -> List[str]:
+    def list(self, filter_criteria: dict[str, str | int | bool] | None = None) -> list[str]:
         """List registered agents matching criteria (BaseRegistry interface).
-        
+
         Args:
             filter_criteria: Optional criteria to filter results
-            
+
         Returns:
             List of agent names matching the criteria
         """
@@ -105,13 +106,15 @@ class AgentRegistry(BaseRegistry[Type]):
 
         return filtered_agents
 
-    def _matches_criteria(self, agent_name: str, criteria: Dict[str, Union[str, int, bool]]) -> bool:
+    def _matches_criteria(
+        self, agent_name: str, criteria: dict[str, str | int | bool]
+    ) -> bool:
         """Check if an agent matches the given criteria.
-        
+
         Args:
             agent_name: Name of the agent to check
             criteria: Criteria to match against
-            
+
         Returns:
             True if the agent matches all criteria
         """
@@ -126,7 +129,7 @@ class AgentRegistry(BaseRegistry[Type]):
 
         return True
 
-    def get_agent_class(self, name: str) -> Optional[Type]:
+    def get_agent_class(self, name: str) -> type | None:
         """Get the registered agent class by name.
 
         Args:
@@ -138,7 +141,7 @@ class AgentRegistry(BaseRegistry[Type]):
         agent_info = self._agents.get(name)
         return agent_info.agent_class if agent_info else None
 
-    def get_agent_metadata(self, name: str) -> Optional[Dict[str, Union[str, int, bool]]]:
+    def get_agent_metadata(self, name: str) -> dict[str, str | int | bool] | None:
         """Get the metadata for a registered agent.
 
         Args:
@@ -150,7 +153,7 @@ class AgentRegistry(BaseRegistry[Type]):
         agent_info = self._agents.get(name)
         return agent_info.metadata if agent_info else None
 
-    def get_agent_info(self, name: str) -> Optional[AgentInfo]:
+    def get_agent_info(self, name: str) -> AgentInfo | None:
         """Get all registered information for an agent.
 
         Args:
@@ -161,13 +164,13 @@ class AgentRegistry(BaseRegistry[Type]):
         """
         return self._agents.get(name)
 
-    def list_agents(self) -> List[str]:
+    def list_agents(self) -> builtins.list[str]:
         """List the names of all registered agents.
 
         Returns:
             A list of agent names.
         """
-        return sorted(list(self._agents.keys()))
+        return sorted(self._agents.keys())
 
     def clear(self) -> None:
         """Clear all registered agents."""
@@ -176,10 +179,10 @@ class AgentRegistry(BaseRegistry[Type]):
 
     def remove(self, name: str) -> bool:
         """Remove a specific agent registration from the registry.
-        
+
         Args:
             name: Name of the agent to remove
-            
+
         Returns:
             True if the agent was found and removed, False if not found
         """
@@ -190,14 +193,14 @@ class AgentRegistry(BaseRegistry[Type]):
 
         return False
 
-    def update(self, name: str, obj: Type, **metadata: Union[str, int, bool]) -> bool:
+    def update(self, name: str, obj: type, **metadata: str | int | bool) -> bool:
         """Update or replace an existing agent registration.
-        
+
         Args:
             name: Name of the agent to update
             obj: New agent class to register
             **metadata: Additional metadata about the agent
-            
+
         Returns:
             True if an existing agent was updated, False if this was a new registration
         """
@@ -216,6 +219,7 @@ class AgentRegistry(BaseRegistry[Type]):
             self.register(name, obj, **metadata)
             logger.debug(f"Registered new agent '{name}' in registry")
             return False
+
 
 # Global instance of the agent registry
 agent_registry = AgentRegistry()

@@ -7,7 +7,6 @@ This module manages agent threads and their message queues.
 import asyncio
 import logging
 import threading
-from typing import Dict, Optional
 
 from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.core.models.messages import AgentMessage, AgentResponse
@@ -22,20 +21,20 @@ class AgentThreadPoolManager:
 
     def __init__(self) -> None:
         """Initialize thread pool manager."""
-        self.agents: Dict[str, BaseAgent] = {}
-        self.response_routers: Dict[str, ResponseRouter] = {}
+        self.agents: dict[str, BaseAgent] = {}
+        self.response_routers: dict[str, ResponseRouter] = {}
         self._lock = threading.Lock()
 
     def create_agent(self, agent_id: str, config: AgentConfig) -> BaseAgent:
         """Create and start an agent in its own thread.
-        
+
         Args:
             agent_id: Unique agent identifier
             config: Agent configuration
-            
+
         Returns:
             Created agent instance
-            
+
         Raises:
             ValueError: If agent already exists
         """
@@ -44,10 +43,7 @@ class AgentThreadPoolManager:
                 raise ValueError(f"Agent {agent_id} already exists")
 
             # Create agent with task description from config
-            agent = BaseAgent(
-                config=config,
-                task_description=config.task_description or ""
-            )
+            agent = BaseAgent(config=config, task_description=config.task_description or "")
 
             # Store agent
             self.agents[agent_id] = agent
@@ -62,23 +58,23 @@ class AgentThreadPoolManager:
             logger.info(f"Created and started agent {agent_id}")
             return agent
 
-    def get_agent(self, agent_id: str) -> Optional[BaseAgent]:
+    def get_agent(self, agent_id: str) -> BaseAgent | None:
         """Get agent by ID.
-        
+
         Args:
             agent_id: Agent identifier
-            
+
         Returns:
             Agent instance or None if not found
         """
         return self.agents.get(agent_id)
 
-    def get_response_router(self, agent_id: str) -> Optional[ResponseRouter]:
+    def get_response_router(self, agent_id: str) -> ResponseRouter | None:
         """Get response router for agent.
-        
+
         Args:
             agent_id: Agent identifier
-            
+
         Returns:
             Response router or None if not found
         """
@@ -86,14 +82,14 @@ class AgentThreadPoolManager:
 
     async def send_message(self, agent_id: str, message: AgentMessage) -> str:
         """Send message to agent.
-        
+
         Args:
             agent_id: Target agent ID
             message: Message to send
-            
+
         Returns:
             Message ID
-            
+
         Raises:
             ValueError: If agent not found
         """
@@ -112,20 +108,24 @@ class AgentThreadPoolManager:
         # Send to agent's thread-safe input queue
         agent.input_queue.put(message)
 
-        logger.info(f"[ThreadManager] Successfully sent message {message.message_id} to agent {agent_id}")
+        logger.info(
+            f"[ThreadManager] Successfully sent message {message.message_id} to agent {agent_id}"
+        )
         return message.message_id
 
-    async def wait_for_response(self, agent_id: str, message_id: str, timeout: Optional[float] = None) -> AgentResponse:
+    async def wait_for_response(
+        self, agent_id: str, message_id: str, timeout: float | None = None
+    ) -> AgentResponse:
         """Wait for response from agent.
-        
+
         Args:
             agent_id: Agent ID
             message_id: Message ID to wait for
             timeout: Timeout in seconds
-            
+
         Returns:
             Agent response
-            
+
         Raises:
             ValueError: If agent not found
             TimeoutError: If response times out
@@ -143,7 +143,7 @@ class AgentThreadPoolManager:
 
     def shutdown_agent(self, agent_id: str) -> None:
         """Shutdown an agent.
-        
+
         Args:
             agent_id: Agent to shutdown
         """

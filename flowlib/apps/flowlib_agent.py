@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Add project to Python path
 apps_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,14 +26,13 @@ def configure_logging(level: str = "INFO") -> None:
     log_level = getattr(logging, level.upper(), logging.INFO)
 
     logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     # Quiet noisy libraries
     if level != "DEBUG":
-        logging.getLogger('flowlib.providers').setLevel(logging.WARNING)
-        logging.getLogger('chromadb').setLevel(logging.ERROR)
+        logging.getLogger("flowlib.providers").setLevel(logging.WARNING)
+        logging.getLogger("chromadb").setLevel(logging.ERROR)
 
 
 async def main() -> int:
@@ -62,63 +61,35 @@ Execution Modes:
   autonomous  - Run N cycles then exit
   daemon      - Continuous execution with triggers
   remote      - Message queue consumer
-        """
+        """,
     )
 
     # Global options
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging"
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # run command
     run_parser = subparsers.add_parser("run", help="Run agent")
-    run_parser.add_argument(
-        "--project",
-        type=str,
-        help="Project path (default: ~/.flowlib/)"
-    )
-    run_parser.add_argument(
-        "--agent",
-        required=True,
-        help="Agent configuration name"
-    )
+    run_parser.add_argument("--project", type=str, help="Project path (default: ~/.flowlib/)")
+    run_parser.add_argument("--agent", required=True, help="Agent configuration name")
     run_parser.add_argument(
         "--mode",
         required=True,
         choices=["repl", "autonomous", "daemon", "remote"],
-        help="Execution mode"
+        help="Execution mode",
     )
 
     # Mode-specific options
-    run_parser.add_argument(
-        "--max-cycles",
-        type=int,
-        help="[autonomous] Maximum execution cycles"
-    )
+    run_parser.add_argument("--max-cycles", type=int, help="[autonomous] Maximum execution cycles")
     run_parser.add_argument(
         "--trigger",
         type=str,
-        help="[daemon] Trigger config (e.g., 'timer:3600' or 'email:gmail-default:300')"
+        help="[daemon] Trigger config (e.g., 'timer:3600' or 'email:gmail-default:300')",
     )
-    run_parser.add_argument(
-        "--queue",
-        type=str,
-        help="[remote] Task queue name"
-    )
-    run_parser.add_argument(
-        "--config",
-        type=str,
-        help="Path to mode-specific config file (YAML)"
-    )
+    run_parser.add_argument("--queue", type=str, help="[remote] Task queue name")
+    run_parser.add_argument("--config", type=str, help="Path to mode-specific config file (YAML)")
 
     args = parser.parse_args()
 
@@ -152,9 +123,7 @@ async def run_agent(args: argparse.Namespace) -> int:
 
         # Launch agent
         await launcher.launch(
-            agent_config_name=args.agent,
-            mode=mode,
-            execution_config=execution_config
+            agent_config_name=args.agent, mode=mode, execution_config=execution_config
         )
 
         return 0
@@ -167,15 +136,13 @@ async def run_agent(args: argparse.Namespace) -> int:
         return 1
 
 
-async def build_execution_config(
-    mode: ExecutionMode,
-    args: argparse.Namespace
-) -> Dict[str, Any]:
+async def build_execution_config(mode: ExecutionMode, args: argparse.Namespace) -> dict[str, Any]:
     """Build mode-specific execution config from CLI args."""
 
     # If config file provided, load it
     if args.config:
         import yaml
+
         config_path = Path(args.config)
         if not config_path.exists():
             raise ValueError(f"Config file not found: {args.config}")
@@ -184,7 +151,7 @@ async def build_execution_config(
             return yaml.safe_load(f)
 
     # Otherwise build from CLI args
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
 
     if mode == ExecutionMode.AUTONOMOUS:
         if args.max_cycles:
@@ -219,9 +186,7 @@ def parse_trigger_arg(trigger: str) -> list:
     if trigger_type == "timer":
         interval = int(parts[1]) if len(parts) > 1 else 3600
         return [
-            TimerMessageSourceConfig(
-                name="cli_timer", interval_seconds=interval, run_on_start=True
-            )
+            TimerMessageSourceConfig(name="cli_timer", interval_seconds=interval, run_on_start=True)
         ]
 
     elif trigger_type == "email":

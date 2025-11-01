@@ -8,8 +8,9 @@ import asyncio
 import json
 import logging
 from asyncio import Task
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any
 
 from pydantic import Field
 
@@ -33,7 +34,7 @@ except ImportError:
 
 class KafkaProviderSettings(MQProviderSettings):
     """Kafka provider settings - direct inheritance, only Kafka-specific fields.
-    
+
     Kafka requires:
     1. Bootstrap servers for cluster discovery
     2. Producer/consumer configuration
@@ -44,65 +45,79 @@ class KafkaProviderSettings(MQProviderSettings):
     # Connection settings - Kafka uses bootstrap servers
     host: str = Field(default="localhost", description="Kafka broker host")
     port: int = Field(default=9092, description="Kafka broker port")
-    bootstrap_servers: Optional[str] = Field(default=None, description="Comma-separated Kafka bootstrap servers (overrides host/port)")
+    bootstrap_servers: str | None = Field(
+        default=None, description="Comma-separated Kafka bootstrap servers (overrides host/port)"
+    )
 
     # Authentication - inherited from MQProviderSettings as Optional[str]
 
     # Kafka client settings
-    client_id: Optional[str] = Field(default=None, description="Kafka client ID")
+    client_id: str | None = Field(default=None, description="Kafka client ID")
     group_id: str = Field(default="flowlib_consumer_group", description="Consumer group ID")
-    auto_offset_reset: str = Field(default="latest", description="Offset reset strategy ('earliest', 'latest', 'none')")
+    auto_offset_reset: str = Field(
+        default="latest", description="Offset reset strategy ('earliest', 'latest', 'none')"
+    )
     enable_auto_commit: bool = Field(default=True, description="Whether to auto-commit offsets")
-    auto_commit_interval_ms: int = Field(default=5000, description="Auto-commit interval in milliseconds")
+    auto_commit_interval_ms: int = Field(
+        default=5000, description="Auto-commit interval in milliseconds"
+    )
 
     # Security settings
-    security_protocol: str = Field(default="PLAINTEXT", description="Security protocol ('PLAINTEXT', 'SSL', 'SASL_PLAINTEXT', 'SASL_SSL')")
-    sasl_mechanism: Optional[str] = Field(default=None, description="SASL mechanism (PLAIN, GSSAPI, SCRAM-SHA-256, SCRAM-SHA-512)")
-    sasl_username: Optional[str] = Field(default=None, description="SASL username")
-    sasl_password: Optional[str] = Field(default=None, description="SASL password")
-    ssl_context: Optional[Any] = Field(default=None, description="SSL context")
+    security_protocol: str = Field(
+        default="PLAINTEXT",
+        description="Security protocol ('PLAINTEXT', 'SSL', 'SASL_PLAINTEXT', 'SASL_SSL')",
+    )
+    sasl_mechanism: str | None = Field(
+        default=None, description="SASL mechanism (PLAIN, GSSAPI, SCRAM-SHA-256, SCRAM-SHA-512)"
+    )
+    sasl_username: str | None = Field(default=None, description="SASL username")
+    sasl_password: str | None = Field(default=None, description="SASL password")
+    ssl_context: Any | None = Field(default=None, description="SSL context")
     ssl_check_hostname: bool = Field(default=True, description="Whether to check SSL hostname")
 
     # Producer settings
-    acks: Union[str, int] = Field(default="all", description="Producer acks setting (0, 1, 'all')")
-    compression_type: Optional[str] = Field(default=None, description="Compression type ('gzip', 'snappy', 'lz4', None)")
+    acks: str | int = Field(default="all", description="Producer acks setting (0, 1, 'all')")
+    compression_type: str | None = Field(
+        default=None, description="Compression type ('gzip', 'snappy', 'lz4', None)"
+    )
 
     # Additional connection arguments
-    connect_args: Dict[str, Any] = Field(default_factory=dict, description="Additional connection arguments")
+    connect_args: dict[str, Any] = Field(
+        default_factory=dict, description="Additional connection arguments"
+    )
 
 
 @provider(provider_type="message_queue", name="kafka", settings_class=KafkaProviderSettings)
 class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
     """Kafka implementation of the MQProvider.
-    
+
     This provider implements message queue operations using aiokafka,
     an asynchronous client for Apache Kafka.
     """
 
-    def __init__(self, name: str = "kafka", settings: Optional[KafkaProviderSettings] = None):
+    def __init__(self, name: str = "kafka", settings: KafkaProviderSettings | None = None):
         """Initialize Kafka provider.
-        
+
         Args:
             name: Unique provider name
             settings: Optional provider settings
         """
         if settings is None:
             settings = KafkaProviderSettings(
-                host="localhost",
-                port=9092,
-                username="guest",
-                password="guest"
+                host="localhost", port=9092, username="guest", password="guest"
             )
         super().__init__(name=name, settings=settings)
         if not isinstance(self.settings, KafkaProviderSettings):
-            raise TypeError(f"settings must be a KafkaProviderSettings instance, got {type(self.settings)}")
-        self._producer: Optional[AIOKafkaProducer] = None
-        self._consumers: Dict[str, Any] = {}
-        self._consumer_tasks: Dict[str, Task[None]] = {}
+            raise TypeError(
+                f"settings must be a KafkaProviderSettings instance, got {type(self.settings)}"
+            )
+        self._producer: AIOKafkaProducer | None = None
+        self._consumers: dict[str, Any] = {}
+        self._consumer_tasks: dict[str, Task[None]] = {}
 
     async def _initialize(self) -> None:
         """Initialize Kafka connection.
-        
+
         Raises:
             ProviderError: If initialization fails
         """
@@ -119,7 +134,7 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                 "acks": self.settings.acks,
                 "compression_type": self.settings.compression_type,
                 "security_protocol": self.settings.security_protocol,
-                **self.settings.connect_args
+                **self.settings.connect_args,
             }
 
             # Add client ID if provided
@@ -127,7 +142,11 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                 producer_config["client_id"] = self.settings.client_id
 
             # Add SASL settings if provided
-            if self.settings.sasl_mechanism and self.settings.sasl_username and self.settings.sasl_password:
+            if (
+                self.settings.sasl_mechanism
+                and self.settings.sasl_username
+                and self.settings.sasl_password
+            ):
                 producer_config["sasl_mechanism"] = self.settings.sasl_mechanism
                 producer_config["sasl_plain_username"] = self.settings.sasl_username
                 producer_config["sasl_plain_password"] = self.settings.sasl_password
@@ -154,22 +173,22 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                     error_type="connection_error",
                     error_location="KafkaMQProvider._initialize",
                     component="kafka_provider",
-                    operation="initialize"
+                    operation="initialize",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="mq",
                     operation="initialize",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def _shutdown(self) -> None:
         """Close Kafka connection."""
         try:
             # Stop all consumers
-            for topic, consumer_task in self._consumer_tasks.items():
+            for _topic, consumer_task in self._consumer_tasks.items():
                 if not consumer_task.done():
                     consumer_task.cancel()
 
@@ -192,11 +211,13 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
         except Exception as e:
             logger.error(f"Error during Kafka shutdown: {str(e)}")
 
-    async def publish(self,
-                     exchange: str,
-                     routing_key: str,
-                     message: Any,
-                     metadata: Optional[MessageMetadata] = None) -> bool:
+    async def publish(
+        self,
+        exchange: str,
+        routing_key: str,
+        message: Any,
+        metadata: MessageMetadata | None = None,
+    ) -> bool:
         """Publish a message to Kafka.
 
         Args:
@@ -226,7 +247,7 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                 value = str(message).encode()
 
             # Prepare key (using routing_key as the Kafka key)
-            encoded_key: Optional[bytes] = None
+            encoded_key: bytes | None = None
             if routing_key:
                 encoded_key = routing_key.encode()
             elif metadata and metadata.message_id:
@@ -249,10 +270,7 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
             if self._producer is None:
                 raise RuntimeError("Producer not initialized")
             await self._producer.send_and_wait(
-                topic=exchange,
-                value=value,
-                key=encoded_key,
-                headers=headers
+                topic=exchange, value=value, key=encoded_key, headers=headers
             )
 
             logger.debug(f"Published message to topic {exchange}")
@@ -266,30 +284,29 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                     error_type="publish_error",
                     error_location="KafkaMQProvider.publish",
                     component="kafka_provider",
-                    operation="publish"
+                    operation="publish",
                 ),
                 provider_context=ProviderErrorContext(
-                    provider_name=self.name,
-                    provider_type="mq",
-                    operation="publish",
-                    retry_count=0
+                    provider_name=self.name, provider_type="mq", operation="publish", retry_count=0
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def subscribe(self,
-                       topic: str,
-                       callback: Callable[[Any, MessageMetadata], Any],
-                       group_id: Optional[str] = None,
-                       auto_offset_reset: Optional[str] = None) -> None:
+    async def subscribe(
+        self,
+        topic: str,
+        callback: Callable[[Any, MessageMetadata], Any],
+        group_id: str | None = None,
+        auto_offset_reset: str | None = None,
+    ) -> None:
         """Subscribe to messages from Kafka.
-        
+
         Args:
             topic: Topic to subscribe to
             callback: Callback function
             group_id: Optional consumer group ID (overrides settings)
             auto_offset_reset: Optional offset reset strategy (overrides settings)
-            
+
         Raises:
             ProviderError: If subscribe fails
         """
@@ -306,14 +323,14 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                         error_type="subscription_error",
                         error_location="KafkaMQProvider.subscribe",
                         component="kafka_provider",
-                        operation="subscribe"
+                        operation="subscribe",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="mq",
                         operation="subscribe",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             # Get bootstrap servers
@@ -333,7 +350,7 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                 "enable_auto_commit": self.settings.enable_auto_commit,
                 "auto_commit_interval_ms": self.settings.auto_commit_interval_ms,
                 "security_protocol": self.settings.security_protocol,
-                **self.settings.connect_args
+                **self.settings.connect_args,
             }
 
             # Add client ID if provided
@@ -341,7 +358,11 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                 consumer_config["client_id"] = f"{self.settings.client_id}_consumer"
 
             # Add SASL settings if provided
-            if self.settings.sasl_mechanism and self.settings.sasl_username and self.settings.sasl_password:
+            if (
+                self.settings.sasl_mechanism
+                and self.settings.sasl_username
+                and self.settings.sasl_password
+            ):
                 consumer_config["sasl_mechanism"] = self.settings.sasl_mechanism
                 consumer_config["sasl_plain_username"] = self.settings.sasl_username
                 consumer_config["sasl_plain_password"] = self.settings.sasl_password
@@ -361,7 +382,9 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
             async def consume_task() -> None:
                 try:
                     await consumer.start()
-                    logger.info(f"Started consuming from topic {topic} with group ID {consumer_group_id}")
+                    logger.info(
+                        f"Started consuming from topic {topic} with group ID {consumer_group_id}"
+                    )
 
                     async for message in consumer:
                         try:
@@ -381,7 +404,7 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                                 "offset": message.offset,
                                 "timestamp": message.timestamp,
                                 "message_id": message.key.decode() if message.key else None,
-                                "routing_key": message.topic
+                                "routing_key": message.topic,
                             }
 
                             # Add headers to metadata
@@ -389,7 +412,9 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                                 for key, value in message.headers:
                                     key_str = key.decode() if isinstance(key, bytes) else key
                                     try:
-                                        value_str = value.decode() if isinstance(value, bytes) else value
+                                        value_str = (
+                                            value.decode() if isinstance(value, bytes) else value
+                                        )
                                         meta_dict[key_str] = value_str
                                     except UnicodeDecodeError:
                                         # Skip binary headers
@@ -437,23 +462,23 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                     error_type="subscription_error",
                     error_location="KafkaMQProvider.subscribe",
                     component="kafka_provider",
-                    operation="subscribe"
+                    operation="subscribe",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="mq",
                     operation="subscribe",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def unsubscribe(self, topic: str) -> None:
         """Unsubscribe from a topic.
-        
+
         Args:
             topic: Topic to unsubscribe from
-            
+
         Raises:
             ProviderError: If unsubscribe fails
         """
@@ -467,14 +492,14 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                         error_type="unsubscription_error",
                         error_location="KafkaMQProvider.unsubscribe",
                         component="kafka_provider",
-                        operation="unsubscribe"
+                        operation="unsubscribe",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="mq",
                         operation="unsubscribe",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             # Get consumer and task
@@ -507,30 +532,29 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                     error_type="unsubscription_error",
                     error_location="KafkaMQProvider.unsubscribe",
                     component="kafka_provider",
-                    operation="unsubscribe"
+                    operation="unsubscribe",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="mq",
                     operation="unsubscribe",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def create_topic(self,
-                          topic: str,
-                          num_partitions: int = 1,
-                          replication_factor: int = 1) -> None:
+    async def create_topic(
+        self, topic: str, num_partitions: int = 1, replication_factor: int = 1
+    ) -> None:
         """Create a Kafka topic.
-        
+
         Note: This requires admin privileges and may not work in all Kafka deployments.
-        
+
         Args:
             topic: Topic name
             num_partitions: Number of partitions
             replication_factor: Replication factor
-            
+
         Raises:
             ProviderError: If topic creation fails
         """
@@ -549,15 +573,15 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                         error_type="dependency_error",
                         error_location="KafkaMQProvider.create_topic",
                         component="kafka_provider",
-                        operation="create_topic"
+                        operation="create_topic",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="mq",
                         operation="create_topic",
-                        retry_count=0
-                    )
-                )
+                        retry_count=0,
+                    ),
+) from None
 
             # Get bootstrap servers
             bootstrap_servers = self.settings.bootstrap_servers
@@ -566,8 +590,10 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
 
             # Create admin client
             admin_config = {
-                "bootstrap_servers": bootstrap_servers.split(",") if "," in bootstrap_servers else bootstrap_servers,
-                "security_protocol": self.settings.security_protocol
+                "bootstrap_servers": bootstrap_servers.split(",")
+                if "," in bootstrap_servers
+                else bootstrap_servers,
+                "security_protocol": self.settings.security_protocol,
             }
 
             # Add client ID if provided
@@ -575,7 +601,11 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                 admin_config["client_id"] = f"{self.settings.client_id}_admin"
 
             # Add SASL settings if provided
-            if self.settings.sasl_mechanism and self.settings.sasl_username and self.settings.sasl_password:
+            if (
+                self.settings.sasl_mechanism
+                and self.settings.sasl_username
+                and self.settings.sasl_password
+            ):
                 admin_config["sasl_mechanism"] = self.settings.sasl_mechanism
                 admin_config["sasl_plain_username"] = self.settings.sasl_username
                 admin_config["sasl_plain_password"] = self.settings.sasl_password
@@ -585,9 +615,7 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
             # Create topic
             topic_list = [
                 NewTopic(
-                    name=topic,
-                    num_partitions=num_partitions,
-                    replication_factor=replication_factor
+                    name=topic, num_partitions=num_partitions, replication_factor=replication_factor
                 )
             ]
 
@@ -597,7 +625,9 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
             # Close admin client
             admin_client.close()
 
-            logger.info(f"Created Kafka topic {topic} with {num_partitions} partitions and replication factor {replication_factor}")
+            logger.info(
+                f"Created Kafka topic {topic} with {num_partitions} partitions and replication factor {replication_factor}"
+            )
 
         except Exception as e:
             # Check if topic already exists
@@ -612,25 +642,25 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                     error_type="topic_creation_error",
                     error_location="KafkaMQProvider.create_topic",
                     component="kafka_provider",
-                    operation="create_topic"
+                    operation="create_topic",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="mq",
                     operation="create_topic",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def delete_topic(self, topic: str) -> None:
         """Delete a Kafka topic.
-        
+
         Note: This requires admin privileges and may not work in all Kafka deployments.
-        
+
         Args:
             topic: Topic name
-            
+
         Raises:
             ProviderError: If topic deletion fails
         """
@@ -649,15 +679,15 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                         error_type="dependency_error",
                         error_location="KafkaMQProvider.delete_topic",
                         component="kafka_provider",
-                        operation="delete_topic"
+                        operation="delete_topic",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="mq",
                         operation="delete_topic",
-                        retry_count=0
-                    )
-                )
+                        retry_count=0,
+                    ),
+) from None
 
             # Get bootstrap servers
             bootstrap_servers = self.settings.bootstrap_servers
@@ -666,8 +696,10 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
 
             # Create admin client
             admin_config = {
-                "bootstrap_servers": bootstrap_servers.split(",") if "," in bootstrap_servers else bootstrap_servers,
-                "security_protocol": self.settings.security_protocol
+                "bootstrap_servers": bootstrap_servers.split(",")
+                if "," in bootstrap_servers
+                else bootstrap_servers,
+                "security_protocol": self.settings.security_protocol,
             }
 
             # Add client ID if provided
@@ -675,7 +707,11 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                 admin_config["client_id"] = f"{self.settings.client_id}_admin"
 
             # Add SASL settings if provided
-            if self.settings.sasl_mechanism and self.settings.sasl_username and self.settings.sasl_password:
+            if (
+                self.settings.sasl_mechanism
+                and self.settings.sasl_username
+                and self.settings.sasl_password
+            ):
                 admin_config["sasl_mechanism"] = self.settings.sasl_mechanism
                 admin_config["sasl_plain_username"] = self.settings.sasl_username
                 admin_config["sasl_plain_password"] = self.settings.sasl_password
@@ -707,13 +743,13 @@ class KafkaMQProvider(MQProvider[KafkaProviderSettings]):
                     error_type="topic_deletion_error",
                     error_location="KafkaMQProvider.delete_topic",
                     component="kafka_provider",
-                    operation="delete_topic"
+                    operation="delete_topic",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="mq",
                     operation="delete_topic",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e

@@ -1,18 +1,18 @@
 """Formatter for displaying agent activity in REPL."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 class AgentActivityFormatter:
     """Formats agent execution details for REPL display."""
 
     @staticmethod
-    def format_agent_activity(result: Dict[str, Any]) -> str:
+    def format_agent_activity(result: dict[str, Any]) -> str:
         """Format agent execution result to show what the agent did.
-        
+
         Args:
             result: The execution result from the agent
-            
+
         Returns:
             Formatted string showing agent activity
         """
@@ -38,38 +38,38 @@ class AgentActivityFormatter:
             for i, entry in enumerate(history, 1):
                 # Handle both dict and object formats
                 if isinstance(entry, dict):
-                    flow_name = entry['flow_name'] if 'flow_name' in entry else 'unknown'
-                    inputs = entry['inputs'] if 'inputs' in entry else {}
-                    result_data = entry['result'] if 'result' in entry else {}
+                    flow_name = entry["flow_name"] if "flow_name" in entry else "unknown"
+                    inputs = entry["inputs"] if "inputs" in entry else {}
+                    result_data = entry["result"] if "result" in entry else {}
                 else:
-                    flow_name = entry.flow_name if hasattr(entry, 'flow_name') else "unknown"
-                    inputs = entry.inputs if hasattr(entry, 'inputs') else {}
-                    result_data = entry.result if hasattr(entry, 'result') else {}
+                    flow_name = entry.flow_name if hasattr(entry, "flow_name") else "unknown"
+                    inputs = entry.inputs if hasattr(entry, "inputs") else {}
+                    result_data = entry.result if hasattr(entry, "result") else {}
 
                 lines.append(f"  {i}. {flow_name}")
 
                 # Show key inputs/outputs based on flow type
-                if flow_name == 'conversation':
+                if flow_name == "conversation":
                     # For conversation flows, show the response instead of input
                     if isinstance(result_data, dict):
-                        data = result_data['data'] if 'data' in result_data else {}
-                        if isinstance(data, dict) and 'response' in data:
-                            lines.append(f"     Response: \"{data['response']}\"")
-                        elif hasattr(data, 'response'):
-                            lines.append(f"     Response: \"{data.response}\"")
+                        data = result_data["data"] if "data" in result_data else {}
+                        if isinstance(data, dict) and "response" in data:
+                            lines.append(f'     Response: "{data["response"]}"')
+                        elif hasattr(data, "response"):
+                            lines.append(f'     Response: "{data.response}"')
                         else:
                             lines.append("     Response: (no response found)")
                 else:
                     # For other flows, show inputs
                     if isinstance(inputs, dict):
-                        if 'message' in inputs:
-                            lines.append(f"     Input: \"{inputs['message']}\"")
-                        elif 'task_description' in inputs:
-                            lines.append(f"     Task: \"{inputs['task_description']}\"")
+                        if "message" in inputs:
+                            lines.append(f'     Input: "{inputs["message"]}"')
+                        elif "task_description" in inputs:
+                            lines.append(f'     Task: "{inputs["task_description"]}"')
 
                 # Show result status
                 if isinstance(result_data, dict):
-                    status = result_data['status'] if 'status' in result_data else 'unknown'
+                    status = result_data["status"] if "status" in result_data else "unknown"
                     lines.append(f"     Status: {status}")
 
         # Errors if any
@@ -96,12 +96,12 @@ class AgentActivityFormatter:
         return "\n".join(lines)
 
     @staticmethod
-    def format_activity_stream(activity_items: List[Dict[str, Any]]) -> str:
+    def format_activity_stream(activity_items: list[dict[str, Any]]) -> str:
         """Format activity stream items for display.
-        
+
         Args:
             activity_items: List of activity items from ActivityStream.activity_buffer
-            
+
         Returns:
             Formatted activity stream output
         """
@@ -114,10 +114,10 @@ class AgentActivityFormatter:
 
         for item in activity_items:
             # Extract fields safely
-            timestamp = item.get('timestamp')
-            activity_type = item.get('type')
-            message = item.get('message', '')
-            details = item.get('details', {})
+            timestamp = item.get("timestamp")
+            activity_type = item.get("type")
+            message = item.get("message", "")
+            details = item.get("details", {})
 
             # Format timestamp
             time_str = ""
@@ -128,7 +128,11 @@ class AgentActivityFormatter:
             type_str = ""
             if activity_type:
                 # Get the emoji and name from ActivityType enum
-                type_str = f"{activity_type.value}: " if hasattr(activity_type, 'value') else f"{str(activity_type)}: "
+                type_str = (
+                    f"{activity_type.value}: "
+                    if hasattr(activity_type, "value")
+                    else f"{str(activity_type)}: "
+                )
 
             # Main activity line
             lines.append(f"  {time_str}{type_str}{message}")
@@ -136,7 +140,7 @@ class AgentActivityFormatter:
             # Add relevant details
             if details:
                 for key, value in details.items():
-                    if key in ['inputs', 'result', 'query', 'selected', 'decision', 'content']:
+                    if key in ["inputs", "result", "query", "selected", "decision", "content"]:
                         # Show important details
                         value_str = str(value)[:80] + "..." if len(str(value)) > 80 else str(value)
                         lines.append(f"    → {key}: {value_str}")
@@ -145,19 +149,21 @@ class AgentActivityFormatter:
         return "\n".join(lines)
 
     @staticmethod
-    def format_planning_activity(planning_info: Dict[str, Any]) -> str:
+    def format_planning_activity(planning_info: dict[str, Any]) -> str:
         """Format planning activity for display.
-        
+
         Args:
             planning_info: Planning information
-            
+
         Returns:
             Formatted planning activity
         """
         lines = []
         lines.append("🧠 Planning:")
 
-        selected_flow = planning_info["selected_flow"] if "selected_flow" in planning_info else "none"
+        selected_flow = (
+            planning_info["selected_flow"] if "selected_flow" in planning_info else "none"
+        )
         reasoning = planning_info["reasoning"] if "reasoning" in planning_info else ""
 
         lines.append(f"  Selected: {selected_flow}")

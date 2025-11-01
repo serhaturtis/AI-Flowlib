@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from typing import Any, List
 
 from pydantic import Field
 
@@ -17,13 +16,11 @@ logger = logging.getLogger(__name__)
 class DaemonConfig(StrictBaseModel):
     """Configuration for daemon execution."""
 
-    message_sources: List[MessageSourceConfig] = Field(
+    message_sources: list[MessageSourceConfig] = Field(
         default_factory=list, description="Message sources to activate"
     )
     shutdown_timeout_seconds: float = Field(default=30.0, gt=0)
-    enable_health_check: bool = Field(
-        default=False, description="Enable health check endpoint"
-    )
+    enable_health_check: bool = Field(default=False, description="Enable health check endpoint")
     health_check_port: int = Field(default=8080, description="Health check port")
 
 
@@ -53,8 +50,8 @@ class DaemonStrategy(ExecutionStrategy):
 
     def __init__(self, config: DaemonConfig):
         self.config = config
-        self._sources: List[MessageSource] = []
-        self._source_tasks: List[asyncio.Task] = []
+        self._sources: list[MessageSource] = []
+        self._source_tasks: list[asyncio.Task] = []
         self._shutdown_event = asyncio.Event()
 
     async def execute(self, agent: BaseAgent) -> None:
@@ -92,8 +89,7 @@ class DaemonStrategy(ExecutionStrategy):
                 self._source_tasks.append(task)
 
                 logger.info(
-                    f"Started message source: {source.config.name} "
-                    f"(enabled={source.enabled})"
+                    f"Started message source: {source.config.name} (enabled={source.enabled})"
                 )
             except Exception as e:
                 logger.error(
@@ -135,9 +131,7 @@ class DaemonStrategy(ExecutionStrategy):
         elif isinstance(config, EmailMessageSourceConfig):
             return EmailMessageSource(config)
         else:
-            raise ValueError(
-                f"Unknown message source config type: {type(config).__name__}"
-            )
+            raise ValueError(f"Unknown message source config type: {type(config).__name__}")
 
     async def cleanup(self) -> None:
         """Stop all sources and shutdown.
@@ -168,8 +162,6 @@ class DaemonStrategy(ExecutionStrategy):
             )
 
             if pending:
-                logger.warning(
-                    f"{len(pending)} source tasks did not complete within timeout"
-                )
+                logger.warning(f"{len(pending)} source tasks did not complete within timeout")
 
         logger.info("Daemon cleanup complete")

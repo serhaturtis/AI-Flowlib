@@ -14,7 +14,7 @@ __all__ = [
     "RedisCacheProvider",
     "RedisCacheProviderSettings",
     "MemoryCacheProvider",
-    "InMemoryCacheProviderSettings"
+    "InMemoryCacheProviderSettings",
 ]
 
 # Makes cache a package

@@ -4,15 +4,15 @@ This module provides utilities for formatting conversation data,
 including message history, state information, and flow representations.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 
-def format_conversation(conversation: List[Dict[str, str]]) -> str:
+def format_conversation(conversation: list[dict[str, str]]) -> str:
     """Format conversation history into a string for prompts.
-    
+
     Args:
         conversation: List of message dictionaries with 'speaker' and 'content' keys
-            
+
     Returns:
         Formatted conversation string
     """
@@ -28,12 +28,12 @@ def format_conversation(conversation: List[Dict[str, str]]) -> str:
     return "\n".join(formatted)
 
 
-def format_state(state: Dict[str, Any]) -> str:
+def format_state(state: dict[str, Any]) -> str:
     """Format agent state for prompt.
-    
+
     Args:
         state: Dictionary of state variables
-            
+
     Returns:
         Formatted state string
     """
@@ -47,12 +47,12 @@ def format_state(state: Dict[str, Any]) -> str:
     return "\n".join(result)
 
 
-def format_history(history: List[Dict[str, Any]]) -> str:
+def format_history(history: list[dict[str, Any]]) -> str:
     """Format execution history for prompt.
-    
+
     Args:
         history: List of execution steps
-            
+
     Returns:
         Formatted history string
     """
@@ -61,7 +61,7 @@ def format_history(history: List[Dict[str, Any]]) -> str:
         return "No execution history yet."
 
     # Convert from the old format to the new standardized format
-    normalized_history: List[Dict[str, Any]] = []
+    normalized_history: list[dict[str, Any]] = []
     for step in history:
         if "action" in step and step["action"] == "execute_flow":
             normalized_entry = {
@@ -69,7 +69,7 @@ def format_history(history: List[Dict[str, Any]]) -> str:
                 "cycle": len(normalized_history) + 1,
                 "status": "completed",
                 "reasoning": step["reasoning"] if "reasoning" in step else "",
-                "reflection": step["reflection"] if "reflection" in step else ""
+                "reflection": step["reflection"] if "reflection" in step else "",
             }
             normalized_history.append(normalized_entry)
         elif "action" in step and step["action"] == "error":
@@ -78,7 +78,7 @@ def format_history(history: List[Dict[str, Any]]) -> str:
                 "cycle": len(normalized_history) + 1,
                 "status": "error",
                 "reasoning": "",
-                "reflection": step["error"] if "error" in step else "Unknown error"
+                "reflection": step["error"] if "error" in step else "Unknown error",
             }
             normalized_history.append(normalized_entry)
 
@@ -86,12 +86,12 @@ def format_history(history: List[Dict[str, Any]]) -> str:
     return format_execution_history(normalized_history)
 
 
-def format_flows(flows: List[Dict[str, Any]]) -> str:
+def format_flows(flows: list[dict[str, Any]]) -> str:
     """Format available flows for prompt.
-    
+
     Args:
         flows: List of flow information dictionaries
-            
+
     Returns:
         Formatted flows string
     """
@@ -124,15 +124,15 @@ def format_flows(flows: List[Dict[str, Any]]) -> str:
     return "\n".join(result)
 
 
-def format_execution_history(history_entries: List[Dict[str, Any]]) -> str:
+def format_execution_history(history_entries: list[dict[str, Any]]) -> str:
     """Format execution history from agent state or history entries into a standardized text format.
-    
+
     This is the standard function for formatting execution history for prompts
     across all agent components.
-    
+
     Args:
         history_entries: List of execution history entries, typically from AgentState.execution_history
-            
+
     Returns:
         Formatted history string
     """
@@ -143,8 +143,8 @@ def format_execution_history(history_entries: List[Dict[str, Any]]) -> str:
     for i, entry in enumerate(history_entries, 1):
         if isinstance(entry, dict):
             # Extract standard fields with strict validation
-            flow = entry['flow_name'] if 'flow_name' in entry else 'unknown'
-            cycle = entry['cycle'] if 'cycle' in entry else 0
+            flow = entry["flow_name"] if "flow_name" in entry else "unknown"
+            cycle = entry["cycle"] if "cycle" in entry else 0
 
             # Extract status - handling both formats that might be used
             status = "unknown"
@@ -165,7 +165,9 @@ def format_execution_history(history_entries: List[Dict[str, Any]]) -> str:
             if "reflection" in entry:
                 reflection = entry["reflection"]
             elif "result" in entry and isinstance(entry["result"], dict):
-                reflection = entry["result"]["reflection"] if "reflection" in entry["result"] else ""
+                reflection = (
+                    entry["result"]["reflection"] if "reflection" in entry["result"] else ""
+                )
 
             # Format using all available information
             entry_text = f"{i}. Cycle {cycle}: Executed {flow} with status {status}"
@@ -181,12 +183,12 @@ def format_execution_history(history_entries: List[Dict[str, Any]]) -> str:
     return "\n".join(history_items)
 
 
-def format_agent_execution_details(details: Dict[str, Any]) -> str:
+def format_agent_execution_details(details: dict[str, Any]) -> str:
     """Format agent execution details for CLI display.
-    
+
     Args:
         details: Dictionary of execution details
-            
+
     Returns:
         Formatted execution details string
     """
@@ -233,7 +235,11 @@ def format_agent_execution_details(details: Dict[str, Any]) -> str:
     if "latest_reflection" in details:
         latest_reflection = details["latest_reflection"]
         result.append("\nLatest reflection:")
-        reflection = latest_reflection["reflection"] if "reflection" in latest_reflection else "No reflection available"
+        reflection = (
+            latest_reflection["reflection"]
+            if "reflection" in latest_reflection
+            else "No reflection available"
+        )
         result.append(f"  {reflection}")
 
     result.append("-----------------------------")

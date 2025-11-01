@@ -4,7 +4,6 @@ import asyncio
 import logging
 import queue
 from datetime import datetime
-from typing import Optional
 
 from pydantic import Field
 
@@ -18,9 +17,7 @@ class TimerMessageSourceConfig(MessageSourceConfig):
     """Configuration for timer-based message source."""
 
     interval_seconds: float = Field(..., gt=0, description="Interval between messages")
-    run_on_start: bool = Field(
-        default=True, description="Send message immediately on start"
-    )
+    run_on_start: bool = Field(default=True, description="Send message immediately on start")
     message_content: str = Field(
         default="Timer triggered", description="Content for timer messages"
     )
@@ -46,7 +43,7 @@ class TimerMessageSource(MessageSource):
     def __init__(self, config: TimerMessageSourceConfig):
         super().__init__(config)
         self.config: TimerMessageSourceConfig = config
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     async def start(self, input_queue: queue.Queue[AgentMessage]) -> None:
         """Start timer and produce messages at intervals.
@@ -75,9 +72,7 @@ class TimerMessageSource(MessageSource):
                 logger.debug(f"Timer source '{self.config.name}' cancelled")
                 break
             except Exception as e:
-                logger.error(
-                    f"Error in timer source '{self.config.name}': {e}", exc_info=True
-                )
+                logger.error(f"Error in timer source '{self.config.name}': {e}", exc_info=True)
 
         logger.info(f"Timer source '{self.config.name}' stopped")
 

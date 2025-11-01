@@ -1,6 +1,6 @@
 """Models for graph storage flow."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,7 @@ from flowlib.knowledge.models import (
 
 class GraphEntityAttribute(BaseModel):
     """Attribute for a graph entity."""
+
     name: str = Field(..., description="Attribute name")
     value: Any = Field(..., description="Attribute value")
     type: str = Field(default="string", description="Attribute type")
@@ -25,22 +26,24 @@ class GraphEntityAttribute(BaseModel):
 
 class GraphEntity(BaseModel):
     """Entity representation for graph database."""
+
     id: str = Field(..., description="Entity ID")
     type: str = Field(..., description="Entity type")
     label: str = Field(..., description="Entity label")
-    attributes: List[GraphEntityAttribute] = Field(default_factory=list)
-    relationships: List[str] = Field(default_factory=list)
-    tags: List[str] = Field(default_factory=list)
+    attributes: list[GraphEntityAttribute] = Field(default_factory=list)
+    relationships: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class GraphRelationship(BaseModel):
     """Relationship representation for graph database."""
+
     id: str = Field(..., description="Relationship ID")
     source_id: str = Field(..., description="Source entity ID")
     target_id: str = Field(..., description="Target entity ID")
     type: str = Field(..., description="Relationship type")
     label: str = Field(..., description="Relationship label")
-    attributes: Dict[str, Any] = Field(default_factory=dict)
+    attributes: dict[str, Any] = Field(default_factory=dict)
     confidence: float = Field(default=1.0, description="Confidence score")
 
 
@@ -56,5 +59,5 @@ __all__ = [
     # Graph-specific models
     "GraphEntityAttribute",
     "GraphEntity",
-    "GraphRelationship"
+    "GraphRelationship",
 ]

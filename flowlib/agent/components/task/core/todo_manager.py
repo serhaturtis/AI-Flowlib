@@ -6,8 +6,9 @@ TODO list management, execution tracking, and agent activity integration.
 
 import asyncio
 from asyncio import Queue, Task
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, Callable, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
 from flowlib.agent.core.base import AgentComponent
 
@@ -22,28 +23,32 @@ class ActivityStreamProtocol(Protocol):
         """Log TODO creation."""
         ...
 
-    def todo_update(self, todo_id: str, status: str, content: str, error: Optional[str] = None) -> None:
+    def todo_update(
+        self, todo_id: str, status: str, content: str, error: str | None = None
+    ) -> None:
         """Log TODO update."""
         ...
 
-    def todo_status(self, summary: Dict[str, int]) -> None:
+    def todo_status(self, summary: dict[str, int]) -> None:
         """Log TODO status summary."""
         ...
 
 
 class TodoManager(AgentComponent):
     """Manages TODO lists for agent tasks.
-    
+
     Provides persistent TODO management with execution tracking,
     dependency resolution, and activity stream integration.
     """
 
-    def __init__(self, name: str = "TodoManager", activity_stream: Optional[ActivityStreamProtocol] = None) -> None:
+    def __init__(
+        self, name: str = "TodoManager", activity_stream: ActivityStreamProtocol | None = None
+    ) -> None:
         super().__init__(name)
-        self.current_list: Optional[TodoList] = None
-        self.saved_lists: Dict[str, TodoList] = {}
+        self.current_list: TodoList | None = None
+        self.saved_lists: dict[str, TodoList] = {}
         self.execution_queue: Queue[TodoItem] = asyncio.Queue()
-        self.executor_task: Optional[Task[None]] = None
+        self.executor_task: Task[None] | None = None
         self.auto_execute = False
         self._activity_stream = activity_stream
 
@@ -60,13 +65,13 @@ class TodoManager(AgentComponent):
             except asyncio.CancelledError:
                 pass
 
-    def create_list(self, name: str = "default", description: Optional[str] = None) -> TodoList:
+    def create_list(self, name: str = "default", description: str | None = None) -> TodoList:
         """Create a new TODO list."""
         todo_list = TodoList(name=name, description=description)
         self.current_list = todo_list
         return todo_list
 
-    def save_list(self, name: str, todo_list: Optional[TodoList] = None) -> bool:
+    def save_list(self, name: str, todo_list: TodoList | None = None) -> bool:
         """Save a TODO list with a name."""
         list_to_save = todo_list or self.current_list
         if not list_to_save:
@@ -87,15 +92,15 @@ class TodoManager(AgentComponent):
         self,
         content: str,
         priority: TodoPriority = TodoPriority.MEDIUM,
-        assigned_tool: Optional[str] = None,
-        execution_context: Optional[TodoExecutionContext] = None,
-        depends_on: Optional[List[str]] = None,
-        parent_id: Optional[str] = None,
-        estimated_duration: Optional[timedelta] = None,
-        tags: Optional[List[str]] = None
-    ) -> Optional[str]:
+        assigned_tool: str | None = None,
+        execution_context: TodoExecutionContext | None = None,
+        depends_on: list[str] | None = None,
+        parent_id: str | None = None,
+        estimated_duration: timedelta | None = None,
+        tags: list[str] | None = None,
+    ) -> str | None:
         """Add a TODO to the current list.
-        
+
         Args:
             content: Task description
             priority: Task priority level
@@ -105,7 +110,7 @@ class TodoManager(AgentComponent):
             parent_id: Parent TODO ID if this is a subtask
             estimated_duration: Estimated completion time
             tags: Classification tags
-            
+
         Returns:
             TODO ID if successful, None otherwise
         """
@@ -120,7 +125,7 @@ class TodoManager(AgentComponent):
             depends_on=depends_on or [],
             parent_id=parent_id,
             estimated_duration=estimated_duration,
-            tags=tags or []
+            tags=tags or [],
         )
 
         self.current_list.add_todo(todo)
@@ -132,7 +137,7 @@ class TodoManager(AgentComponent):
 
         return todo.id
 
-    def get_todo(self, todo_id: str) -> Optional[TodoItem]:
+    def get_todo(self, todo_id: str) -> TodoItem | None:
         """Get a TODO by ID from the current list."""
         if not self.current_list:
             return None
@@ -146,7 +151,9 @@ class TodoManager(AgentComponent):
 
         return self.current_list.update_todo(todo_id, updated_todo)
 
-    def mark_todo_completed(self, todo_id: str, result: Optional[TodoExecutionResult] = None) -> bool:
+    def mark_todo_completed(
+        self, todo_id: str, result: TodoExecutionResult | None = None
+    ) -> bool:
         """Mark a TODO as completed."""
         if not self.current_list:
             return False
@@ -200,11 +207,11 @@ class TodoManager(AgentComponent):
 
         return True
 
-    def get_current_list(self) -> Optional[TodoList]:
+    def get_current_list(self) -> TodoList | None:
         """Get the current TODO list."""
         return self.current_list
 
-    def get_next_todo(self) -> Optional[TodoItem]:
+    def get_next_todo(self) -> TodoItem | None:
         """Get the next TODO ready for execution."""
         if not self.current_list:
             return None
@@ -216,13 +223,7 @@ class TodoManager(AgentComponent):
         """Get summary of TODO statuses."""
         if not self.current_list:
             return TodoStatusSummary(
-                total=0,
-                pending=0,
-                in_progress=0,
-                completed=0,
-                cancelled=0,
-                failed=0,
-                blocked=0
+                total=0, pending=0, in_progress=0, completed=0, cancelled=0, failed=0, blocked=0
             )
 
         return self.current_list.get_status_summary()
@@ -231,19 +232,23 @@ class TodoManager(AgentComponent):
         """Stream current TODO status if activity stream is available."""
         if self._activity_stream:
             status = self.get_todo_status_summary()
-            self._activity_stream.todo_status({
-                "total": status.total,
-                "completed": status.completed,
-                "in_progress": status.in_progress
-            })
+            self._activity_stream.todo_status(
+                {
+                    "total": status.total,
+                    "completed": status.completed,
+                    "in_progress": status.in_progress,
+                }
+            )
 
-    async def execute_todo(self, todo_id: str, executor_callback: Callable[[TodoItem], Any]) -> bool:
+    async def execute_todo(
+        self, todo_id: str, executor_callback: Callable[[TodoItem], Any]
+    ) -> bool:
         """Execute a specific TODO using the provided callback.
-        
+
         Args:
             todo_id: ID of the TODO to execute
             executor_callback: Async function to execute the TODO
-            
+
         Returns:
             True if execution succeeded, False otherwise
         """
@@ -256,8 +261,7 @@ class TodoManager(AgentComponent):
 
         # Check if TODO is ready to execute
         completed_todos = [
-            item.id for item in self.current_list.items
-            if item.status == TodoStatus.COMPLETED
+            item.id for item in self.current_list.items if item.status == TodoStatus.COMPLETED
         ]
         if not todo.is_ready_to_execute(completed_todos):
             return False
@@ -276,17 +280,17 @@ class TodoManager(AgentComponent):
             self.current_list.update_todo(todo_id, failed_todo)
             return False
 
-    async def start_auto_execution(self, executor_callback: Callable[[TodoItem], Any], delay: float = 1.0) -> None:
+    async def start_auto_execution(
+        self, executor_callback: Callable[[TodoItem], Any], delay: float = 1.0
+    ) -> None:
         """Start automatic execution of TODOs.
-        
+
         Args:
             executor_callback: Async function to execute TODOs
             delay: Delay between execution attempts
         """
         self.auto_execute = True
-        self.executor_task = asyncio.create_task(
-            self._auto_executor(executor_callback, delay)
-        )
+        self.executor_task = asyncio.create_task(self._auto_executor(executor_callback, delay))
 
     def stop_auto_execution(self) -> None:
         """Stop automatic execution."""
@@ -294,7 +298,9 @@ class TodoManager(AgentComponent):
         if self.executor_task:
             self.executor_task.cancel()
 
-    async def _auto_executor(self, executor_callback: Callable[[TodoItem], Any], delay: float) -> None:
+    async def _auto_executor(
+        self, executor_callback: Callable[[TodoItem], Any], delay: float
+    ) -> None:
         """Auto-executor loop."""
         while self.auto_execute:
             try:
@@ -312,10 +318,10 @@ class TodoManager(AgentComponent):
 
     def export_list(self, format: str = "json") -> str:
         """Export current list to string format.
-        
+
         Args:
             format: Export format ("json" or "markdown")
-            
+
         Returns:
             Formatted string representation
         """
@@ -348,7 +354,7 @@ class TodoManager(AgentComponent):
             if not todos:
                 continue
 
-            status_name = status.value.replace('_', ' ').title()
+            status_name = status.value.replace("_", " ").title()
             lines.append(f"## {status_name}\n")
 
             for todo in sorted(todos, key=lambda t: t.created_at):
@@ -356,7 +362,7 @@ class TodoManager(AgentComponent):
                     TodoPriority.URGENT: "🚨",
                     TodoPriority.HIGH: "⚠️",
                     TodoPriority.MEDIUM: "📋",
-                    TodoPriority.LOW: "📝"
+                    TodoPriority.LOW: "📝",
                 }
 
                 emoji = priority_emoji.get(todo.priority, "📋")

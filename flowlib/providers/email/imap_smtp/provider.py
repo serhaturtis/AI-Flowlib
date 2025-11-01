@@ -8,8 +8,8 @@ import email
 import logging
 from datetime import datetime
 from email.message import EmailMessage as StdEmailMessage
-from email.utils import formataddr, parseaddr, parsedate_to_datetime
-from typing import Any, Dict, List, Optional
+from email.utils import parseaddr, parsedate_to_datetime
+from typing import Any
 
 from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
@@ -22,11 +22,10 @@ logger = logging.getLogger(__name__)
 try:
     import aioimaplib
     import aiosmtplib
+
     EMAIL_LIBS_AVAILABLE = True
 except ImportError:
-    logger.warning(
-        "Email libraries not found. Install with: pip install aioimaplib aiosmtplib"
-    )
+    logger.warning("Email libraries not found. Install with: pip install aioimaplib aiosmtplib")
     EMAIL_LIBS_AVAILABLE = False
     # Create placeholders
     aioimaplib = None  # type: ignore
@@ -39,6 +38,7 @@ class IMAPSMTPSettings(EmailProviderSettings):
     Inherits all settings from EmailProviderSettings.
     This class exists for future IMAP/SMTP-specific extensions.
     """
+
     pass
 
 
@@ -54,8 +54,8 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
         self,
         name: str,
         provider_type: str,
-        settings: Optional[IMAPSMTPSettings] = None,
-        **kwargs: Any
+        settings: IMAPSMTPSettings | None = None,
+        **kwargs: Any,
     ):
         """Initialize IMAP/SMTP provider.
 
@@ -66,8 +66,8 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
             **kwargs: Additional arguments
         """
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
-        self._imap_client: Optional[Any] = None
-        self._current_folder: Optional[str] = None
+        self._imap_client: Any | None = None
+        self._current_folder: str | None = None
 
     async def _initialize(self) -> None:
         """Initialize IMAP connection."""
@@ -79,14 +79,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="DependencyError",
                     error_location="IMAPSMTPProvider._initialize",
                     component=self.name,
-                    operation="initialize"
+                    operation="initialize",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="initialize",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -95,22 +95,19 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                 self._imap_client = aioimaplib.IMAP4_SSL(
                     host=self.settings.imap_host,
                     port=self.settings.imap_port,
-                    timeout=self.settings.timeout
+                    timeout=self.settings.timeout,
                 )
             else:
                 self._imap_client = aioimaplib.IMAP4(
                     host=self.settings.imap_host,
                     port=self.settings.imap_port,
-                    timeout=self.settings.timeout
+                    timeout=self.settings.timeout,
                 )
 
             await self._imap_client.wait_hello_from_server()
 
             # Login
-            response = await self._imap_client.login(
-                self.settings.username,
-                self.settings.password
-            )
+            response = await self._imap_client.login(self.settings.username, self.settings.password)
 
             if response.result != "OK":
                 raise ProviderError(
@@ -120,14 +117,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                         error_type="AuthenticationError",
                         error_location="IMAPSMTPProvider._initialize",
                         component=self.name,
-                        operation="login"
+                        operation="login",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type=self.provider_type,
                         operation="login",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             logger.info(f"IMAP connection established for {self.settings.username}")
@@ -142,16 +139,16 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="ConnectionError",
                     error_location="IMAPSMTPProvider._initialize",
                     component=self.name,
-                    operation="connect"
+                    operation="connect",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="connect",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def _shutdown(self) -> None:
         """Shutdown IMAP connection."""
@@ -165,7 +162,7 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                 self._imap_client = None
                 self._current_folder = None
 
-    async def list_folders(self) -> List[str]:
+    async def list_folders(self) -> list[str]:
         """List available IMAP folders."""
         if not self._imap_client:
             raise ProviderError(
@@ -175,14 +172,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="StateError",
                     error_location="IMAPSMTPProvider.list_folders",
                     component=self.name,
-                    operation="list_folders"
+                    operation="list_folders",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="list_folders",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -195,14 +192,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                         error_type="OperationError",
                         error_location="IMAPSMTPProvider.list_folders",
                         component=self.name,
-                        operation="list_folders"
+                        operation="list_folders",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type=self.provider_type,
                         operation="list_folders",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             folders = []
@@ -226,24 +223,24 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="OperationError",
                     error_location="IMAPSMTPProvider.list_folders",
                     component=self.name,
-                    operation="list_folders"
+                    operation="list_folders",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="list_folders",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def fetch_emails(
         self,
         folder: str = "INBOX",
         unread_only: bool = True,
-        limit: Optional[int] = None,
-        since_date: Optional[datetime] = None
-    ) -> List[EmailMessage]:
+        limit: int | None = None,
+        since_date: datetime | None = None,
+    ) -> list[EmailMessage]:
         """Fetch emails from IMAP folder."""
         if not self._imap_client:
             raise ProviderError(
@@ -253,14 +250,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="StateError",
                     error_location="IMAPSMTPProvider.fetch_emails",
                     component=self.name,
-                    operation="fetch_emails"
+                    operation="fetch_emails",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="fetch_emails",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -275,14 +272,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                             error_type="OperationError",
                             error_location="IMAPSMTPProvider.fetch_emails",
                             component=self.name,
-                            operation="select_folder"
+                            operation="select_folder",
                         ),
                         provider_context=ProviderErrorContext(
                             provider_name=self.name,
                             provider_type=self.provider_type,
                             operation="select_folder",
-                            retry_count=0
-                        )
+                            retry_count=0,
+                        ),
                     )
                 self._current_folder = folder
 
@@ -302,14 +299,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                         error_type="OperationError",
                         error_location="IMAPSMTPProvider.fetch_emails",
                         component=self.name,
-                        operation="search"
+                        operation="search",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type=self.provider_type,
                         operation="search",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             # Get email IDs
@@ -345,18 +342,18 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="OperationError",
                     error_location="IMAPSMTPProvider.fetch_emails",
                     component=self.name,
-                    operation="fetch_emails"
+                    operation="fetch_emails",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="fetch_emails",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def _fetch_single_email(self, email_id: str, folder: str) -> Optional[EmailMessage]:
+    async def _fetch_single_email(self, email_id: str, folder: str) -> EmailMessage | None:
         """Fetch a single email by ID."""
         response = await self._imap_client.fetch(email_id, "(RFC822 FLAGS)")
         if response.result != "OK":
@@ -405,7 +402,7 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
             in_reply_to=msg.get("In-Reply-To"),
             is_read=is_read,
             folder=folder,
-            headers={k: v for k, v in msg.items()}
+            headers=dict(msg.items()),
         )
 
     def _extract_body(self, msg: email.message.Message) -> str:
@@ -416,30 +413,30 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                 if content_type == "text/plain":
                     payload = part.get_payload(decode=True)
                     if payload:
-                        return payload.decode(errors='ignore')
+                        return payload.decode(errors="ignore")
             # Fallback to HTML if no plain text
             for part in msg.walk():
                 content_type = part.get_content_type()
                 if content_type == "text/html":
                     payload = part.get_payload(decode=True)
                     if payload:
-                        return payload.decode(errors='ignore')
+                        return payload.decode(errors="ignore")
         else:
             payload = msg.get_payload(decode=True)
             if payload:
-                return payload.decode(errors='ignore')
+                return payload.decode(errors="ignore")
         return ""
 
     async def send_email(
         self,
-        to: List[str],
+        to: list[str],
         subject: str,
         body: str,
-        cc: Optional[List[str]] = None,
-        bcc: Optional[List[str]] = None,
-        reply_to: Optional[str] = None,
-        in_reply_to: Optional[str] = None,
-        attachments: Optional[List[Dict[str, Any]]] = None
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+        reply_to: str | None = None,
+        in_reply_to: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Send email via SMTP."""
         try:
@@ -469,7 +466,7 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                 "username": self.settings.username,
                 "password": self.settings.password,
                 "use_tls": self.settings.use_tls,
-                "timeout": self.settings.timeout
+                "timeout": self.settings.timeout,
             }
 
             async with aiosmtplib.SMTP(**smtp_kwargs) as smtp:
@@ -487,16 +484,16 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="OperationError",
                     error_location="IMAPSMTPProvider.send_email",
                     component=self.name,
-                    operation="send_email"
+                    operation="send_email",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="send_email",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def mark_as_read(self, email_id: str, folder: str = "INBOX") -> bool:
         """Mark email as read by adding \\Seen flag."""
@@ -516,14 +513,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="StateError",
                     error_location="IMAPSMTPProvider._set_flag",
                     component=self.name,
-                    operation="set_flag"
+                    operation="set_flag",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="set_flag",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -552,14 +549,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="StateError",
                     error_location="IMAPSMTPProvider.move_to_folder",
                     component=self.name,
-                    operation="move_to_folder"
+                    operation="move_to_folder",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="move_to_folder",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -597,14 +594,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="StateError",
                     error_location="IMAPSMTPProvider.delete_email",
                     component=self.name,
-                    operation="delete_email"
+                    operation="delete_email",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="delete_email",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -628,11 +625,8 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
             return False
 
     async def search_emails(
-        self,
-        query: str,
-        folder: str = "INBOX",
-        limit: Optional[int] = None
-    ) -> List[EmailMessage]:
+        self, query: str, folder: str = "INBOX", limit: int | None = None
+    ) -> list[EmailMessage]:
         """Search emails using IMAP search criteria."""
         if not self._imap_client:
             raise ProviderError(
@@ -642,14 +636,14 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     error_type="StateError",
                     error_location="IMAPSMTPProvider.search_emails",
                     component=self.name,
-                    operation="search_emails"
+                    operation="search_emails",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type=self.provider_type,
                     operation="search_emails",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:

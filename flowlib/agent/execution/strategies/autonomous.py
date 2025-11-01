@@ -1,7 +1,6 @@
 """Autonomous execution strategy - run until complete or max cycles."""
 
 import logging
-from typing import Optional
 
 from pydantic import Field
 
@@ -17,14 +16,10 @@ logger = logging.getLogger(__name__)
 class AutonomousConfig(StrictBaseModel):
     """Configuration for autonomous execution strategy."""
 
-    max_cycles: Optional[int] = Field(
-        default=None,
-        description="Maximum execution cycles. None uses agent's default."
+    max_cycles: int | None = Field(
+        default=None, description="Maximum execution cycles. None uses agent's default."
     )
-    auto_save: bool = Field(
-        default=True,
-        description="Auto-save state after each cycle"
-    )
+    auto_save: bool = Field(default=True, description="Auto-save state after each cycle")
 
 
 class AutonomousStrategy(ExecutionStrategy):
@@ -62,27 +57,19 @@ class AutonomousStrategy(ExecutionStrategy):
             raise NotInitializedError(
                 component_name=agent.name,
                 operation="autonomous_execution",
-                message="Agent must be initialized before execution"
+                message="Agent must be initialized before execution",
             )
 
         if not agent._engine:
             raise ExecutionError(
-                message="No engine available for autonomous execution",
-                agent=agent.name
+                message="No engine available for autonomous execution", agent=agent.name
             )
 
         if agent._state_manager.current_state is None:
-            raise ExecutionError(
-                message="Agent state not initialized",
-                agent=agent.name
-            )
+            raise ExecutionError(message="Agent state not initialized", agent=agent.name)
 
         # Determine cycle limit
-        max_cycles = (
-            self.config.max_cycles
-            or getattr(agent._engine, 'max_iterations', None)
-            or 10
-        )
+        max_cycles = self.config.max_cycles or getattr(agent._engine, "max_iterations", None) or 10
 
         logger.info(
             f"Starting autonomous execution: agent='{agent.name}', "
@@ -101,8 +88,7 @@ class AutonomousStrategy(ExecutionStrategy):
             try:
                 # Execute one cycle
                 continue_execution = await agent._engine.execute_cycle(
-                    state=current_state,
-                    memory_context=f"task_{current_state.task_id}"
+                    state=current_state, memory_context=f"task_{current_state.task_id}"
                 )
 
                 # Check completion
@@ -114,7 +100,11 @@ class AutonomousStrategy(ExecutionStrategy):
                 current_state = agent._state_manager.current_state
 
                 # Auto-save if configured
-                if self.config.auto_save and agent.config.state_config and agent.config.state_config.auto_save:
+                if (
+                    self.config.auto_save
+                    and agent.config.state_config
+                    and agent.config.state_config.auto_save
+                ):
                     try:
                         await agent.save_state()
                         logger.debug(f"Auto-saved state after cycle {cycle_count}")
@@ -126,16 +116,18 @@ class AutonomousStrategy(ExecutionStrategy):
                 raise ExecutionError(
                     message=f"Autonomous execution failed in cycle {cycle_count}",
                     agent=agent.name,
-                    cause=e
-                )
+                    cause=e,
+) from e
 
         if cycle_count >= max_cycles:
-            logger.warning(
-                f"Reached max_cycles ({max_cycles}) before task completion"
-            )
+            logger.warning(f"Reached max_cycles ({max_cycles}) before task completion")
 
         # Final save
-        if self.config.auto_save and agent.config.state_config and agent.config.state_config.auto_save:
+        if (
+            self.config.auto_save
+            and agent.config.state_config
+            and agent.config.state_config.auto_save
+        ):
             try:
                 await agent.save_state()
                 logger.info("Saved final state")
@@ -144,10 +136,7 @@ class AutonomousStrategy(ExecutionStrategy):
 
         final_state = agent._state_manager.current_state
         if final_state is None:
-            raise ExecutionError(
-                message="State is None after execution",
-                agent=agent.name
-            )
+            raise ExecutionError(message="State is None after execution", agent=agent.name)
 
         logger.info(f"Autonomous execution complete: {cycle_count} cycles")
         return final_state

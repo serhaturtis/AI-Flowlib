@@ -15,5 +15,5 @@ __all__ = [
     "S3Provider",
     "S3ProviderSettings",
     "LocalStorageProvider",
-    "LocalStorageProviderSettings"
+    "LocalStorageProviderSettings",
 ]

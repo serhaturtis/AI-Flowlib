@@ -1,17 +1,22 @@
 """Models for conversation tool."""
 
-from typing import Optional
 
 from pydantic import Field
 
-from ...models import ToolResult, ToolStatus
+from ...models import ToolParameters, ToolResult, ToolStatus
+
+
+class ConversationParameters(ToolParameters):
+    """Parameters for conversation tool."""
+
+    message: str = Field(..., description="The exact text to present to the user")
 
 
 class ConversationResult(ToolResult):
     """Result from conversation tool execution."""
 
-    response: Optional[str] = Field(default=None, description="Generated response message")
-    context_used: Optional[str] = Field(default=None, description="Context that was considered")
+    response: str | None = Field(default=None, description="Generated response message")
+    context_used: str | None = Field(default=None, description="Context that was considered")
 
     def get_display_content(self) -> str:
         """Get user-friendly display text."""

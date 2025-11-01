@@ -4,14 +4,13 @@ This module provides prompt templates for LLM-driven tool selection
 following flowlib's prompt resource pattern.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.resources.models.base import ResourceBase
 
 
 @prompt("intent-classification")
-class IntentClassificationPrompt(ResourceBase):
+class IntentClassificationPrompt:
     """Prompt for classifying user intent before tool selection."""
 
     template: str = """Message: {{user_message}}
@@ -21,15 +20,11 @@ CONVERSATION: User wants me to SAY something (provide information, discuss, expl
 
 Classify as ACTION or CONVERSATION."""
 
-    config: Dict[str, Any] = {
-        "max_tokens": 200,
-        "temperature": 0.1,
-        "top_p": 0.9
-    }
+    config: dict[str, Any] = {"max_tokens": 200, "temperature": 0.1, "top_p": 0.9}
 
 
 @prompt("tool-selection")
-class ToolSelectionPrompt(ResourceBase):
+class ToolSelectionPrompt:
     """Prompt for LLM tool selection with structured output."""
 
     template: str = """Request: {{task_description}}
@@ -39,8 +34,4 @@ Tools:
 
 Select tools for operations. Use no tools for conversation."""
 
-    config: Dict[str, Any] = {
-        "max_tokens": 2048,
-        "temperature": 0.3,
-        "top_p": 0.9
-    }
+    config: dict[str, Any] = {"max_tokens": 2048, "temperature": 0.3, "top_p": 0.9}

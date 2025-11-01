@@ -6,13 +6,12 @@ Follows flowlib AgentComponent patterns with strict validation.
 
 import logging
 import time
-from typing import Optional
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ExecutionError
 
-from .models import WorkspaceDiscoveryConfig, WorkspaceManifest, DomainArtifact
-from .scanners import ScannerRegistry, BaseDomainScanner
+from .models import DomainArtifact, WorkspaceDiscoveryConfig, WorkspaceManifest
+from .scanners import BaseDomainScanner, ScannerRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +33,7 @@ class WorkspaceDiscoveryComponent(AgentComponent):
     """
 
     def __init__(
-        self,
-        config: Optional[WorkspaceDiscoveryConfig] = None,
-        name: str = "workspace_discovery"
+        self, config: WorkspaceDiscoveryConfig | None = None, name: str = "workspace_discovery"
     ):
         """Initialize workspace discovery component.
 
@@ -47,8 +44,8 @@ class WorkspaceDiscoveryComponent(AgentComponent):
         super().__init__(name)
         self._config = config if config is not None else WorkspaceDiscoveryConfig()
         self._scanner_registry = ScannerRegistry()
-        self._manifest_cache: Optional[WorkspaceManifest] = None
-        self._cache_timestamp: Optional[float] = None
+        self._manifest_cache: WorkspaceManifest | None = None
+        self._cache_timestamp: float | None = None
 
     async def _initialize_impl(self) -> None:
         """Initialize scanners and registry.
@@ -81,9 +78,7 @@ class WorkspaceDiscoveryComponent(AgentComponent):
         logger.info("Workspace discovery component shutdown complete")
 
     async def scan_workspace(
-        self,
-        working_directory: str,
-        force_refresh: bool = False
+        self, working_directory: str, force_refresh: bool = False
     ) -> WorkspaceManifest:
         """Scan workspace for domain artifacts.
 
@@ -113,7 +108,9 @@ class WorkspaceDiscoveryComponent(AgentComponent):
         # Check cache
         if not force_refresh and self._is_cache_valid(working_directory):
             logger.debug("Returning cached workspace manifest")
-            assert self._manifest_cache is not None  # Type guard - cache valid means manifest exists
+            assert (
+                self._manifest_cache is not None
+            )  # Type guard - cache valid means manifest exists
             return self._manifest_cache
 
         logger.debug(f"Scanning workspace: {working_directory}")
@@ -148,9 +145,7 @@ class WorkspaceDiscoveryComponent(AgentComponent):
 
                 if artifacts:
                     domain_artifacts[domain_name] = artifacts
-                    logger.debug(
-                        f"Scanner '{domain_name}' found {len(artifacts)} artifact(s)"
-                    )
+                    logger.debug(f"Scanner '{domain_name}' found {len(artifacts)} artifact(s)")
                 else:
                     logger.debug(f"Scanner '{domain_name}' found no artifacts")
 
@@ -168,7 +163,7 @@ class WorkspaceDiscoveryComponent(AgentComponent):
         manifest = WorkspaceManifest(
             working_directory=working_directory,
             domains=domain_artifacts,
-            scan_timestamp=time.time()
+            scan_timestamp=time.time(),
         )
 
         # Update cache

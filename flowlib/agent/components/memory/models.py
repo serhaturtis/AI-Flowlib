@@ -7,7 +7,7 @@ follow Flowlib's strict typing principles and eliminate metadata abuse.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
@@ -18,17 +18,19 @@ from flowlib.core.models import StrictBaseModel
 
 class MemoryItemMetadata(StrictBaseModel):
     """Strict Pydantic model for memory item metadata.
-    
+
     This contains true metadata about the memory item (not domain data).
     Domain-specific fields should be in specialized MemoryItem subclasses.
     """
 
     source: str = Field(default="user", description="Source of the memory item")
     item_type: str = Field(default="general", description="Type of memory item")
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence in the information")
-    last_accessed: Optional[datetime] = Field(default=None, description="Last access timestamp")
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Confidence in the information"
+    )
+    last_accessed: datetime | None = Field(default=None, description="Last access timestamp")
     access_count: int = Field(default=0, ge=0, description="Number of times accessed")
-    related_items: List[str] = Field(default_factory=list, description="Related memory item keys")
+    related_items: list[str] = Field(default_factory=list, description="Related memory item keys")
     version: int = Field(default=1, ge=1, description="Version number of the item")
 
 
@@ -37,15 +39,19 @@ class MemorySearchMetadata(StrictBaseModel):
 
     search_query: str = Field(..., description="Original search query")
     search_type: str = Field(default="semantic", description="Type of search performed")
-    search_time_ms: float = Field(default=0.0, ge=0.0, description="Search execution time in milliseconds")
+    search_time_ms: float = Field(
+        default=0.0, ge=0.0, description="Search execution time in milliseconds"
+    )
     total_results: int = Field(default=0, ge=0, description="Total number of results found")
     result_rank: int = Field(default=1, ge=1, description="Rank of this result in the search")
-    filter_applied: List[str] = Field(default_factory=list, description="Filters applied to the search")
+    filter_applied: list[str] = Field(
+        default_factory=list, description="Filters applied to the search"
+    )
 
 
 class MemoryItem(StrictBaseModel):
     """Base memory item model representing stored information.
-    
+
     Uses proper typed metadata instead of generic Dict[str, Any].
     Domain-specific data should be in specialized subclasses, not in metadata.
     """
@@ -53,28 +59,29 @@ class MemoryItem(StrictBaseModel):
     key: str = Field(..., min_length=1, description="Unique identifier for this memory item")
     value: Any = Field(..., description="The stored value/content")
     context: str = Field("default", description="Context/namespace for this memory")
-    created_at: datetime = Field(default_factory=datetime.now, description="When this memory was created")
-    updated_at: Optional[datetime] = Field(None, description="When this memory was last updated")
-    metadata: MemoryItemMetadata = Field(default_factory=MemoryItemMetadata, description="Typed metadata about this memory")
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="When this memory was created"
+    )
+    updated_at: datetime | None = Field(None, description="When this memory was last updated")
+    metadata: MemoryItemMetadata = Field(
+        default_factory=MemoryItemMetadata, description="Typed metadata about this memory"
+    )
 
-    def update_value(self, new_value: Any) -> 'MemoryItem':
+    def update_value(self, new_value: Any) -> "MemoryItem":
         """Update the value and timestamp, returning a new instance.
-        
+
         Args:
             new_value: The new value to set
-            
+
         Returns:
             New MemoryItem instance with updated value and timestamp
         """
-        return self.model_copy(update={
-            "value": new_value,
-            "updated_at": datetime.now()
-        })
+        return self.model_copy(update={"value": new_value, "updated_at": datetime.now()})
 
 
 class ExecutionMemoryItem(MemoryItem):
     """Memory item for execution-related data.
-    
+
     Replaces the anti-pattern of metadata.get("type") == "execution_step"
     with proper typed fields.
     """
@@ -82,18 +89,20 @@ class ExecutionMemoryItem(MemoryItem):
     execution_type: Literal["step", "result", "error", "trace"] = Field(
         ..., description="Type of execution data"
     )
-    step_number: Optional[int] = Field(None, description="Step number in execution sequence")
-    parent_execution_id: Optional[str] = Field(None, description="Parent execution identifier")
+    step_number: int | None = Field(None, description="Step number in execution sequence")
+    parent_execution_id: str | None = Field(None, description="Parent execution identifier")
 
 
 class EntityMemoryItem(MemoryItem):
     """Memory item for entity/knowledge data.
-    
+
     Replaces the anti-pattern of metadata["entity_type"] = "person"
     with proper typed fields.
     """
 
-    entity_type: str = Field(..., description="Type of entity (person, organization, concept, etc.)")
+    entity_type: str = Field(
+        ..., description="Type of entity (person, organization, concept, etc.)"
+    )
     entity_id: str = Field(..., description="Unique identifier for the entity")
     importance: float = Field(0.5, ge=0.0, le=1.0, description="Importance score of the entity")
 
@@ -103,13 +112,17 @@ class MemoryStoreRequest(StrictBaseModel):
 
     key: str = Field(..., min_length=1, description="Key to store the memory under")
     value: Any = Field(..., description="Value to store")
-    context: Optional[str] = Field(None, description="Context to store the memory in (namespace)")
-    ttl: Optional[int] = Field(None, description="Time-to-live in seconds (None = no expiration)")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata to store (temporary - will be eliminated)")
+    context: str | None = Field(None, description="Context to store the memory in (namespace)")
+    ttl: int | None = Field(None, description="Time-to-live in seconds (None = no expiration)")
+    metadata: dict[str, Any] | None = Field(
+        None, description="Additional metadata to store (temporary - will be eliminated)"
+    )
     importance: float = Field(0.5, description="Importance of the memory (0.0-1.0)")
-    original_importance: Optional[float] = Field(None, description="Original importance value before clamping")
+    original_importance: float | None = Field(
+        None, description="Original importance value before clamping"
+    )
 
-    @field_validator('importance', mode='before')
+    @field_validator("importance", mode="before")
     @classmethod
     def clamp_importance(cls, v: float) -> float:
         """Clamp importance value to valid range [0.0, 1.0]."""
@@ -117,8 +130,8 @@ class MemoryStoreRequest(StrictBaseModel):
 
     def __init__(self, **data: Any) -> None:
         # Store original importance before validation
-        if 'importance' in data:
-            data['original_importance'] = data['importance']
+        if "importance" in data:
+            data["original_importance"] = data["importance"]
         super().__init__(**data)
 
 
@@ -126,21 +139,31 @@ class MemoryRetrieveRequest(StrictBaseModel):
     """Request model for retrieving items from memory."""
 
     key: str = Field(..., min_length=1, description="Key to retrieve")
-    context: Optional[str] = Field(None, description="Context to retrieve from")
-    default: Optional[Any] = Field(None, description="Default value if key not found")
-    metadata_only: bool = Field(False, description="Whether to return only metadata without the value")
+    context: str | None = Field(None, description="Context to retrieve from")
+    default: Any | None = Field(None, description="Default value if key not found")
+    metadata_only: bool = Field(
+        False, description="Whether to return only metadata without the value"
+    )
 
 
 class MemorySearchRequest(StrictBaseModel):
     """Request model for searching memory."""
 
     query: str = Field(..., min_length=1, description="Search query (text, embedding, or hybrid)")
-    context: Optional[str] = Field(None, description="Context to search in")
+    context: str | None = Field(None, description="Context to search in")
     limit: int = Field(10, gt=0, description="Maximum number of results to return")
-    threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum similarity threshold (0.0-1.0)")
-    sort_by: Optional[Literal["relevance", "created_at", "updated_at"]] = Field(None, description="Field to sort results by")
-    search_type: Literal["semantic", "keyword", "hybrid"] = Field("hybrid", description="Type of search performed")
-    metadata_filter: Optional[Dict[str, Any]] = Field(None, description="Filter results based on metadata key-value pairs")
+    threshold: float | None = Field(
+        None, ge=0.0, le=1.0, description="Minimum similarity threshold (0.0-1.0)"
+    )
+    sort_by: Literal["relevance", "created_at", "updated_at"] | None = Field(
+        None, description="Field to sort results by"
+    )
+    search_type: Literal["semantic", "keyword", "hybrid"] = Field(
+        "hybrid", description="Type of search performed"
+    )
+    metadata_filter: dict[str, Any] | None = Field(
+        None, description="Filter results based on metadata key-value pairs"
+    )
 
 
 class MemorySearchResult(StrictBaseModel):
@@ -148,17 +171,23 @@ class MemorySearchResult(StrictBaseModel):
 
     item: MemoryItem = Field(..., description="The memory item found")
     score: float = Field(..., ge=0.0, le=1.0, description="Relevance score for this result")
-    metadata: MemorySearchMetadata = Field(default_factory=lambda: MemorySearchMetadata(search_query=""), description="Search metadata")
+    metadata: MemorySearchMetadata = Field(
+        default_factory=lambda: MemorySearchMetadata(search_query=""), description="Search metadata"
+    )
 
 
 class MemorySearchResultCollection(StrictBaseModel):
     """Collection of memory search results."""
 
-    items: List[MemorySearchResult] = Field(default_factory=list, description="Matching memory search results")
+    items: list[MemorySearchResult] = Field(
+        default_factory=list, description="Matching memory search results"
+    )
     total_count: int = Field(0, ge=0, description="Total number of matching items")
     query: str = Field("", description="Original search query")
-    context: Optional[str] = Field(None, description="Context that was searched")
-    search_time_ms: float = Field(default=0.0, ge=0.0, description="Total search time in milliseconds")
+    context: str | None = Field(None, description="Context that was searched")
+    search_time_ms: float = Field(
+        default=0.0, ge=0.0, description="Total search time in milliseconds"
+    )
 
 
 class MemoryContext(StrictBaseModel):
@@ -166,6 +195,8 @@ class MemoryContext(StrictBaseModel):
 
     name: str = Field(..., min_length=1, description="Name of the context")
     path: str = Field(..., min_length=1, description="Full path of the context")
-    parent: Optional[str] = Field(None, description="Parent context path")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Context metadata")
-    created_at: datetime = Field(default_factory=datetime.now, description="When this context was created")
+    parent: str | None = Field(None, description="Parent context path")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Context metadata")
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="When this context was created"
+    )

@@ -44,7 +44,7 @@ class CompletionEvaluatorComponent(AgentComponent):
         original_goal: str,
         plan_reasoning: str,
         executed_steps: list[dict],
-        expected_outcome: str
+        expected_outcome: str,
     ) -> EvaluationOutput:
         """Evaluate whether the task is complete.
 
@@ -67,7 +67,7 @@ class CompletionEvaluatorComponent(AgentComponent):
                 original_goal=original_goal,
                 plan_reasoning=plan_reasoning,
                 executed_steps=executed_steps,
-                expected_outcome=expected_outcome
+                expected_outcome=expected_outcome,
             )
 
             # Run evaluation flow

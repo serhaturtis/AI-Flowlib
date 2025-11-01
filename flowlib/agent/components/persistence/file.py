@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from flowlib.agent.core.errors import StatePersistenceError
 from flowlib.agent.models.state import AgentState
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class FileStatePersisterSettings(ProviderSettings):
     """Settings specific to the FileStatePersister."""
+
     directory: str = "./states"
 
 
@@ -36,13 +37,16 @@ class DateTimeEncoder(json.JSONEncoder):
 
 class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
     """File-based implementation of state persistence.
-    
+
     Stores agent states as JSON files in a configurable directory.
     Each state is stored in a separate file named after the task ID.
     """
+
     def __init__(self, settings: FileStatePersisterSettings):
         if not settings or not getattr(settings, "directory", None):
-            raise ValueError("FileStatePersister requires a 'settings' argument with a 'directory' field.")
+            raise ValueError(
+                "FileStatePersister requires a 'settings' argument with a 'directory' field."
+            )
         super().__init__("file_state_persister", settings=settings)
 
     async def _initialize(self) -> None:
@@ -52,16 +56,14 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
         logger.debug(f"Using state directory: {self.settings.directory}")
 
     async def _save_state_impl(
-        self,
-        state: AgentState,
-        metadata: Optional[Dict[str, str]] = None
+        self, state: AgentState, metadata: dict[str, str] | None = None
     ) -> bool:
         """Save agent state to file.
-        
+
         Args:
             state: Agent state to save
             metadata: Optional metadata to save with the state
-            
+
         Returns:
             True if state was saved successfully
         """
@@ -92,21 +94,15 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
             error_msg = f"Error saving state to file: {str(e)}"
             logger.error(error_msg)
             raise StatePersistenceError(
-                message=error_msg,
-                operation="save",
-                task_id=state.task_id,
-                cause=e
-            )
+                message=error_msg, operation="save", task_id=state.task_id, cause=e
+) from e
 
-    async def _load_state_impl(
-        self,
-        task_id: str
-    ) -> Optional[AgentState]:
+    async def _load_state_impl(self, task_id: str) -> AgentState | None:
         """Load agent state from file.
-        
+
         Args:
             task_id: Task ID to load state for
-            
+
         Returns:
             Loaded state or None if not found
         """
@@ -120,7 +116,7 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                 return None
 
             # Read from file
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 state_json = f.read()
 
             # Parse JSON
@@ -132,34 +128,26 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
             if "task_description" not in state_dict:
                 raise StatePersistenceError(
                     f"Corrupted state file for task {task_id}: missing required 'task_description' field",
-                    "load_state"
+                    "load_state",
                 )
             task_description = state_dict["task_description"]
             return AgentState(
-                task_description=task_description,
-                task_id=task_id,
-                initial_state_data=state_dict
+                task_description=task_description, task_id=task_id, initial_state_data=state_dict
             )
 
         except Exception as e:
             error_msg = f"Error loading state from file: {str(e)}"
             logger.error(error_msg)
             raise StatePersistenceError(
-                message=error_msg,
-                operation="load",
-                task_id=task_id,
-                cause=e
-            )
+                message=error_msg, operation="load", task_id=task_id, cause=e
+) from e
 
-    async def _delete_state_impl(
-        self,
-        task_id: str
-    ) -> bool:
+    async def _delete_state_impl(self, task_id: str) -> bool:
         """Delete agent state file.
-        
+
         Args:
             task_id: Task ID to delete state for
-            
+
         Returns:
             True if state was deleted successfully
         """
@@ -183,27 +171,27 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
             error_msg = f"Error deleting state file: {str(e)}"
             logger.error(error_msg)
             raise StatePersistenceError(
-                message=error_msg,
-                operation="delete",
-                task_id=task_id,
-                cause=e
-            )
+                message=error_msg, operation="delete", task_id=task_id, cause=e
+) from e
 
     async def _list_states_impl(
-        self,
-        filter_criteria: Optional[Dict[str, str]] = None
-    ) -> List[Dict[str, str]]:
+        self, filter_criteria: dict[str, str] | None = None
+    ) -> list[dict[str, str]]:
         """List available states.
-        
+
         Args:
             filter_criteria: Optional criteria to filter by
-            
+
         Returns:
             List of state metadata dictionaries
         """
         try:
             # Get all JSON files in the directory
-            state_files = [f for f in os.listdir(self.settings.directory) if f.endswith(".json") and not f.endswith(".meta.json")]
+            state_files = [
+                f
+                for f in os.listdir(self.settings.directory)
+                if f.endswith(".json") and not f.endswith(".meta.json")
+            ]
 
             # Extract task IDs
             task_ids = [os.path.splitext(f)[0] for f in state_files]
@@ -216,7 +204,7 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
                 metadata = {}
 
                 if os.path.exists(metadata_path):
-                    with open(metadata_path, "r") as f:
+                    with open(metadata_path) as f:
                         metadata = json.load(f)
 
                 # Add task ID to metadata
@@ -240,8 +228,4 @@ class FileStatePersister(BaseStatePersister[FileStatePersisterSettings]):
         except Exception as e:
             error_msg = f"Error listing state files: {str(e)}"
             logger.error(error_msg)
-            raise StatePersistenceError(
-                message=error_msg,
-                operation="list",
-                cause=e
-            )
+            raise StatePersistenceError(message=error_msg, operation="list", cause=e) from e

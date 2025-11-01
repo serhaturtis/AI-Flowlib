@@ -2,10 +2,9 @@ import importlib
 import os
 import sys
 import traceback
-from typing import List
 
 
-def find_python_modules(base_dir: str, base_package: str) -> List[str]:
+def find_python_modules(base_dir: str, base_package: str) -> list[str]:
     """
     Recursively find all Python modules in base_dir, returning their import paths.
     Skips __pycache__ and hidden directories.
@@ -49,11 +48,12 @@ def main() -> None:
     print("\n==================== SUMMARY ====================")
     if errors:
         print(f"{len(errors)} modules failed to import:\n")
-        for mod, tb in errors:
+        for mod, _tb in errors:
             print(f"- {mod}")
         print("\nSee above for full tracebacks.")
     else:
         print("All modules imported successfully!")
+
 
 if __name__ == "__main__":
     main()

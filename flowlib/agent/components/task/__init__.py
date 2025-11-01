@@ -6,7 +6,7 @@ Plan-Execute-Evaluate architecture optimized for local LLMs.
 Architecture:
 - task/models.py: Shared models (TodoItem, RequestContext, etc.)
 - task/core/: Core task components (TodoManager)
-- task/planning/: Structured planning (StructuredPlannerComponent)
+- task/planning/: Classification-based planning (ClassificationBasedPlannerComponent)
 - task/execution/: Task execution and tool orchestration
 - task/evaluation/: Task completion evaluation
 
@@ -34,14 +34,12 @@ from .models import (
 __all__ = [
     # Context
     "RequestContext",
-
     # TODO system
     "TodoItem",
     "TodoList",
     "TodoStatus",
     "TodoPriority",
     "TodoStatusSummary",
-
     # TODO execution system
     "TodoExecutionContext",
     "TodoExecutionResult",

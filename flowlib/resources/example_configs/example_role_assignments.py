@@ -1,6 +1,6 @@
 """Example role assignments for Flowlib.
 
-This file creates role assignments mapping standard semantic roles 
+This file creates role assignments mapping standard semantic roles
 to the example configurations that were copied during initialization.
 
 You can modify these assignments to point to different configurations.

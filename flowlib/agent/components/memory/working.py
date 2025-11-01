@@ -8,7 +8,7 @@ the modernized agent framework patterns with config-driven providers.
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from pydantic import Field
 
@@ -31,41 +31,29 @@ class WorkingMemoryConfig(StrictBaseModel):
     """Configuration for working memory."""
 
     default_ttl_seconds: int = Field(
-        default=3600,
-        ge=60,
-        description="Default TTL for memory items in seconds"
+        default=3600, ge=60, description="Default TTL for memory items in seconds"
     )
-    max_items: int = Field(
-        default=10000,
-        ge=100,
-        description="Maximum number of items to store"
-    )
+    max_items: int = Field(default=10000, ge=100, description="Maximum number of items to store")
     cleanup_interval_seconds: int = Field(
-        default=300,
-        ge=60,
-        description="Background cleanup interval in seconds"
+        default=300, ge=60, description="Background cleanup interval in seconds"
     )
-    max_memory_mb: int = Field(
-        default=100,
-        ge=10,
-        description="Maximum memory usage in MB"
-    )
+    max_memory_mb: int = Field(default=100, ge=10, description="Maximum memory usage in MB")
 
 
 class WorkingMemory:
     """Modern working memory implementation with TTL and resource management."""
 
-    def __init__(self, config: Optional[WorkingMemoryConfig] = None):
+    def __init__(self, config: WorkingMemoryConfig | None = None):
         """Initialize working memory with instance-specific storage."""
         self._config = config or WorkingMemoryConfig()
 
         # Instance-specific storage (fixes global state bug)
         self._store: dict[str, dict[str, MemoryItem]] = {}
         self._ttl_map: dict[str, datetime] = {}
-        self._contexts: Set[str] = set()
+        self._contexts: set[str] = set()
 
         # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task[None]] = None
+        self._cleanup_task: asyncio.Task[None] | None = None
         self._shutdown = False
 
         # Resource tracking
@@ -118,7 +106,9 @@ class WorkingMemory:
         self._initialized = False
         logger.info("WorkingMemory shutdown completed")
 
-    async def create_context(self, context_name: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+    async def create_context(
+        self, context_name: str, metadata: dict[str, Any] | None = None
+    ) -> str:
         """Create a memory context."""
         if not self._initialized:
             raise MemoryError("WorkingMemory not initialized")
@@ -145,7 +135,7 @@ class WorkingMemory:
             raise MemoryError(
                 f"Memory limit reached: {self._item_count}/{self._config.max_items} items",
                 operation="store",
-                context=request.context
+                context=request.context,
             )
 
         # Ensure context exists
@@ -165,10 +155,7 @@ class WorkingMemory:
 
             # Create a MemoryItem to store
             memory_item = MemoryItem(
-                key=request.key,
-                value=request.value,
-                context=context,
-                updated_at=datetime.now()
+                key=request.key, value=request.value, context=context, updated_at=datetime.now()
             )
 
             # Store the item
@@ -179,7 +166,9 @@ class WorkingMemory:
             self._item_count += 1
             self._memory_usage_bytes += len(str(memory_item))
 
-            logger.debug(f"Stored item '{request.key}' in context '{request.context}' with TTL {ttl_delta}")
+            logger.debug(
+                f"Stored item '{request.key}' in context '{request.context}' with TTL {ttl_delta}"
+            )
             return request.key
 
         except Exception as e:
@@ -188,10 +177,10 @@ class WorkingMemory:
                 operation="store",
                 context=request.context,
                 key=request.key,
-                cause=e
+                cause=e,
             ) from e
 
-    async def retrieve(self, request: MemoryRetrieveRequest) -> Optional[MemoryItem]:
+    async def retrieve(self, request: MemoryRetrieveRequest) -> MemoryItem | None:
         """Retrieve a memory item by key."""
         if not self._initialized:
             raise MemoryError("WorkingMemory not initialized")
@@ -220,10 +209,10 @@ class WorkingMemory:
                 operation="retrieve",
                 context=request.context,
                 key=request.key,
-                cause=e
+                cause=e,
             ) from e
 
-    async def search(self, request: MemorySearchRequest) -> List[MemorySearchResult]:
+    async def search(self, request: MemorySearchRequest) -> list[MemorySearchResult]:
         """Search memory items by query string."""
         if not self._initialized:
             raise MemoryError("WorkingMemory not initialized")
@@ -244,28 +233,31 @@ class WorkingMemory:
 
                 if query_lower in key.lower():
                     matches = True
-                elif hasattr(item, 'value') and query_lower in str(item.value).lower():
+                elif hasattr(item, "value") and query_lower in str(item.value).lower():
                     matches = True
-                elif hasattr(item, 'metadata'):
+                elif hasattr(item, "metadata"):
                     metadata_str = str(item.metadata).lower()
                     if query_lower in metadata_str:
                         matches = True
 
                 if matches:
-                    results.append(MemorySearchResult(
-                        item=item,
-                        score=1.0,  # Simple binary matching
-                        metadata=MemorySearchMetadata(
-                            search_query=request.query,
-                            search_type="text_search"
+                    results.append(
+                        MemorySearchResult(
+                            item=item,
+                            score=1.0,  # Simple binary matching
+                            metadata=MemorySearchMetadata(
+                                search_query=request.query, search_type="text_search"
+                            ),
                         )
-                    ))
+                    )
 
             # Apply limit
             if request.limit and len(results) > request.limit:
-                results = results[:request.limit]
+                results = results[: request.limit]
 
-            logger.debug(f"Found {len(results)} results for query '{request.query}' in context '{request.context}'")
+            logger.debug(
+                f"Found {len(results)} results for query '{request.query}' in context '{request.context}'"
+            )
             return results
 
         except Exception as e:
@@ -274,15 +266,12 @@ class WorkingMemory:
                 operation="search",
                 context=request.context,
                 query=request.query,
-                cause=e
+                cause=e,
             ) from e
 
     async def retrieve_relevant(
-        self,
-        query: str,
-        context: Optional[str] = None,
-        limit: int = 10
-    ) -> List[str]:
+        self, query: str, context: str | None = None, limit: int = 10
+    ) -> list[str]:
         """Retrieve relevant memories based on query."""
         if not self._initialized:
             raise MemoryError("WorkingMemory not initialized")
@@ -296,7 +285,7 @@ class WorkingMemory:
             threshold=None,
             sort_by=None,
             search_type="hybrid",
-            metadata_filter=None
+            metadata_filter=None,
         )
 
         search_results = await self.search(search_request)
@@ -315,7 +304,9 @@ class WorkingMemory:
         try:
             if context in self._store:
                 # Remove TTL entries for this context
-                keys_to_remove = [key for key in self._ttl_map.keys() if key.startswith(f"{context}:")]
+                keys_to_remove = [
+                    key for key in self._ttl_map.keys() if key.startswith(f"{context}:")
+                ]
                 for key in keys_to_remove:
                     del self._ttl_map[key]
 
@@ -336,7 +327,7 @@ class WorkingMemory:
                 f"Failed to wipe context '{context}': {str(e)}",
                 operation="wipe",
                 context=context,
-                cause=e
+                cause=e,
             ) from e
 
     async def _cleanup_expired(self) -> None:
@@ -384,7 +375,7 @@ class WorkingMemory:
                 logger.error(f"Error in WorkingMemory cleanup loop: {e}")
                 # Continue loop despite errors
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get memory usage statistics."""
         return {
             "initialized": self._initialized,
@@ -393,5 +384,5 @@ class WorkingMemory:
             "memory_usage_mb": self._memory_usage_bytes / (1024 * 1024),
             "context_count": len(self._contexts),
             "contexts": list(self._contexts),
-            "config": self._config.model_dump()
+            "config": self._config.model_dump(),
         }

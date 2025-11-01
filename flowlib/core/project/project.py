@@ -9,7 +9,6 @@ import logging
 import shutil
 import sys
 from pathlib import Path
-from typing import List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ class Project:
     Both use identical structure and loading mechanisms.
     """
 
-    def __init__(self, project_path: Optional[str] = None) -> None:
+    def __init__(self, project_path: str | None = None) -> None:
         """Initialize project with specified or default path.
 
         Args:
@@ -38,23 +37,23 @@ class Project:
         else:
             # Default to home directory "project"
             self.root_path = Path.home()
-            self.flowlib_path = Path.home() / '.flowlib'
+            self.flowlib_path = Path.home() / ".flowlib"
             self.is_default_project = True
 
         # Define project structure paths
-        self.configs_path = self.flowlib_path / 'configs'
-        self.tools_path = self.flowlib_path / 'tools'
-        self.agents_path = self.flowlib_path / 'agents'
-        self.flows_path = self.flowlib_path / 'flows'
-        self.profiles_path = self.flowlib_path / 'profiles'
-        self.roles_path = self.flowlib_path / 'roles'
-        self.knowledge_plugins_path = self.flowlib_path / 'knowledge_plugins'
-        self.logs_path = self.flowlib_path / 'logs'
-        self.temp_path = self.flowlib_path / 'temp'
-        self.backups_path = self.flowlib_path / 'backups'
+        self.configs_path = self.flowlib_path / "configs"
+        self.tools_path = self.flowlib_path / "tools"
+        self.agents_path = self.flowlib_path / "agents"
+        self.flows_path = self.flowlib_path / "flows"
+        self.profiles_path = self.flowlib_path / "profiles"
+        self.roles_path = self.flowlib_path / "roles"
+        self.knowledge_plugins_path = self.flowlib_path / "knowledge_plugins"
+        self.logs_path = self.flowlib_path / "logs"
+        self.temp_path = self.flowlib_path / "temp"
+        self.backups_path = self.flowlib_path / "backups"
 
         # Track loaded modules to prevent duplicates
-        self._loaded_modules: Set[str] = set()
+        self._loaded_modules: set[str] = set()
         self._initialized = False
 
     def initialize(self) -> None:
@@ -106,8 +105,13 @@ class Project:
                 sys.path.insert(0, root_path_str)
                 paths_added.append(root_path_str)
 
-            for path in [self.configs_path, self.tools_path, self.agents_path,
-                        self.flows_path, self.profiles_path]:
+            for path in [
+                self.configs_path,
+                self.tools_path,
+                self.agents_path,
+                self.flows_path,
+                self.profiles_path,
+            ]:
                 if path.exists():
                     path_str = str(path)
                     if path_str not in sys.path:
@@ -161,7 +165,7 @@ class Project:
             self.knowledge_plugins_path,
             self.logs_path,
             self.temp_path,
-            self.backups_path
+            self.backups_path,
         ]
 
         for directory in directories:
@@ -169,7 +173,7 @@ class Project:
             logger.debug(f"Ensured directory exists: {directory}")
 
         # Create __init__.py in configs directory only (needed for imports)
-        configs_init = self.configs_path / '__init__.py'
+        configs_init = self.configs_path / "__init__.py"
         if not configs_init.exists():
             configs_init.write_text('"""Project configurations."""\n')
 
@@ -187,14 +191,14 @@ class Project:
         import flowlib.resources.example_configs as example_configs
 
         # Check if any of the target files from EXAMPLE_TO_TARGET exist
-        for example_file, target_file in example_configs.EXAMPLE_TO_TARGET.items():
+        for _example_file, target_file in example_configs.EXAMPLE_TO_TARGET.items():
             # Handle special case for role assignments
-            if target_file.startswith('../roles/'):
-                target_path = self.roles_path / target_file.replace('../roles/', '')
-            elif target_file.startswith('../profiles/'):
-                target_path = self.profiles_path / target_file.replace('../profiles/', '')
-            elif target_file.startswith('../agents/'):
-                target_path = self.agents_path / target_file.replace('../agents/', '')
+            if target_file.startswith("../roles/"):
+                target_path = self.roles_path / target_file.replace("../roles/", "")
+            elif target_file.startswith("../profiles/"):
+                target_path = self.profiles_path / target_file.replace("../profiles/", "")
+            elif target_file.startswith("../agents/"):
+                target_path = self.agents_path / target_file.replace("../agents/", "")
             else:
                 target_path = self.configs_path / target_file
 
@@ -225,12 +229,12 @@ class Project:
                 source_path = example_dir / example_file
 
                 # Handle special cases for different target directories
-                if target_file.startswith('../roles/'):
-                    target_path = self.roles_path / target_file.replace('../roles/', '')
-                elif target_file.startswith('../profiles/'):
-                    target_path = self.profiles_path / target_file.replace('../profiles/', '')
-                elif target_file.startswith('../agents/'):
-                    target_path = self.agents_path / target_file.replace('../agents/', '')
+                if target_file.startswith("../roles/"):
+                    target_path = self.roles_path / target_file.replace("../roles/", "")
+                elif target_file.startswith("../profiles/"):
+                    target_path = self.profiles_path / target_file.replace("../profiles/", "")
+                elif target_file.startswith("../agents/"):
+                    target_path = self.agents_path / target_file.replace("../agents/", "")
                 else:
                     target_path = self.configs_path / target_file
 
@@ -260,10 +264,10 @@ class Project:
                 logger.debug("No example configs needed to be copied")
 
         except ImportError as e:
-            raise RuntimeError(f"Failed to import example configs: {e}")
+            raise RuntimeError(f"Failed to import example configs: {e}") from e
 
         except Exception as e:
-            raise RuntimeError(f"Failed to copy example configs: {e}")
+            raise RuntimeError(f"Failed to copy example configs: {e}") from e
 
     def _load_configs(self) -> None:
         """Load provider and model configurations from configs/."""
@@ -313,7 +317,7 @@ class Project:
             return
 
         # Find all tool.py files in tool subdirectories
-        tool_files = list(self.tools_path.rglob('*/tool.py'))
+        tool_files = list(self.tools_path.rglob("*/tool.py"))
 
         if not tool_files:
             logger.debug("No custom tools found")
@@ -350,7 +354,7 @@ class Project:
         role_files = self._find_python_files(self.roles_path)
 
         # Filter out assignments.py since that's handled separately
-        role_files = [f for f in role_files if f.name != 'assignments.py']
+        role_files = [f for f in role_files if f.name != "assignments.py"]
 
         if not role_files:
             logger.debug("No role configuration files found")
@@ -363,7 +367,7 @@ class Project:
 
     def _load_role_assignments(self) -> None:
         """Load role assignments from roles/assignments.py."""
-        assignments_file = self.roles_path / 'assignments.py'
+        assignments_file = self.roles_path / "assignments.py"
 
         if not assignments_file.exists():
             logger.debug("No role assignments file found")
@@ -372,7 +376,7 @@ class Project:
         self._import_module(assignments_file, "assignments")
         logger.info("Loaded role assignments")
 
-    def _find_python_files(self, directory: Path) -> List[Path]:
+    def _find_python_files(self, directory: Path) -> list[Path]:
         """Find all Python files in a directory (excluding __init__.py).
 
         Args:
@@ -385,8 +389,9 @@ class Project:
             return []
 
         py_files = [
-            f for f in directory.iterdir()
-            if f.is_file() and f.suffix == '.py' and f.name != '__init__.py'
+            f
+            for f in directory.iterdir()
+            if f.is_file() and f.suffix == ".py" and f.name != "__init__.py"
         ]
 
         return sorted(py_files, key=lambda p: p.name)
@@ -410,7 +415,7 @@ class Project:
         if self.is_default_project:
             full_module_name = f"project_default_{module_type}_{module_name}"
         else:
-            project_name = self.root_path.name.replace('-', '_').replace('.', '_')
+            project_name = self.root_path.name.replace("-", "_").replace(".", "_")
             full_module_name = f"project_{project_name}_{module_type}_{module_name}"
 
         if full_module_name in self._loaded_modules:
@@ -446,12 +451,17 @@ class Project:
             file_path: Path to the Python file
         """
         try:
-            content = file_path.read_text(encoding='utf-8')
+            content = file_path.read_text(encoding="utf-8")
 
             # Basic security checks
             suspicious_patterns = [
-                'eval(', 'exec(', '__import__', 'compile(',
-                'subprocess', 'os.system', 'os.popen'
+                "eval(",
+                "exec(",
+                "__import__",
+                "compile(",
+                "subprocess",
+                "os.system",
+                "os.popen",
             ]
 
             for pattern in suspicious_patterns:
@@ -462,7 +472,7 @@ class Project:
         except Exception as e:
             logger.warning(f"Could not validate file {file_path}: {e}")
 
-    def get_loaded_modules(self) -> Set[str]:
+    def get_loaded_modules(self) -> set[str]:
         """Get the set of successfully loaded module names.
 
         Returns:
@@ -479,7 +489,7 @@ class Project:
         return self._initialized
 
 
-def get_project(project_path: Optional[str] = None) -> Project:
+def get_project(project_path: str | None = None) -> Project:
     """Create a project instance.
 
     Args:

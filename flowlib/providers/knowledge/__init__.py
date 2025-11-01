@@ -7,5 +7,5 @@ __all__ = [
     "Knowledge",
     "KnowledgeProvider",
     "MultiDatabaseKnowledgeProvider",
-    "KnowledgePluginManager"
+    "KnowledgePluginManager",
 ]

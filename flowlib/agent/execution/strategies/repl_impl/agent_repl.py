@@ -3,17 +3,22 @@
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import readline  # For command history
+
     READLINE_AVAILABLE = True
 except ImportError:
     # Readline not available on Windows - create dummy namespace
     class DummyReadline:
         """Dummy readline for platforms without readline support."""
-        def set_completer(self, func: Any) -> None: pass
-        def parse_and_bind(self, string: str) -> None: pass
+
+        def set_completer(self, func: Any) -> None:
+            pass
+
+        def parse_and_bind(self, string: str) -> None:
+            pass
 
     readline = DummyReadline()  # type: ignore[assignment]
     READLINE_AVAILABLE = False
@@ -22,7 +27,6 @@ from pydantic import ConfigDict, Field
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 
 from flowlib.agent.core.base_agent import BaseAgent
@@ -33,7 +37,6 @@ from flowlib.agent.core.models.messages import (
     AgentResponseData,
 )
 from flowlib.agent.core.thread_manager import AgentThreadPoolManager
-from flowlib.agent.models.config import AgentConfig
 from flowlib.agent.execution.strategies.repl_impl.commands import (
     CommandRegistry,
     CommandType,
@@ -44,6 +47,7 @@ from flowlib.agent.execution.strategies.repl_impl.handlers import (
     TodoCommandHandler,
     ToolCommandHandler,
 )
+from flowlib.agent.models.config import AgentConfig
 from flowlib.core.models import MutableStrictBaseModel, StrictBaseModel
 
 logger = logging.getLogger(__name__)
@@ -61,11 +65,14 @@ class SessionStats(MutableStrictBaseModel):
 
 class REPLContext(StrictBaseModel):
     """REPL context model."""
+
     model_config = ConfigDict(extra="forbid")
 
     should_exit: bool = Field(default=False, description="Whether to exit the REPL")
-    command_history: List[str] = Field(default_factory=list, description="Command history")
-    session_stats: SessionStats = Field(default_factory=SessionStats, description="Session statistics")
+    command_history: list[str] = Field(default_factory=list, description="Command history")
+    session_stats: SessionStats = Field(
+        default_factory=SessionStats, description="Session statistics"
+    )
     mode: str = Field(default="chat", description="Current mode")
     debug: bool = Field(default=False, description="Debug mode enabled")
     verbose: bool = Field(default=False, description="Verbose mode enabled")
@@ -74,6 +81,7 @@ class REPLContext(StrictBaseModel):
 
 class ModeEmojis(StrictBaseModel):
     """Mode emoji mapping model."""
+
     model_config = ConfigDict(extra="forbid")
 
     chat: str = Field(default="💬", description="Chat mode emoji")
@@ -87,8 +95,8 @@ class AgentREPL:
     def __init__(
         self,
         agent_id: str,
-        config: Optional[AgentConfig] = None,
-        history_file: Optional[str] = None
+        config: AgentConfig | None = None,
+        history_file: str | None = None,
     ):
         self.agent_id = agent_id
         if not config:
@@ -100,9 +108,9 @@ class AgentREPL:
 
         # Queue-based agent communication
         self.thread_pool_manager = AgentThreadPoolManager()
-        self.agent: Optional[BaseAgent] = None
+        self.agent: BaseAgent | None = None
 
-        self.context: Dict[str, Any] = {
+        self.context: dict[str, Any] = {
             "agent_id": agent_id,
             "config": config,
             "should_exit": self.repl_context.should_exit,
@@ -111,7 +119,7 @@ class AgentREPL:
             "mode": self.repl_context.mode,
             "debug": self.repl_context.debug,
             "verbose": self.repl_context.verbose,
-            "stream": self.repl_context.stream
+            "stream": self.repl_context.stream,
         }
 
         # Setup history
@@ -158,10 +166,7 @@ class AgentREPL:
     async def initialize(self) -> None:
         """Initialize the REPL with queue-based agent."""
         # Create agent in its own thread
-        self.agent = self.thread_pool_manager.create_agent(
-            self.agent_id,
-            self.config
-        )
+        self.agent = self.thread_pool_manager.create_agent(self.agent_id, self.config)
 
         # Add agent to context for command handlers
         self.context["agent"] = self.agent
@@ -211,7 +216,7 @@ class AgentREPL:
             "Type [bold]/help[/bold] for available commands.\n"
             "Type your message to start a conversation.",
             title="Welcome",
-            border_style="cyan"
+            border_style="cyan",
         )
         self.console.print(welcome)
         self.console.print()
@@ -230,7 +235,7 @@ class AgentREPL:
         stats_table.add_row("Tokens Used", str(stats.tokens_used))
         stats_table.add_row("Tools Called", str(stats.tools_called))
         stats_table.add_row("Flows Executed", str(stats.flows_executed))
-        stats_table.add_row("Duration", str(duration).split('.')[0])
+        stats_table.add_row("Duration", str(duration).split(".")[0])
 
         self.console.print()
         self.console.print(stats_table)
@@ -270,9 +275,10 @@ class AgentREPL:
                 self.console.print(f"\n[red]Error: {str(e)}[/red]")
                 if self.repl_context.debug:
                     import traceback
+
                     self.console.print(traceback.format_exc())
 
-    def _get_input(self) -> Optional[str]:
+    def _get_input(self) -> str | None:
         """Get user input with prompt."""
         mode = self.repl_context.mode
         mode_emojis = ModeEmojis()
@@ -283,7 +289,12 @@ class AgentREPL:
             mode_emoji = mode_emojis.debug
 
         try:
-            return Prompt.ask(f"\n[bold cyan]{mode_emoji} You[/bold cyan]")
+            # Use plain input() with properly wrapped ANSI codes for readline
+            # \x01 and \x02 tell readline to ignore ANSI escape sequences
+            # This prevents cursor position miscalculation and text scrambling
+            # ANSI codes: \033[1;36m = bold cyan, \033[0m = reset
+            prompt = f"\n\x01\033[1;36m\x02{mode_emoji} You\x01\033[0m\x02 "
+            return input(prompt)
         except (KeyboardInterrupt, EOFError):
             return None
 
@@ -303,7 +314,9 @@ class AgentREPL:
 
         # Update stats
         self.repl_context.session_stats.message_count += 1
-        self.context["session_stats"]["message_count"] = self.repl_context.session_stats.message_count
+        self.context["session_stats"]["message_count"] = (
+            self.repl_context.session_stats.message_count
+        )
 
         # Get response from agent via queue - returns AgentResponseData
         response_data = await self._get_agent_response(message)
@@ -334,11 +347,11 @@ class AgentREPL:
                 content=message,
                 context={
                     "session_stats": self.context["session_stats"],
-                    "mode": self.context["mode"]
+                    "mode": self.context["mode"],
                 },
                 response_queue_id=f"repl_{self.agent_id}",
                 priority=AgentMessagePriority.NORMAL,
-                timeout=None  # Disabled timeout
+                timeout=None,  # Disabled timeout
             )
 
             logger.debug(f"[REPL] Agent message created with ID: {agent_message.message_id}")
@@ -348,9 +361,7 @@ class AgentREPL:
 
             # Send to agent queue
             logger.debug("[REPL] Sending message to agent queue...")
-            message_id = await self.thread_pool_manager.send_message(
-                self.agent_id, agent_message
-            )
+            message_id = await self.thread_pool_manager.send_message(self.agent_id, agent_message)
             logger.debug(f"[REPL] Message sent to agent queue with ID: {message_id}")
 
             # Wait for response
@@ -363,22 +374,27 @@ class AgentREPL:
             # Handle response
             if not response.success:
                 from flowlib.agent.core.models.messages import AgentResponseData
+
                 return AgentResponseData(content=f"[red]Agent error: {response.error}[/red]")
 
             # Update stats
             self.repl_context.session_stats.flows_executed += 1
-            self.context["session_stats"]["flows_executed"] = self.repl_context.session_stats.flows_executed
+            self.context["session_stats"]["flows_executed"] = (
+                self.repl_context.session_stats.flows_executed
+            )
 
             # Return the typed response data directly
             return response.response_data
 
         except TimeoutError:
             from flowlib.agent.core.models.messages import AgentResponseData
+
             return AgentResponseData(content="[red]Response timeout[/red]")
         except Exception as e:
             import traceback
 
             from flowlib.agent.core.models.messages import AgentResponseData
+
             error_msg = f"Error getting agent response: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
             return AgentResponseData(content=error_msg)
 

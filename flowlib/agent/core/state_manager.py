@@ -7,7 +7,7 @@ operations that were previously in BaseAgent.
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from flowlib.agent.components.persistence.base import BaseStatePersister
 from flowlib.agent.components.persistence.factory import create_state_persister
@@ -21,25 +21,25 @@ logger = logging.getLogger(__name__)
 
 class AgentStateManager(AgentComponent):
     """Handles agent state management and persistence.
-    
+
     This component is responsible for:
     - State creation and initialization
     - State persistence operations (save/load/delete)
     - State listing and management
     """
 
-    def __init__(self,
-                 state_persister: Optional[BaseStatePersister] = None,
-                 name: str = "state_manager"):
+    def __init__(
+        self, state_persister: BaseStatePersister | None = None, name: str = "state_manager"
+    ):
         """Initialize the state manager.
-        
+
         Args:
             state_persister: Optional state persister
             name: Component name
         """
         super().__init__(name)
         self._state_persister = state_persister
-        self._current_state: Optional[AgentState] = None
+        self._current_state: AgentState | None = None
 
     async def _initialize_impl(self) -> None:
         """Initialize the state manager."""
@@ -55,22 +55,22 @@ class AgentStateManager(AgentComponent):
 
     def setup_persister(self, config: AgentConfig) -> None:
         """Setup state persister from configuration.
-        
+
         Args:
             config: Agent configuration
         """
         if config.state_config and not self._state_persister:
             self._state_persister = create_state_persister(
                 persister_type=config.state_config.persistence_type,
-                **config.state_config.model_dump(exclude={"persistence_type"})
+                **config.state_config.model_dump(exclude={"persistence_type"}),
             )
 
     async def create_state(self, task_description: str = "") -> AgentState:
         """Create a new agent state.
-        
+
         Args:
             task_description: Initial task description
-            
+
         Returns:
             New AgentState instance
         """
@@ -80,13 +80,13 @@ class AgentStateManager(AgentComponent):
 
     async def load_state(self, task_id: str) -> AgentState:
         """Load agent state from persistence.
-        
+
         Args:
             task_id: Task ID to load
-            
+
         Returns:
             Loaded AgentState
-            
+
         Raises:
             StatePersistenceError: If loading fails
         """
@@ -101,11 +101,13 @@ class AgentStateManager(AgentComponent):
             logger.info(f"Loaded agent state for task_id: {task_id}")
             return self._current_state
         except Exception as e:
-            raise StatePersistenceError(f"Failed to load state for task {task_id}: {e}", "load", task_id) from e
+            raise StatePersistenceError(
+                f"Failed to load state for task {task_id}: {e}", "load", task_id
+            ) from e
 
     async def save_state(self) -> None:
         """Save current agent state.
-        
+
         Raises:
             StatePersistenceError: If saving fails
         """
@@ -117,19 +119,20 @@ class AgentStateManager(AgentComponent):
 
         try:
             await self._state_persister.save_state(
-                self._current_state,
-                self._current_state.model_dump()
+                self._current_state, self._current_state.model_dump()
             )
             logger.debug(f"Saved state for task_id: {self._current_state.task_id}")
         except Exception as e:
-            raise StatePersistenceError(f"Failed to save state: {e}", "save", self._current_state.task_id) from e
+            raise StatePersistenceError(
+                f"Failed to save state: {e}", "save", self._current_state.task_id
+            ) from e
 
-    async def delete_state(self, task_id: Optional[str] = None) -> None:
+    async def delete_state(self, task_id: str | None = None) -> None:
         """Delete agent state.
-        
+
         Args:
             task_id: Task ID to delete, or current state if None
-            
+
         Raises:
             StatePersistenceError: If deletion fails
         """
@@ -149,17 +152,21 @@ class AgentStateManager(AgentComponent):
             if self._current_state and self._current_state.task_id == target_task_id:
                 self._current_state = None
         except Exception as e:
-            raise StatePersistenceError(f"Failed to delete state for task {target_task_id}: {e}", "delete", target_task_id) from e
+            raise StatePersistenceError(
+                f"Failed to delete state for task {target_task_id}: {e}", "delete", target_task_id
+            ) from e
 
-    async def list_states(self, filter_criteria: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
+    async def list_states(
+        self, filter_criteria: dict[str, str] | None = None
+    ) -> list[dict[str, str]]:
         """List available states.
-        
+
         Args:
             filter_criteria: Optional filter criteria
-            
+
         Returns:
             List of state metadata
-            
+
         Raises:
             StatePersistenceError: If listing fails
         """
@@ -172,9 +179,9 @@ class AgentStateManager(AgentComponent):
             raise StatePersistenceError(f"Failed to list states: {e}", "list") from e
 
     @property
-    def current_state(self) -> Optional[AgentState]:
+    def current_state(self) -> AgentState | None:
         """Get the current state.
-        
+
         Returns:
             Current AgentState instance
         """
@@ -183,7 +190,7 @@ class AgentStateManager(AgentComponent):
     @current_state.setter
     def current_state(self, state: AgentState) -> None:
         """Set the current state.
-        
+
         Args:
             state: New AgentState instance
         """
@@ -198,9 +205,9 @@ class AgentStateManager(AgentComponent):
         Returns:
             True if auto-load is enabled and task_id is provided
         """
-        return bool(config.state_config and
-                   config.state_config.auto_load and
-                   config.task_id is not None)
+        return bool(
+            config.state_config and config.state_config.auto_load and config.task_id is not None
+        )
 
     def should_auto_save(self, config: AgentConfig) -> bool:
         """Check if state should be auto-saved.
@@ -211,15 +218,14 @@ class AgentStateManager(AgentComponent):
         Returns:
             True if auto-save is enabled
         """
-        return bool(config.state_config and
-                   config.state_config.auto_save)
+        return bool(config.state_config and config.state_config.auto_save)
 
     async def add_conversation_turn(self, turn: ConversationTurn) -> None:
         """Add conversation turn to session history.
-        
+
         Args:
             turn: Conversation turn to add
-            
+
         Raises:
             NotInitializedError: If state not initialized
         """
@@ -240,26 +246,22 @@ class AgentStateManager(AgentComponent):
 
         # Add user message
         user_msg = ConversationMessage(
-            role="user",
-            content=turn.user_message,
-            timestamp=turn.timestamp
+            role="user", content=turn.user_message, timestamp=turn.timestamp
         )
         model.session.conversation_history.append(user_msg)
 
         # Add agent response
         agent_msg = ConversationMessage(
-            role="assistant",
-            content=turn.agent_response,
-            timestamp=turn.timestamp
+            role="assistant", content=turn.agent_response, timestamp=turn.timestamp
         )
         model.session.conversation_history.append(agent_msg)
 
         # Update state with new session
         self._current_state._update_model(session=model.session)
 
-    async def get_session_context(self) -> Dict[str, Any]:
+    async def get_session_context(self) -> dict[str, Any]:
         """Get complete session context for tool execution.
-        
+
         Returns:
             Session context dictionary
         """
@@ -269,7 +271,7 @@ class AgentStateManager(AgentComponent):
                 "conversation_history": [],
                 "shared_context": {},
                 "working_directory": os.getcwd(),
-                "agent_name": None
+                "agent_name": None,
             }
 
         model = self._current_state.as_model()
@@ -279,7 +281,7 @@ class AgentStateManager(AgentComponent):
                 "conversation_history": [],
                 "shared_context": {},
                 "working_directory": os.getcwd(),
-                "agent_name": None
+                "agent_name": None,
             }
 
         if model.session is None:
@@ -288,14 +290,14 @@ class AgentStateManager(AgentComponent):
                 "conversation_history": [],
                 "shared_context": {},
                 "working_directory": os.getcwd(),
-                "agent_name": None
+                "agent_name": None,
             }
 
         # Get agent name from config manager if available
         agent_name = None
         if self._registry:
             config_manager = self._registry.get("config_manager")
-            if config_manager and hasattr(config_manager, 'config'):
+            if config_manager and hasattr(config_manager, "config"):
                 agent_name = config_manager.config.name
 
         return {
@@ -306,15 +308,15 @@ class AgentStateManager(AgentComponent):
             "shared_context": model.session.shared_context,
             "working_directory": model.session.working_directory,
             "agent_name": agent_name,
-            "collaborating_agents": model.session.collaborating_agents
+            "collaborating_agents": model.session.collaborating_agents,
         }
 
-    async def update_shared_context(self, context_updates: Dict[str, Any]) -> None:
+    async def update_shared_context(self, context_updates: dict[str, Any]) -> None:
         """Update shared context in session.
-        
+
         Args:
             context_updates: Updates to apply to shared context
-            
+
         Raises:
             NotInitializedError: If state not initialized
         """

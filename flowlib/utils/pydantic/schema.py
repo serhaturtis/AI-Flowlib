@@ -8,24 +8,24 @@ particularly handling recursive conversion and formatting of nested models.
 import copy
 import inspect
 import json
-from typing import Any, Dict, List, Type, Union, get_args, get_origin, get_type_hints
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 
 
-def model_to_schema_dict(model: Type[BaseModel]) -> Dict[str, Any]:
+def model_to_schema_dict(model: type[BaseModel]) -> dict[str, Any]:
     """
     Convert a Pydantic model class to a JSON schema dictionary.
-    
+
     This function handles nested Pydantic models recursively, ensuring that
     the complete schema is properly generated.
-    
+
     Args:
         model: A Pydantic model class (not an instance)
-        
+
     Returns:
         A dictionary representation of the JSON schema
-        
+
     Raises:
         TypeError: If the input is not a Pydantic model class
     """
@@ -37,10 +37,10 @@ def model_to_schema_dict(model: Type[BaseModel]) -> Dict[str, Any]:
         schema = model.model_json_schema()
     except AttributeError:
         # Fall back to older schema_json method for backward compatibility
-        if hasattr(model, "schema") and callable(getattr(model, "schema")):
+        if hasattr(model, "schema") and callable(model.schema):
             schema = model.schema()
         else:
-            raise TypeError(f"Model {model.__name__} doesn't support schema generation")
+            raise TypeError(f"Model {model.__name__} doesn't support schema generation") from None
 
     # Process nested models if this is a complex schema
     if "properties" in schema:
@@ -49,13 +49,13 @@ def model_to_schema_dict(model: Type[BaseModel]) -> Dict[str, Any]:
     return schema
 
 
-def _process_nested_models(schema: Dict[str, Any], model: Type[BaseModel]) -> None:
+def _process_nested_models(schema: dict[str, Any], model: type[BaseModel]) -> None:
     """
     Process properties in a schema to handle nested Pydantic models.
-    
+
     This function modifies the schema in place, adding detailed schema information
     for any nested Pydantic models found in the properties.
-    
+
     Args:
         schema: The schema dictionary to process
         model: The Pydantic model class that this schema represents
@@ -89,7 +89,7 @@ def _process_nested_models(schema: Dict[str, Any], model: Type[BaseModel]) -> No
                 prop_info.update(nested_schema)
 
             # Handle List[PydanticModel]
-            elif origin is list or origin is List:
+            elif origin is list or origin is list:
                 args = get_args(field_type)
                 if args and inspect.isclass(args[0]) and issubclass(args[0], BaseModel):
                     if "items" in prop_info:
@@ -97,29 +97,33 @@ def _process_nested_models(schema: Dict[str, Any], model: Type[BaseModel]) -> No
                         prop_info["items"].update(nested_schema)
 
             # Handle Dict[str, PydanticModel]
-            elif origin is dict or origin is Dict:
+            elif origin is dict or origin is dict:
                 args = get_args(field_type)
-                if (len(args) == 2 and args[0] is str and
-                    inspect.isclass(args[1]) and issubclass(args[1], BaseModel)):
+                if (
+                    len(args) == 2
+                    and args[0] is str
+                    and inspect.isclass(args[1])
+                    and issubclass(args[1], BaseModel)
+                ):
                     if "additionalProperties" in prop_info:
                         nested_schema = model_to_schema_dict(args[1])
                         prop_info["additionalProperties"].update(nested_schema)
 
 
-def model_to_json_schema(model: Type[BaseModel], indent: int = 2) -> str:
+def model_to_json_schema(model: type[BaseModel], indent: int = 2) -> str:
     """
     Convert a Pydantic model to a formatted JSON schema string.
-    
+
     This function processes the model recursively, including any nested models,
     and returns a properly indented JSON string representation.
-    
+
     Args:
         model: A Pydantic model class (not an instance)
         indent: Number of spaces for indentation in the JSON output
-        
+
     Returns:
         Formatted JSON schema as a string
-        
+
     Raises:
         TypeError: If the input is not a Pydantic model class
     """
@@ -127,13 +131,13 @@ def model_to_json_schema(model: Type[BaseModel], indent: int = 2) -> str:
     return json.dumps(schema_dict, indent=indent, sort_keys=False, ensure_ascii=False)
 
 
-def clean_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+def clean_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """
     Clean up a schema dictionary by removing redundancy and simplifying the output.
-    
+
     Args:
         schema: The schema dictionary to clean
-        
+
     Returns:
         A cleaned schema dictionary
     """
@@ -141,21 +145,21 @@ def clean_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
 
     # Remove redundant descriptions (those contained in property definitions)
     if "$defs" in result:
-        for def_key, def_value in result["$defs"].items():
+        for _def_key, def_value in result["$defs"].items():
             # Simplify description by removing attribute lists
             if "description" in def_value and "\n\nAttributes:" in def_value["description"]:
                 def_value["description"] = def_value["description"].split("\n\nAttributes:")[0]
 
             # Process properties of the definition
             if "properties" in def_value:
-                for prop_key, prop_value in def_value["properties"].items():
+                for _prop_key, prop_value in def_value["properties"].items():
                     # Simplify property descriptions
                     if "description" in prop_value:
                         prop_value["description"] = prop_value["description"].split("\n")[0]
 
     # Process properties in the main schema
     if "properties" in result:
-        for prop_key, prop_value in result["properties"].items():
+        for _prop_key, prop_value in result["properties"].items():
             # Simplify property descriptions
             if "description" in prop_value:
                 prop_value["description"] = prop_value["description"].split("\n")[0]
@@ -176,14 +180,14 @@ def clean_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def model_to_clean_json_schema(model: Type[BaseModel], indent: int = 2) -> str:
+def model_to_clean_json_schema(model: type[BaseModel], indent: int = 2) -> str:
     """
     Convert a Pydantic model to a clean, simplified JSON schema string.
-    
+
     Args:
         model: A Pydantic model class
         indent: Number of spaces for indentation (default: 2)
-        
+
     Returns:
         A simplified JSON schema string
     """
@@ -192,14 +196,14 @@ def model_to_clean_json_schema(model: Type[BaseModel], indent: int = 2) -> str:
     return json.dumps(clean_dict, indent=indent)
 
 
-def format_schema_for_prompt(schema: Dict[str, Any], include_descriptions: bool = True) -> str:
+def format_schema_for_prompt(schema: dict[str, Any], include_descriptions: bool = True) -> str:
     """
     Format a JSON schema as a human-readable string suitable for a prompt.
-    
+
     Args:
         schema: JSON schema dictionary
         include_descriptions: Whether to include field descriptions
-        
+
     Returns:
         A formatted string representation of the schema
     """
@@ -222,7 +226,9 @@ def format_schema_for_prompt(schema: Dict[str, Any], include_descriptions: bool 
 
             # Handle arrays with items
             if field_type == "array" and "items" in field_info:
-                items_type = field_info["items"]["type"] if "type" in field_info["items"] else "unknown"
+                items_type = (
+                    field_info["items"]["type"] if "type" in field_info["items"] else "unknown"
+                )
                 if "title" in field_info["items"]:
                     items_type = field_info["items"]["title"]
                 field_type = f"array of {items_type}"
@@ -248,20 +254,20 @@ def format_schema_for_prompt(schema: Dict[str, Any], include_descriptions: bool 
     return output
 
 
-def get_model_schema_text(model: Type[BaseModel], include_descriptions: bool = True) -> str:
+def get_model_schema_text(model: type[BaseModel], include_descriptions: bool = True) -> str:
     """
     Get a human-readable text representation of a Pydantic model's schema.
-    
+
     This is a convenience function that combines model_to_schema_dict and
     format_schema_for_prompt.
-    
+
     Args:
         model: A Pydantic model class
         include_descriptions: Whether to include field descriptions
-        
+
     Returns:
         A formatted string representation of the model's schema
-        
+
     Raises:
         TypeError: If the input is not a Pydantic model class
     """
@@ -269,16 +275,18 @@ def get_model_schema_text(model: Type[BaseModel], include_descriptions: bool = T
     return format_schema_for_prompt(schema, include_descriptions)
 
 
-def save_model_schema_to_file(model: Type[BaseModel], file_path: str, indent: int = 2, clean: bool = True) -> None:
+def save_model_schema_to_file(
+    model: type[BaseModel], file_path: str, indent: int = 2, clean: bool = True
+) -> None:
     """
     Save a Pydantic model's schema to a JSON file.
-    
+
     Args:
         model: A Pydantic model class
         file_path: Path where the JSON file should be saved
         indent: Number of spaces for indentation in the JSON output
         clean: Whether to clean the schema before saving
-        
+
     Raises:
         TypeError: If the input is not a Pydantic model class
         IOError: If there is an error writing to the file
@@ -289,25 +297,25 @@ def save_model_schema_to_file(model: Type[BaseModel], file_path: str, indent: in
         schema_json = model_to_json_schema(model, indent)
 
     try:
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(schema_json)
-    except IOError as e:
-        raise IOError(f"Failed to write schema to file {file_path}: {str(e)}")
+    except OSError as e:
+        raise OSError(f"Failed to write schema to file {file_path}: {str(e)}") from e
 
 
-def get_model_example(model: Type[BaseModel]) -> Dict[str, Any]:
+def get_model_example(model: type[BaseModel]) -> dict[str, Any]:
     """
     Generate an example instance of a Pydantic model with default values.
-    
+
     This function creates an example dictionary that could be used to instantiate
     the model, using default values where available.
-    
+
     Args:
         model: A Pydantic model class
-        
+
     Returns:
         Dictionary with example values for the model fields
-        
+
     Raises:
         TypeError: If the input is not a Pydantic model class
     """
@@ -345,7 +353,7 @@ def get_model_example(model: Type[BaseModel]) -> Dict[str, Any]:
     return example
 
 
-def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+def simplify_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """
     Create an ultra-simplified schema with minimal information for easy reading.
 
@@ -363,9 +371,9 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         A highly simplified schema dictionary with flat structure (no $defs)
     """
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "title": schema["title"] if "title" in schema else "",
-        "description": (schema["description"] if "description" in schema else "").split("\n")[0]
+        "description": (schema["description"] if "description" in schema else "").split("\n")[0],
     }
 
     # Create definitions lookup table to resolve references
@@ -416,33 +424,8 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                 if ref_name in definitions and "description" in definitions[ref_name]:
                     description = definitions[ref_name]["description"].split("\n")[0]
 
-            # Extract constraints (ge, le, gt, lt, min_length, max_length, minLength, maxLength)
-            constraints = []
-            for constraint_key in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                                    "minLength", "maxLength", "minItems", "maxItems"]:
-                if constraint_key in prop_info:
-                    value = prop_info[constraint_key]
-                    # Format constraint for readability
-                    if constraint_key == "minimum":
-                        constraints.append(f"≥{value}")
-                    elif constraint_key == "maximum":
-                        constraints.append(f"≤{value}")
-                    elif constraint_key == "exclusiveMinimum":
-                        constraints.append(f">{value}")
-                    elif constraint_key == "exclusiveMaximum":
-                        constraints.append(f"<{value}")
-                    elif constraint_key == "minLength":
-                        constraints.append(f"min_length={value}")
-                    elif constraint_key == "maxLength":
-                        constraints.append(f"max_length={value}")
-                    elif constraint_key == "minItems":
-                        constraints.append(f"min_items={value}")
-                    elif constraint_key == "maxItems":
-                        constraints.append(f"max_items={value}")
-
-            # Add constraints to type string if present
-            if constraints:
-                prop_type = f"{prop_type} ({', '.join(constraints)})"
+            # Note: Constraints are not added to the type string to avoid redundancy.
+            # Field descriptions already contain constraint information where relevant.
 
             # Store type separately from description to avoid confusion
             result["properties"][prop_name] = prop_type
@@ -458,9 +441,11 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
         for def_name, def_info in schema["$defs"].items():
             sub_schema = {
                 "title": def_info["title"] if "title" in def_info else def_name,
-                "description": (def_info["description"] if "description" in def_info else "").split("\n")[0],
+                "description": (def_info["description"] if "description" in def_info else "").split(
+                    "\n"
+                )[0],
                 "properties": {},
-                "field_descriptions": {}
+                "field_descriptions": {},
             }
 
             # Process properties of the sub-schema
@@ -481,32 +466,8 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
                     if "description" in prop_info:
                         description = prop_info["description"].split("\n")[0]
 
-                    # Extract constraints for sub-schema properties too
-                    constraints = []
-                    for constraint_key in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                                            "minLength", "maxLength", "minItems", "maxItems"]:
-                        if constraint_key in prop_info:
-                            value = prop_info[constraint_key]
-                            if constraint_key == "minimum":
-                                constraints.append(f"≥{value}")
-                            elif constraint_key == "maximum":
-                                constraints.append(f"≤{value}")
-                            elif constraint_key == "exclusiveMinimum":
-                                constraints.append(f">{value}")
-                            elif constraint_key == "exclusiveMaximum":
-                                constraints.append(f"<{value}")
-                            elif constraint_key == "minLength":
-                                constraints.append(f"min_length={value}")
-                            elif constraint_key == "maxLength":
-                                constraints.append(f"max_length={value}")
-                            elif constraint_key == "minItems":
-                                constraints.append(f"min_items={value}")
-                            elif constraint_key == "maxItems":
-                                constraints.append(f"max_items={value}")
-
-                    # Add constraints to type string if present
-                    if constraints:
-                        prop_type = f"{prop_type} ({', '.join(constraints)})"
+                    # Note: Constraints are not added to the type string to avoid redundancy.
+                    # Field descriptions already contain constraint information where relevant.
 
                     # Store type separately from description
                     sub_schema["properties"][prop_name] = prop_type
@@ -523,17 +484,17 @@ def simplify_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def model_to_simple_json_schema(model: Type[BaseModel], indent: int = 2) -> str:
+def model_to_simple_json_schema(model: type[BaseModel], indent: int = 2) -> str:
     """
     Convert a Pydantic model to an ultra-simplified JSON schema string.
-    
+
     This format is designed for maximum readability with minimal technical details
     and no $defs structure - everything is flattened to the top level.
-    
+
     Args:
         model: A Pydantic model class
         indent: Number of spaces for indentation (default: 2)
-        
+
     Returns:
         A highly simplified JSON schema string with flat structure
     """

@@ -1,15 +1,12 @@
 """Models for bash tool."""
 
-from typing import Dict, Optional
 
 from pydantic import Field, field_validator
 
-from flowlib.core.models import StrictBaseModel
-
-from ...models import ToolResult, ToolStatus
+from ...models import ToolParameters, ToolResult, ToolStatus
 
 
-class BashParameters(StrictBaseModel):
+class BashParameters(ToolParameters):
     """Parameters for bash tool execution."""
 
     command: str = Field(..., description="Shell command to execute")
@@ -17,9 +14,11 @@ class BashParameters(StrictBaseModel):
     timeout: int = Field(default=30, description="Timeout in seconds")
     capture_output: bool = Field(default=True, description="Capture stdout and stderr")
     shell: bool = Field(default=True, description="Execute through shell")
-    env_vars: Dict[str, str] = Field(default_factory=dict, description="Environment variables to set")
+    env_vars: dict[str, str] = Field(
+        default_factory=dict, description="Environment variables to set"
+    )
 
-    @field_validator('command')
+    @field_validator("command")
     @classmethod
     def validate_command(cls, v: str) -> str:
         """Validate command."""
@@ -27,7 +26,7 @@ class BashParameters(StrictBaseModel):
             raise ValueError("Command cannot be empty")
         return v.strip()
 
-    @field_validator('timeout')
+    @field_validator("timeout")
     @classmethod
     def validate_timeout(cls, v: float) -> float:
         """Validate timeout."""
@@ -41,13 +40,13 @@ class BashParameters(StrictBaseModel):
 class BashResult(ToolResult):
     """Result from bash tool execution."""
 
-    command: Optional[str] = Field(default=None, description="Command that was executed")
-    exit_code: Optional[int] = Field(default=None, description="Process exit code")
-    stdout: Optional[str] = Field(default=None, description="Standard output")
-    stderr: Optional[str] = Field(default=None, description="Standard error")
-    execution_time: Optional[float] = Field(default=None, description="Execution time in seconds")
-    timed_out: Optional[bool] = Field(default=None, description="Whether the command timed out")
-    working_directory: Optional[str] = Field(default=None, description="Working directory used")
+    command: str | None = Field(default=None, description="Command that was executed")
+    exit_code: int | None = Field(default=None, description="Process exit code")
+    stdout: str | None = Field(default=None, description="Standard output")
+    stderr: str | None = Field(default=None, description="Standard error")
+    execution_time: float | None = Field(default=None, description="Execution time in seconds")
+    timed_out: bool | None = Field(default=None, description="Whether the command timed out")
+    working_directory: str | None = Field(default=None, description="Working directory used")
 
     def get_display_content(self) -> str:
         """Get user-friendly display text."""

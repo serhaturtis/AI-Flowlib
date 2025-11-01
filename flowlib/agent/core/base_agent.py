@@ -14,15 +14,16 @@ import re
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 from flowlib.agent.components.engine import EngineComponent
 from flowlib.agent.components.knowledge import KnowledgeComponent
 from flowlib.agent.components.memory.manager import AgentMemoryManager
 from flowlib.agent.components.persistence.base import BaseStatePersister
 from flowlib.agent.components.task.evaluation import CompletionEvaluatorComponent
-from flowlib.agent.components.task.planning import StructuredPlannerComponent
+from flowlib.agent.components.task.planning import ClassificationBasedPlannerComponent
 from flowlib.agent.components.task.reflection import ExecutionReflectorComponent
+from flowlib.agent.components.task.validation import ContextValidatorComponent
 from flowlib.agent.components.workspace import WorkspaceDiscoveryComponent
 from flowlib.agent.core.activity_stream import ActivityStream
 from flowlib.agent.core.agent_activity_formatter import AgentActivityFormatter
@@ -64,21 +65,23 @@ logger = logging.getLogger(__name__)
 
 class BaseAgent:
     """Base agent implementation with full functionality.
-    
+
     This is the core agent implementation that provides all fundamental
     agent capabilities including configuration, state, memory, flows,
     and learning through coordinated manager components.
-    
+
     BaseAgent owns and coordinates components through a private registry,
     but is not itself a component.
     """
 
-    def __init__(self,
-                 config: AgentConfig,
-                 task_description: str = "",
-                 state_persister: Optional[BaseStatePersister] = None):
+    def __init__(
+        self,
+        config: AgentConfig,
+        task_description: str = "",
+        state_persister: BaseStatePersister | None = None,
+    ):
         """Initialize the base agent.
-        
+
         Args:
             config: Agent configuration
             task_description: Task description for the agent
@@ -120,20 +123,23 @@ class BaseAgent:
         # Learning is now handled by KnowledgeComponent
 
         # Store initial task description
-        self._initial_task_description = task_description if task_description else "Interactive agent session"
+        self._initial_task_description = (
+            task_description if task_description else "Interactive agent session"
+        )
 
-        # Core components (Plan-Execute-Reflect-Evaluate architecture)
-        self._planner: Optional[StructuredPlannerComponent] = None
-        self._evaluator: Optional[CompletionEvaluatorComponent] = None
-        self._reflector: Optional[ExecutionReflectorComponent] = None
-        self._engine: Optional[EngineComponent] = None
+        # Core components (Validate-Plan-Execute-Reflect-Evaluate architecture)
+        self._planner: ClassificationBasedPlannerComponent | None = None
+        self._evaluator: CompletionEvaluatorComponent | None = None
+        self._reflector: ExecutionReflectorComponent | None = None
+        self._validator: ContextValidatorComponent | None = None
+        self._engine: EngineComponent | None = None
 
         # Activity stream and formatting
-        self._activity_stream: Optional[ActivityStream] = None
-        self._activity_formatter: Optional[AgentActivityFormatter] = None
+        self._activity_stream: ActivityStream | None = None
+        self._activity_formatter: AgentActivityFormatter | None = None
 
         # Knowledge plugins
-        self._knowledge_plugins: Optional[KnowledgePluginManager] = None
+        self._knowledge_plugins: KnowledgePluginManager | None = None
 
         # Track start time
         self._start_time = datetime.now()
@@ -143,8 +149,8 @@ class BaseAgent:
         self.output_queue: queue.Queue[AgentResponse] = queue.Queue()
 
         # Thread management
-        self._agent_thread: Optional[threading.Thread] = None
-        self._agent_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._agent_thread: threading.Thread | None = None
+        self._agent_loop: asyncio.AbstractEventLoop | None = None
         self._running = False
 
     async def initialize(self) -> None:
@@ -152,7 +158,6 @@ class BaseAgent:
         if self._initialized:
             return
         try:
-
             # Initialize new tool system
             logger.info("Initialized new tool system architecture")
 
@@ -164,7 +169,9 @@ class BaseAgent:
             if not self._knowledge_plugins:
                 self._knowledge_plugins = KnowledgePluginManager()
                 await self._knowledge_plugins.initialize()
-                logger.info(f"Initialized knowledge plugins: {list(self._knowledge_plugins.loaded_plugins.keys())}")
+                logger.info(
+                    f"Initialized knowledge plugins: {list(self._knowledge_plugins.loaded_plugins.keys())}"
+                )
 
             # Register utility components in registry for access by other components
             self._registry.register("activity_stream", self._activity_stream)
@@ -205,8 +212,22 @@ class BaseAgent:
                 agent_persona=self._config_manager.config.persona,
                 agent_role=agent_role,
                 working_directory=os.getcwd(),
-                user_id=None
+                user_id=None,
             )
+
+            # AGENT LAYER: Set agent_persona as system_prompt on LLM provider
+            # This enables persona propagation through all LLM calls
+            # Core provider remains agnostic - it just prepends whatever is set
+            try:
+                from flowlib.providers.core.registry import provider_registry
+                from flowlib.providers.llm.base import LLMProvider
+
+                llm_provider = await provider_registry.get_by_config("default-llm")
+                if isinstance(llm_provider, LLMProvider):
+                    llm_provider.set_system_prompt(self._config_manager.config.persona)
+                    logger.info("Agent persona set as system_prompt on LLM provider")
+            except Exception as e:
+                logger.warning(f"Could not set system_prompt on LLM provider: {e}")
 
             # Learning capability is now part of KnowledgeComponent
 
@@ -238,9 +259,11 @@ class BaseAgent:
             if self._evaluator and self._evaluator.initialized:
                 await self._evaluator.shutdown()
 
-
             if self._reflector and self._reflector.initialized:
                 await self._reflector.shutdown()
+
+            if self._validator and self._validator.initialized:
+                await self._validator.shutdown()
 
             if self._knowledge and self._knowledge.initialized:
                 await self._knowledge.shutdown()
@@ -249,8 +272,10 @@ class BaseAgent:
                 await self._workspace_discovery.shutdown()
 
             # Auto-save state if configured
-            if (self._state_manager.should_auto_save(self._config_manager.config) and
-                self._state_manager.current_state):
+            if (
+                self._state_manager.should_auto_save(self._config_manager.config)
+                and self._state_manager.current_state
+            ):
                 await self._state_manager.save_state()
 
             # Shutdown all managers
@@ -280,7 +305,9 @@ class BaseAgent:
                 await self._state_manager.load_state(agent_config.task_id)
                 logger.info(f"Loaded existing state for task_id: {agent_config.task_id}")
             except Exception as e:
-                logger.warning(f"Failed to load state for task {agent_config.task_id}, creating new state: {e}")
+                logger.warning(
+                    f"Failed to load state for task {agent_config.task_id}, creating new state: {e}"
+                )
                 await self._state_manager.create_state(self._initial_task_description)
         else:
             # Create new state
@@ -292,15 +319,17 @@ class BaseAgent:
 
         # Import flows to register them (ensures they're in flow_registry)
 
-        # Initialize structured planner (replaces TaskGenerator + TaskThinker + TaskDecomposer)
-        from flowlib.agent.components.task.planning import StructuredPlannerComponent
-        self._planner = StructuredPlannerComponent()
-        self._registry.register("planner", self._planner, StructuredPlannerComponent)
+        # Initialize classification-based planner (replaces TaskGenerator + TaskThinker + TaskDecomposer)
+        from flowlib.agent.components.task.planning import ClassificationBasedPlannerComponent
+
+        self._planner = ClassificationBasedPlannerComponent()
+        self._registry.register("planner", self._planner, ClassificationBasedPlannerComponent)
 
         # Initialize completion evaluator
         from flowlib.agent.components.task.evaluation import (
             CompletionEvaluatorComponent,
         )
+
         self._evaluator = CompletionEvaluatorComponent()
         self._registry.register("evaluator", self._evaluator, CompletionEvaluatorComponent)
 
@@ -308,16 +337,20 @@ class BaseAgent:
 
         # Initialize execution reflector
         from flowlib.agent.components.task.reflection import ExecutionReflectorComponent
+
         self._reflector = ExecutionReflectorComponent()
         self._registry.register("reflector", self._reflector, ExecutionReflectorComponent)
+
+        # Initialize context validator (proactive information gathering)
+        from flowlib.agent.components.task.validation import ContextValidatorComponent
+
+        self._validator = ContextValidatorComponent(context_manager=self._context_manager)
+        self._registry.register("validator", self._validator, ContextValidatorComponent)
 
         # Initialize knowledge component if learning is enabled
         self._knowledge = None
         if config.enable_learning and config.knowledge:
-            self._knowledge = KnowledgeComponent(
-                config=config.knowledge,
-                name="agent_knowledge"
-            )
+            self._knowledge = KnowledgeComponent(config=config.knowledge, name="agent_knowledge")
             self._registry.register("knowledge", self._knowledge, KnowledgeComponent)
             logger.info("Knowledge component initialized")
         elif not config.enable_learning:
@@ -327,13 +360,14 @@ class BaseAgent:
         self._workspace_discovery = None
         if config.workspace_discovery:
             self._workspace_discovery = WorkspaceDiscoveryComponent(
-                config=config.workspace_discovery,
-                name="workspace_discovery"
+                config=config.workspace_discovery, name="workspace_discovery"
             )
-            self._registry.register("workspace_discovery", self._workspace_discovery, WorkspaceDiscoveryComponent)
+            self._registry.register(
+                "workspace_discovery", self._workspace_discovery, WorkspaceDiscoveryComponent
+            )
             logger.info("Workspace discovery component initialized")
 
-        # Initialize engine with Plan-Execute-Reflect-Evaluate architecture
+        # Initialize engine with Validate-Plan-Execute-Reflect-Evaluate architecture
         self._engine = EngineComponent(
             agent_name=config.name,
             agent_persona=config.persona,
@@ -343,8 +377,9 @@ class BaseAgent:
             planner=self._planner,
             evaluator=self._evaluator,
             reflector=self._reflector,
+            validator=self._validator,
             activity_stream=self._activity_stream,
-            context_manager=self._context_manager
+            context_manager=self._context_manager,
         )
         self._engine.set_registry(self._registry)
         self._registry.register("engine", self._engine, EngineComponent)
@@ -353,6 +388,7 @@ class BaseAgent:
         await self._planner.initialize()
         await self._evaluator.initialize()
         await self._reflector.initialize()
+        await self._validator.initialize()
         if self._knowledge:
             await self._knowledge.initialize()
         if self._workspace_discovery:
@@ -391,11 +427,13 @@ class BaseAgent:
         """Load agent state."""
         await self._state_manager.load_state(task_id)
 
-    async def delete_state(self, task_id: Optional[str] = None) -> None:
+    async def delete_state(self, task_id: str | None = None) -> None:
         """Delete agent state."""
         await self._state_manager.delete_state(task_id)
 
-    async def list_states(self, filter_criteria: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
+    async def list_states(
+        self, filter_criteria: dict[str, str] | None = None
+    ) -> list[dict[str, str]]:
         """List available states."""
         return await self._state_manager.list_states(filter_criteria)
 
@@ -412,41 +450,44 @@ class BaseAgent:
         """Search memory for relevant information."""
         return await self._memory_manager.search_memory(query, **kwargs)
 
-    async def get_memory_stats(self) -> Dict[str, Any]:
+    async def get_memory_stats(self) -> dict[str, Any]:
         """Get memory system statistics."""
         return await self._memory_manager.get_memory_stats()
 
     def _generate_semantic_key(self, content: str, prefix: str) -> str:
         """Generate semantic key based on message content instead of timestamp.
-        
+
         Args:
             content: Message content
             prefix: Key prefix (e.g., 'conversation', 'task', 'response')
-            
+
         Returns:
             Semantic key in format: prefix_type_hash
         """
         # Clean and normalize content
-        clean_content = re.sub(r'[^\w\s]', '', content.lower().strip())
+        clean_content = re.sub(r"[^\w\s]", "", content.lower().strip())
         words = clean_content.split()[:5]  # First 5 words for semantic meaning
 
         # Determine content type - questions take priority over greetings
-        if '?' in content:
-            content_type = 'question'
-        elif len(content) <= 20 and any(greeting in content.lower() for greeting in ['hello', 'hi', 'hey', 'good morning', 'good afternoon']):
-            content_type = 'greeting'
-        elif any(keyword in content.lower() for keyword in ['create', 'make', 'build', 'generate']):
-            content_type = 'creation'
-        elif any(keyword in content.lower() for keyword in ['list', 'show', 'display', 'find']):
-            content_type = 'query'
+        if "?" in content:
+            content_type = "question"
+        elif len(content) <= 20 and any(
+            greeting in content.lower()
+            for greeting in ["hello", "hi", "hey", "good morning", "good afternoon"]
+        ):
+            content_type = "greeting"
+        elif any(keyword in content.lower() for keyword in ["create", "make", "build", "generate"]):
+            content_type = "creation"
+        elif any(keyword in content.lower() for keyword in ["list", "show", "display", "find"]):
+            content_type = "query"
         else:
-            content_type = 'message'
+            content_type = "message"
 
         # Create semantic identifier from first few words
         if words:
-            semantic_part = '_'.join(words[:3])  # First 3 words max
+            semantic_part = "_".join(words[:3])  # First 3 words max
         else:
-            semantic_part = 'empty'
+            semantic_part = "empty"
 
         # Add content hash for uniqueness (short)
         content_hash = hashlib.md5(content.encode()).hexdigest()[:8]
@@ -455,7 +496,7 @@ class BaseAgent:
 
     # Delegate flow operations to FlowRunner
     @property
-    def flows(self) -> Dict[str, "Flow"]:
+    def flows(self) -> dict[str, "Flow"]:
         """Get registered flows."""
         return self._flow_runner.flows
 
@@ -471,15 +512,17 @@ class BaseAgent:
         """Unregister a flow from the agent."""
         self._flow_runner.unregister_flow(flow_name)
 
-    def get_flow_descriptions(self) -> List[Dict[str, Any]]:
+    def get_flow_descriptions(self) -> list[dict[str, Any]]:
         """Get descriptions of all registered flows."""
         return self._flow_runner.get_flow_descriptions()
 
-    async def execute_flow(self, flow_name: str, inputs: Dict[str, str], **kwargs: str) -> FlowResult:
+    async def execute_flow(
+        self, flow_name: str, inputs: dict[str, str], **kwargs: str
+    ) -> FlowResult:
         """Execute a flow with given inputs."""
         return await self._flow_runner.execute_flow(flow_name, inputs, **kwargs)
 
-    async def list_available_flows(self) -> List[Dict[str, Any]]:
+    async def list_available_flows(self) -> list[dict[str, Any]]:
         """List all available flows."""
         return await self._flow_runner.list_available_flows()
 
@@ -488,7 +531,9 @@ class BaseAgent:
         return self._flow_runner.get_flow_registry()
 
     # Delegate learning operations to LearningManager
-    async def learn(self, content: str, context: Optional[str] = None, focus_areas: Optional[List[str]] = None) -> Any:
+    async def learn(
+        self, content: str, context: str | None = None, focus_areas: list[str] | None = None
+    ) -> Any:
         """Learn from content."""
         # Learning operations now handled by knowledge component
         if self._knowledge:
@@ -498,15 +543,17 @@ class BaseAgent:
             return result
         raise NotImplementedError("Learning requires knowledge component to be configured")
 
-
     # Engine delegation
-    async def execute_cycle(self, state: Optional[AgentState] = None, conversation_history: Optional[str] = None, memory_context: str = "agent", no_flow_is_error: bool = False) -> bool:
+    async def execute_cycle(
+        self,
+        state: AgentState | None = None,
+        conversation_history: str | None = None,
+        memory_context: str = "agent",
+        no_flow_is_error: bool = False,
+    ) -> bool:
         """Execute a single agent cycle."""
         if not self._engine:
-            raise NotInitializedError(
-                component_name=self._name,
-                operation="execute_cycle"
-            )
+            raise NotInitializedError(component_name=self._name, operation="execute_cycle")
 
         # Use current state if not provided
         if state is None:
@@ -518,10 +565,10 @@ class BaseAgent:
             state=state,
             conversation_history=conversation_history,
             memory_context=memory_context,
-            no_flow_is_error=no_flow_is_error
+            no_flow_is_error=no_flow_is_error,
         )
 
-    async def process_message(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+    async def process_message(self, message: str, context: dict[str, Any] | None = None) -> str:
         """Process a single message and return the response.
 
         This is the public interface for message processing that wraps
@@ -552,7 +599,7 @@ class BaseAgent:
             total_flows=len(self.flows),
             active_flows=len(self.flows),  # Assume all flows are active
             infrastructure_flows=0,  # TODO: categorize flows properly
-            agent_flows=len(self.flows)
+            agent_flows=len(self.flows),
         )
 
         # Collect component stats
@@ -563,49 +610,83 @@ class BaseAgent:
         if self._initialized:
             if self._memory_manager.memory:
                 try:
-                    mem_stats = self._memory_manager.memory.get_stats() if hasattr(self._memory_manager.memory, 'get_stats') else {}
+                    mem_stats = (
+                        self._memory_manager.memory.get_stats()
+                        if hasattr(self._memory_manager.memory, "get_stats")
+                        else {}
+                    )
                     # Ensure it's a dict, not a Mock
-                    if hasattr(mem_stats, 'items'):  # Duck typing for dict-like object
-                        mem_stats_dict = dict(mem_stats) if not isinstance(mem_stats, dict) else mem_stats
+                    if hasattr(mem_stats, "items"):  # Duck typing for dict-like object
+                        mem_stats_dict = (
+                            dict(mem_stats) if not isinstance(mem_stats, dict) else mem_stats
+                        )
                     else:
                         mem_stats_dict = {}
                     memory_stats = ComponentStats(
                         initialized=True,
                         name="AgentMemory",
-                        stats=ComponentStatistics(**mem_stats_dict) if mem_stats_dict else ComponentStatistics()
+                        stats=ComponentStatistics(**mem_stats_dict)
+                        if mem_stats_dict
+                        else ComponentStatistics(),
                     )
                 except Exception:
-                    memory_stats = ComponentStats(initialized=True, name="AgentMemory", stats=ComponentStatistics())
+                    memory_stats = ComponentStats(
+                        initialized=True, name="AgentMemory", stats=ComponentStatistics()
+                    )
 
             if self._planner:
                 try:
-                    planner_stats_data = self._planner.get_stats() if hasattr(self._planner, 'get_stats') else {}
-                    if hasattr(planner_stats_data, 'items'):
-                        planner_stats_dict = dict(planner_stats_data) if not isinstance(planner_stats_data, dict) else planner_stats_data
+                    planner_stats_data = (
+                        self._planner.get_stats() if hasattr(self._planner, "get_stats") else {}
+                    )
+                    if hasattr(planner_stats_data, "items"):
+                        planner_stats_dict = (
+                            dict(planner_stats_data)
+                            if not isinstance(planner_stats_data, dict)
+                            else planner_stats_data
+                        )
                     else:
                         planner_stats_dict = {}
                     planner_stats = ComponentStats(
-                        initialized=self._planner.initialized if hasattr(self._planner, 'initialized') else True,
+                        initialized=self._planner.initialized
+                        if hasattr(self._planner, "initialized")
+                        else True,
                         name="StructuredPlanner",
-                        stats=ComponentStatistics(**planner_stats_dict) if planner_stats_dict else ComponentStatistics()
+                        stats=ComponentStatistics(**planner_stats_dict)
+                        if planner_stats_dict
+                        else ComponentStatistics(),
                     )
                 except Exception:
-                    planner_stats = ComponentStats(initialized=True, name="StructuredPlanner", stats=ComponentStatistics())
+                    planner_stats = ComponentStats(
+                        initialized=True, name="StructuredPlanner", stats=ComponentStatistics()
+                    )
 
             if self._engine:
                 try:
-                    engine_stats_data = self._engine.get_stats() if hasattr(self._engine, 'get_stats') else {}
-                    if hasattr(engine_stats_data, 'items'):
-                        engine_stats_dict = dict(engine_stats_data) if not isinstance(engine_stats_data, dict) else engine_stats_data
+                    engine_stats_data = (
+                        self._engine.get_stats() if hasattr(self._engine, "get_stats") else {}
+                    )
+                    if hasattr(engine_stats_data, "items"):
+                        engine_stats_dict = (
+                            dict(engine_stats_data)
+                            if not isinstance(engine_stats_data, dict)
+                            else engine_stats_data
+                        )
                     else:
                         engine_stats_dict = {}
                     engine_stats = ComponentStats(
-                        initialized=self._engine.initialized if hasattr(self._engine, 'initialized') else True,
+                        initialized=self._engine.initialized
+                        if hasattr(self._engine, "initialized")
+                        else True,
                         name="EngineComponent",
-                        stats=ComponentStatistics(**engine_stats_dict) if engine_stats_dict else ComponentStatistics()
+                        stats=ComponentStatistics(**engine_stats_dict)
+                        if engine_stats_dict
+                        else ComponentStatistics(),
                     )
                 except Exception:
-                    engine_stats = ComponentStats(initialized=True, name="AgentEngine", stats=ComponentStatistics())
+                    engine_stats = ComponentStats(
+                        initialized=True, name="AgentEngine", stats=ComponentStatistics()
+                    )
 
         # Create proper AgentConfiguration with only the required fields
         if self.config:
@@ -615,7 +696,7 @@ class BaseAgent:
                 provider_name=self.config.provider_name,
                 system_prompt=self.config.persona,  # Use persona as system prompt
                 max_iterations=self.config.max_iterations,
-                debug_mode=False  # Default to False
+                debug_mode=False,  # Default to False
             )
         else:
             config_data = AgentConfiguration(
@@ -624,18 +705,18 @@ class BaseAgent:
                 provider_name="default",
                 system_prompt="You are a helpful AI assistant",
                 max_iterations=10,
-                debug_mode=False
+                debug_mode=False,
             )
 
         # Create AgentExecutionState from current state manager data
         execution_state = None
         if self._state_manager.current_state:
             execution_state = AgentExecutionState(
-                current_task=getattr(self._state_manager.current_state, 'task_description', ''),
+                current_task=getattr(self._state_manager.current_state, "task_description", ""),
                 execution_phase="running" if self._initialized else "idle",
                 last_action="",
                 error_state=False,
-                iteration_count=getattr(self._state_manager.current_state, 'cycles', 0)
+                iteration_count=getattr(self._state_manager.current_state, "cycles", 0),
             )
 
         return AgentStats(
@@ -648,7 +729,7 @@ class BaseAgent:
             memory=memory_stats,
             planner=planner_stats,
             engine=engine_stats,
-            performance=PerformanceMetrics()
+            performance=PerformanceMetrics(),
         )
 
     def get_uptime(self) -> float:
@@ -656,7 +737,7 @@ class BaseAgent:
         return (datetime.now() - self._start_time).total_seconds()
 
     # Activity stream management
-    def set_activity_stream_handler(self, handler: Optional[Any] = None) -> None:
+    def set_activity_stream_handler(self, handler: Any | None = None) -> None:
         """Set activity stream handler."""
         if not self._activity_stream:
             self._activity_stream = ActivityStream()
@@ -665,13 +746,13 @@ class BaseAgent:
             self._activity_stream.set_output_handler(handler)
             self._activity_formatter = AgentActivityFormatter()
 
-    def get_activity_stream(self) -> Optional[ActivityStream]:
+    def get_activity_stream(self) -> ActivityStream | None:
         """Get activity stream."""
         return self._activity_stream
 
     # Provider access
 
-    def get_tools(self) -> Dict[str, Any]:
+    def get_tools(self) -> dict[str, Any]:
         """Get available tools/capabilities."""
         tools = {}
 
@@ -680,12 +761,12 @@ class BaseAgent:
             tools[f"flow_{flow_name}"] = {
                 "type": "flow",
                 "name": flow_name,
-                "description": getattr(self.flows[flow_name], 'description', 'Flow execution tool')
+                "description": getattr(self.flows[flow_name], "description", "Flow execution tool"),
             }
 
         return tools
 
-    def get_available_tools(self, agent_role: Optional[str] = None) -> List[str]:
+    def get_available_tools(self, agent_role: str | None = None) -> list[str]:
         """Get available tools from the task executor component.
 
         This is the single source of truth for tool discovery.
@@ -704,6 +785,7 @@ class BaseAgent:
 
         # Get tools directly from registry
         from flowlib.agent.components.task.execution.registry import tool_registry
+
         return tool_registry.list_tools_for_role(agent_role)
 
     def _get_agent_role(self) -> str:
@@ -720,24 +802,21 @@ class BaseAgent:
 
         # Get the profile config and extract the agent role
         from flowlib.resources.registry.registry import resource_registry
+
         try:
             profile_config = resource_registry.get(profile_name)
-            if not hasattr(profile_config, 'agent_role'):
+            if not hasattr(profile_config, "agent_role"):
                 raise ValueError(f"Profile '{profile_name}' has no agent_role configured")
             return profile_config.agent_role
         except KeyError:
-            raise ValueError(f"Agent profile '{profile_name}' not found in resource registry")
-
+            raise ValueError(f"Agent profile '{profile_name}' not found in resource registry") from None
 
     def _check_initialized(self, operation: str) -> None:
         """Check if the agent is initialized before performing operation."""
         if not self._initialized:
-            raise NotInitializedError(
-                component_name=self._name,
-                operation=operation
-            )
+            raise NotInitializedError(component_name=self._name, operation=operation)
 
-    async def _get_recent_conversation_history(self, limit: int = 5) -> List[ConversationMessage]:
+    async def _get_recent_conversation_history(self, limit: int = 5) -> list[ConversationMessage]:
         """Get recent conversation history for task generation context.
 
         Args:
@@ -755,10 +834,12 @@ class BaseAgent:
             recent_messages = await self._memory_manager.search_memory(
                 query="user messages and responses",
                 limit=limit,
-                context="conversation"  # Filter by conversation context
+                context="conversation",  # Filter by conversation context
             )
 
-            logger.info(f"Retrieved {len(recent_messages) if recent_messages else 0} messages from memory")
+            logger.info(
+                f"Retrieved {len(recent_messages) if recent_messages else 0} messages from memory"
+            )
 
             # Convert memory items to conversation history format
             conversation_history = []
@@ -767,13 +848,17 @@ class BaseAgent:
                     try:
                         # Memory items must have value with message_type
                         message = ConversationMessage(
-                            role=MessageRole.USER if item.value.message_type.value == "conversation" else MessageRole.SYSTEM,
+                            role=MessageRole.USER
+                            if item.value.message_type.value == "conversation"
+                            else MessageRole.SYSTEM,
                             content=item.value.content,
-                            timestamp=item.value.created_at.isoformat()
+                            timestamp=item.value.created_at.isoformat(),
                         )
                         conversation_history.append(message)
                     except Exception as e:
-                        logger.warning(f"Failed to convert memory item to conversation message: {e}")
+                        logger.warning(
+                            f"Failed to convert memory item to conversation message: {e}"
+                        )
                         continue
             else:
                 logger.info("No previous conversation messages found in memory")
@@ -784,7 +869,7 @@ class BaseAgent:
             logger.error(f"Failed to retrieve conversation history: {e}")
             raise ExecutionError(f"Failed to retrieve conversation history: {e}") from e
 
-    async def _send_to_engine(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+    async def _send_to_engine(self, message: str, context: dict[str, Any] | None = None) -> str:
         """Send message to engine for task decomposition and execution."""
         self._check_initialized("message processing")
 
@@ -810,19 +895,19 @@ class BaseAgent:
             self._logger.error(f"Error processing message through engine: {e}")
             raise ExecutionError(f"Failed to process message: {e}") from e
 
-
-    async def _store_conversation_turn(self, message: str, response: str, tool_calls: list, tool_results: list) -> None:
+    async def _store_conversation_turn(
+        self, message: str, response: str, tool_calls: list, tool_results: list
+    ) -> None:
         """Store conversation turn in state manager."""
         from flowlib.agent.models.state import ConversationTurn
 
         turn = ConversationTurn(
             user_message=message,
-            agent_response=response
+            agent_response=response,
             # Note: tool_calls, tool_results, context_snapshot not supported by ConversationTurn
         )
 
         await self._state_manager.add_conversation_turn(turn)
-
 
     # Thread and Queue Management
 
@@ -833,9 +918,7 @@ class BaseAgent:
 
         self._running = True
         self._agent_thread = threading.Thread(
-            target=self._run_agent_thread,
-            name=f"agent-{self._name}",
-            daemon=False
+            target=self._run_agent_thread, name=f"agent-{self._name}", daemon=False
         )
         self._agent_thread.start()
         logger.info(f"Started agent {self._name} in thread {self._agent_thread.name}")
@@ -851,9 +934,7 @@ class BaseAgent:
         # Send shutdown message
         if self._agent_thread:
             shutdown_msg = AgentMessage(
-                message_type=AgentMessageType.SHUTDOWN,
-                content="",
-                response_queue_id=""
+                message_type=AgentMessageType.SHUTDOWN, content="", response_queue_id=""
             )
             self.input_queue.put(shutdown_msg)
 
@@ -906,9 +987,11 @@ class BaseAgent:
                             error=f"Agent initialization failed: {init_error}",
                             response_data=AgentResponseData(content=""),
                             processing_time=0,
-                            activity_stream=[]
+                            activity_stream=[],
                         )
-                        logger.debug(f"[Agent-{self._name}] Sending error response for message {message.message_id}")
+                        logger.debug(
+                            f"[Agent-{self._name}] Sending error response for message {message.message_id}"
+                        )
                         self.output_queue.put(error_response)
                     except queue.Empty:
                         break
@@ -923,7 +1006,9 @@ class BaseAgent:
                     # Use thread-safe queue with timeout
                     try:
                         message = self.input_queue.get(timeout=1.0)
-                        logger.info(f"[Agent-{self._name}] Received message {message.message_id} of type {message.message_type}")
+                        logger.info(
+                            f"[Agent-{self._name}] Received message {message.message_id} of type {message.message_type}"
+                        )
                     except queue.Empty:
                         continue
 
@@ -935,22 +1020,26 @@ class BaseAgent:
                     # Process message
                     logger.debug(f"[Agent-{self._name}] Processing message {message.message_id}...")
                     response = await self._handle_message_routing(message)
-                    logger.debug(f"[Agent-{self._name}] Message processed, response success={response.success}")
+                    logger.debug(
+                        f"[Agent-{self._name}] Message processed, response success={response.success}"
+                    )
 
                     # Send response to output queue
                     logger.debug(f"[Agent-{self._name}] Putting response in output queue...")
                     self.output_queue.put(response)
-                    logger.info(f"[Agent-{self._name}] Response for message {message.message_id} sent to output queue")
+                    logger.info(
+                        f"[Agent-{self._name}] Response for message {message.message_id} sent to output queue"
+                    )
                 except Exception as e:
                     logger.error(f"Error processing message in agent {self._name}: {e}")
                     # Send error response
-                    if 'message' in locals():
+                    if "message" in locals():
                         error_response = AgentResponse(
                             message_id=message.message_id,
                             success=False,
                             error=str(e),
                             response_data=AgentResponseData(content=""),
-                            processing_time=0
+                            processing_time=0,
                         )
                         self.output_queue.put(error_response)
 
@@ -961,10 +1050,10 @@ class BaseAgent:
 
     async def _handle_message_routing(self, message: AgentMessage) -> AgentResponse:
         """Route message by type and create AgentResponse wrapper.
-        
+
         Args:
             message: Message to route
-            
+
         Returns:
             Agent response with proper wrapping
         """
@@ -981,10 +1070,7 @@ class BaseAgent:
             logger.debug(f"[Agent-{self._name}] Routing message type: {message.message_type}")
             if message.message_type == AgentMessageType.CONVERSATION:
                 logger.debug(f"[Agent-{self._name}] Processing conversation message")
-                result = await self._handle_message_lifecycle(
-                    message.content,
-                    message.context
-                )
+                result = await self._handle_message_lifecycle(message.content, message.context)
             elif message.message_type == AgentMessageType.TASK:
                 logger.debug(f"[Agent-{self._name}] Processing task message")
                 result = await self._execute_task_message(message)
@@ -1010,19 +1096,20 @@ class BaseAgent:
                     [dict(entry) for entry in self._activity_stream.activity_buffer]
                 )
 
-            response_data = AgentResponseData(
-                content=content,
-                activity=activity_text
-            )
+            response_data = AgentResponseData(content=content, activity=activity_text)
 
             response = AgentResponse(
                 message_id=message.message_id,
                 success=True,
                 response_data=response_data,
                 processing_time=time.time() - start_time,
-                activity_stream=[dict(entry) for entry in self._activity_stream.activity_buffer] if self._activity_stream else []
+                activity_stream=[dict(entry) for entry in self._activity_stream.activity_buffer]
+                if self._activity_stream
+                else [],
             )
-            logger.debug(f"[Agent-{self._name}] Built response: success=True, content_length={len(response_data.content)}")
+            logger.debug(
+                f"[Agent-{self._name}] Built response: success=True, content_length={len(response_data.content)}"
+            )
             return response
 
         except Exception as e:
@@ -1033,12 +1120,16 @@ class BaseAgent:
                 error=str(e),
                 response_data=AgentResponseData(content=""),
                 processing_time=time.time() - start_time,
-                activity_stream=[dict(entry) for entry in self._activity_stream.activity_buffer] if self._activity_stream else []
+                activity_stream=[dict(entry) for entry in self._activity_stream.activity_buffer]
+                if self._activity_stream
+                else [],
             )
 
-    async def _handle_message_lifecycle(self, message: str, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    async def _handle_message_lifecycle(
+        self, message: str, context: dict[str, Any] | None
+    ) -> dict[str, Any]:
         """Handle complete message lifecycle: memory → engine → learning → metadata wrapping.
-        
+
         This orchestrates the full message handling pipeline.
         """
         logger.debug(f"[Agent-{self._name}] Processing internal message: {message[:50]}...")
@@ -1053,29 +1144,29 @@ class BaseAgent:
             message_type=AgentMessageType.CONVERSATION,
             content=message,
             context=context,
-            response_queue_id="memory_storage"  # Required field
+            response_queue_id="memory_storage",  # Required field
         )
 
         # Create semantic key based on message content
         semantic_key = self._generate_semantic_key(message, "conversation")
 
         await self.store_memory(
-            key=semantic_key,
-            value=agent_message,
-            context=AgentMessageType.CONVERSATION.value
+            key=semantic_key, value=agent_message, context=AgentMessageType.CONVERSATION.value
         )
 
         # Use flow-based message processing (sequential as before)
         logger.debug(f"[Agent-{self._name}] Processing message with flows")
         response = await self._send_to_engine(message, context)
-        logger.debug(f"[Agent-{self._name}] Flow processing complete, response: {str(response)[:100]}...")
+        logger.debug(
+            f"[Agent-{self._name}] Flow processing complete, response: {str(response)[:100]}..."
+        )
 
         # Return the content string directly - activity stream will be handled by wrapper
         response_content = response if isinstance(response, str) else str(response)
         logger.debug(f"[Agent-{self._name}] Returning content length: {len(response_content)}")
         return response_content
 
-    async def _execute_task_message(self, message: AgentMessage) -> Dict[str, Any]:
+    async def _execute_task_message(self, message: AgentMessage) -> dict[str, Any]:
         """Execute a task message."""
         # Extract task details from message
         task_data = message.metadata.get("task", {})
@@ -1086,29 +1177,25 @@ class BaseAgent:
             task_description = task_data.get("description", message.content)
             result = await self._engine.execute(
                 task_description=task_description,
-                conversation_history=None  # Will be managed by state manager
+                conversation_history=None,  # Will be managed by state manager
             )
             return {"task_result": result}
         else:
             # Fallback to conversation processing
             return await self._handle_message_lifecycle(
-                f"Execute task: {message.content}",
-                message.context
+                f"Execute task: {message.content}", message.context
             )
 
-    async def _execute_command_message(self, message: AgentMessage) -> Dict[str, Any]:
+    async def _execute_command_message(self, message: AgentMessage) -> dict[str, Any]:
         """Execute a command message."""
         # Commands are processed through flows
         # Context is required for command messages
         command_context = message.context or {}
         command_context["command"] = True
 
-        return await self._handle_message_lifecycle(
-            message.content,
-            command_context
-        )
+        return await self._handle_message_lifecycle(message.content, command_context)
 
-    async def _execute_system_message(self, message: AgentMessage) -> Dict[str, Any]:
+    async def _execute_system_message(self, message: AgentMessage) -> dict[str, Any]:
         """Execute a system message."""
         # System messages for agent control
         system_command = message.metadata.get("command", "")
@@ -1117,7 +1204,10 @@ class BaseAgent:
             return self.get_stats().model_dump()
         elif system_command == "reset":
             # Reset functionality not implemented
-            return {"status": "reset_not_available", "message": "Reset functionality not implemented"}
+            return {
+                "status": "reset_not_available",
+                "message": "Reset functionality not implemented",
+            }
         elif system_command == "reload_config":
             # Reload configuration
             new_config = message.metadata.get("config")

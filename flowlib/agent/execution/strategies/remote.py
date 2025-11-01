@@ -1,7 +1,7 @@
 """Remote execution strategy - message queue consumer."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -19,22 +19,10 @@ logger = logging.getLogger(__name__)
 class RemoteConfig(StrictBaseModel):
     """Configuration for remote execution strategy."""
 
-    mq_provider_name: str = Field(
-        ...,
-        description="Message queue provider config name"
-    )
-    task_queue_name: str = Field(
-        ...,
-        description="Queue to consume tasks from"
-    )
-    results_queue_name: str = Field(
-        ...,
-        description="Queue to publish results to"
-    )
-    state_persister_name: str = Field(
-        ...,
-        description="State persistence provider config name"
-    )
+    mq_provider_name: str = Field(..., description="Message queue provider config name")
+    task_queue_name: str = Field(..., description="Queue to consume tasks from")
+    results_queue_name: str = Field(..., description="Queue to publish results to")
+    state_persister_name: str = Field(..., description="State persistence provider config name")
 
 
 class RemoteStrategy(ExecutionStrategy):
@@ -57,7 +45,7 @@ class RemoteStrategy(ExecutionStrategy):
     def __init__(self, config: RemoteConfig):
         self.config = config
         self._running = False
-        self._mq_provider: Optional[Any] = None
+        self._mq_provider: Any | None = None
 
     async def execute(self, agent: BaseAgent) -> None:
         """Run as remote worker until stopped.
@@ -71,13 +59,10 @@ class RemoteStrategy(ExecutionStrategy):
         # Get MQ provider
         from flowlib.providers.core.registry import provider_registry
 
-        self._mq_provider = await provider_registry.get_by_config(
-            self.config.mq_provider_name
-        )
+        self._mq_provider = await provider_registry.get_by_config(self.config.mq_provider_name)
 
         logger.info(
-            f"Starting remote worker for agent '{agent.name}': "
-            f"queue={self.config.task_queue_name}"
+            f"Starting remote worker for agent '{agent.name}': queue={self.config.task_queue_name}"
         )
 
         self._running = True
@@ -85,7 +70,7 @@ class RemoteStrategy(ExecutionStrategy):
         # Start consuming messages
         await self._mq_provider.consume(
             queue_name=self.config.task_queue_name,
-            callback=lambda msg: self._process_task(agent, msg)
+            callback=lambda msg: self._process_task(agent, msg),
         )
 
     async def _process_task(self, agent: BaseAgent, message: Any) -> None:
@@ -115,9 +100,7 @@ class RemoteStrategy(ExecutionStrategy):
             agent._state_manager.current_state = state
 
             # Execute autonomously
-            autonomous_config = AutonomousConfig(
-                max_cycles=task_msg.max_cycles or 10
-            )
+            autonomous_config = AutonomousConfig(max_cycles=task_msg.max_cycles or 10)
             strategy = AutonomousStrategy(autonomous_config)
             final_state = await strategy.execute(agent)
 
@@ -129,13 +112,9 @@ class RemoteStrategy(ExecutionStrategy):
                 AgentResultMessage,
             )
 
-            result_msg = AgentResultMessage(
-                task_id=task_msg.task_id,
-                result=final_state
-            )
+            result_msg = AgentResultMessage(task_id=task_msg.task_id, result=final_state)
             await self._mq_provider.publish(
-                queue_name=self.config.results_queue_name,
-                message=result_msg.model_dump_json()
+                queue_name=self.config.results_queue_name, message=result_msg.model_dump_json()
             )
 
             logger.info(f"Task complete: {task_msg.task_id}")

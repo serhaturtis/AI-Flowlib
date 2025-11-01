@@ -8,7 +8,7 @@ import inspect
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Type, cast
+from typing import Any, cast
 
 from llama_cpp import LlamaGrammar
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 class GenerationParams(BaseModel):
     """Generation parameters model for LlamaCpp."""
+
     model_config = ConfigDict(extra="forbid")
 
     max_tokens: int = Field(default=512, description="Maximum tokens to generate")
@@ -40,15 +41,15 @@ class GenerationParams(BaseModel):
     repeat_penalty: float = Field(default=1.1, description="Repetition penalty")
 
     @classmethod
-    def from_model_config(cls, model_config: object) -> 'GenerationParams':
+    def from_model_config(cls, model_config: object) -> "GenerationParams":
         """Extract generation parameters from model config.
-        
+
         Args:
             model_config: Model configuration object
-            
+
         Returns:
             Validated generation parameters
-            
+
         Raises:
             ValueError: If model_config has invalid parameter types
         """
@@ -61,9 +62,13 @@ class GenerationParams(BaseModel):
                 # Validate type matches expected
                 expected_type = field_info.annotation
                 if expected_type is int and not isinstance(value, int):
-                    raise ValueError(f"Parameter '{field_name}' must be int, got {type(value).__name__}")
+                    raise ValueError(
+                        f"Parameter '{field_name}' must be int, got {type(value).__name__}"
+                    )
                 elif expected_type is float and not isinstance(value, (int, float)):
-                    raise ValueError(f"Parameter '{field_name}' must be float, got {type(value).__name__}")
+                    raise ValueError(
+                        f"Parameter '{field_name}' must be float, got {type(value).__name__}"
+                    )
                 params[field_name] = value
 
         return cls(**params)
@@ -71,7 +76,8 @@ class GenerationParams(BaseModel):
 
 class StructuredGenerationParams(GenerationParams):
     """Generation parameters optimized for structured output."""
-    # Override defaults for structured generation
+
+    # Override defaults for structured generation (these are fallbacks, actual values come from model config)
     max_tokens: int = Field(default=1024, description="Maximum tokens to generate")
     temperature: float = Field(default=0.2, description="Lower temperature for structured output")
     top_p: float = Field(default=0.95, description="Higher top_p for structured output")
@@ -79,35 +85,43 @@ class StructuredGenerationParams(GenerationParams):
 
 class LlamaCppSettings(LLMProviderSettings):
     """Settings for the LlamaCpp provider - Pure infrastructure concerns only.
-    
+
     Provider-level settings that control how the LlamaCpp provider operates,
     independent of specific models loaded through it. Inherits common fields
     from ProviderSettings (timeout, max_retries, verbose, etc.).
-    
+
     All model-specific settings (use_gpu, n_gpu_layers, n_threads, n_batch)
     are now defined only in model configurations for clean separation of concerns.
-    
+
     LlamaCpp-specific attributes:
         max_concurrent_models: Maximum number of models to keep loaded simultaneously
     """
 
     # Pure infrastructure settings only
-    max_concurrent_models: int = Field(default=3, description="Maximum models loaded simultaneously (prevents OOM)")
+    max_concurrent_models: int = Field(
+        default=3, description="Maximum models loaded simultaneously (prevents OOM)"
+    )
 
 
 @provider(provider_type="llm", name="llamacpp", settings_class=LlamaCppSettings)
 class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
     """Provider for local inference using llama-cpp-python.
-    
+
     This provider supports:
     1. Text generation with various LLM architectures (llama, phi, mistral, etc.)
     2. Structured output generation with format guidance
     3. Optional GPU acceleration with Metal or CUDA
     """
 
-    def __init__(self, name: str, provider_type: str, settings: Optional[LlamaCppSettings] = None, **kwargs: object):
+    def __init__(
+        self,
+        name: str,
+        provider_type: str,
+        settings: LlamaCppSettings | None = None,
+        **kwargs: object,
+    ):
         """Initialize LlamaCpp provider.
-        
+
         Args:
             name: Unique provider name
             provider_type: The type of the provider (e.g., 'llm')
@@ -116,7 +130,9 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
         """
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         if not isinstance(self.settings, LlamaCppSettings):
-            raise TypeError(f"settings must be a LlamaCppSettings instance, got {type(self.settings)}")
+            raise TypeError(
+                f"settings must be a LlamaCppSettings instance, got {type(self.settings)}"
+            )
 
         # Store validated settings for local use
         self._models = {}
@@ -124,10 +140,10 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
 
     async def _initialize_model(self, model_name: str) -> None:
         """Initialize a specific model.
-        
+
         Args:
             model_name: Name of the model to initialize
-            
+
         Raises:
             ProviderError: If initialization fails
         """
@@ -142,11 +158,13 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
             model_config_raw = await self.get_model_config(model_name)
 
             # Extract the nested 'config' field - single source of truth
-            if 'config' not in model_config_raw or not isinstance(model_config_raw['config'], dict):
-                raise ValueError(f"Model config for '{model_name}' has invalid structure - missing 'config' field")
+            if "config" not in model_config_raw or not isinstance(model_config_raw["config"], dict):
+                raise ValueError(
+                    f"Model config for '{model_name}' has invalid structure - missing 'config' field"
+                )
 
             # Convert to strict Pydantic model - validate only the config part
-            model_config = LlamaModelConfig.model_validate(model_config_raw['config'])
+            model_config = LlamaModelConfig.model_validate(model_config_raw["config"])
 
             # Extract model-specific values
             model_path = model_config.path
@@ -158,7 +176,9 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
             # All model-specific settings come from model config only (no provider defaults)
             n_threads = model_config.n_threads
             n_batch = model_config.n_batch
-            verbose = model_config.verbose if model_config.verbose is not None else self._settings.verbose
+            verbose = (
+                model_config.verbose if model_config.verbose is not None else self._settings.verbose
+            )
 
             # Check if model path exists
             if not os.path.exists(model_path):
@@ -167,20 +187,20 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                     error_type="ProviderError",
                     error_location=f"{self.__class__.__name__}.load_model",
                     component=self.name,
-                    operation="load_model"
+                    operation="load_model",
                 )
 
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="load_model",
-                    retry_count=0
+                    retry_count=0,
                 )
 
                 raise ProviderError(
                     message=f"Model path does not exist: {model_path}",
                     context=error_context,
-                    provider_context=provider_context
+                    provider_context=provider_context,
                 )
 
             # Check if we already have a model loaded with the same path to avoid OOM
@@ -188,31 +208,33 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
             for existing_name, existing_entry in self._models.items():
                 existing_config = existing_entry["config"]
                 # Strict contract: all model configs must have path attribute
-                if not hasattr(existing_config, 'path'):
+                if not hasattr(existing_config, "path"):
                     error_context = ErrorContext.create(
                         flow_name="model_initialization",
                         error_type="ProviderError",
                         error_location=f"{self.__class__.__name__}._initialize_model",
                         component=self.name,
-                        operation="config_validation"
+                        operation="config_validation",
                     )
 
                     provider_context = ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="llm",
                         operation="config_validation",
-                        retry_count=0
+                        retry_count=0,
                     )
 
                     raise ProviderError(
                         message=f"Model config for '{existing_name}' missing required 'path' attribute",
                         context=error_context,
-                        provider_context=provider_context
+                        provider_context=provider_context,
                     )
                 existing_path = existing_config.path
 
                 if existing_path == model_path:
-                    logger.info(f"Reusing existing model instance for '{model_name}' (same path as '{existing_name}'): {model_path}")
+                    logger.info(
+                        f"Reusing existing model instance for '{model_name}' (same path as '{existing_name}'): {model_path}"
+                    )
                     existing_model_entry = existing_entry
                     break
 
@@ -221,7 +243,7 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 self._models[model_name] = {
                     "model": existing_model_entry["model"],
                     "config": model_config,
-                    "chat_format": chat_format
+                    "chat_format": chat_format,
                 }
             else:
                 # Load model with specified settings
@@ -233,14 +255,14 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                     n_batch=n_batch,
                     n_gpu_layers=n_gpu_layers if use_gpu else 0,
                     verbose=verbose,
-                    chat_format=None  # Explicitly disable auto-detection - we handle formatting manually
+                    chat_format=None,  # Explicitly disable auto-detection - we handle formatting manually
                 )
 
                 # Store model and its configuration
                 self._models[model_name] = {
                     "model": model,
                     "config": model_config,
-                    "chat_format": chat_format
+                    "chat_format": chat_format,
                 }
 
             logger.info(f"Loaded LlamaCpp model: {model_name} ({os.path.basename(model_path)})")
@@ -251,22 +273,22 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.load_model",
                 component=self.name,
-                operation="import_llama_cpp"
+                operation="import_llama_cpp",
             )
 
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="import_llama_cpp",
-                retry_count=0
+                retry_count=0,
             )
 
             raise ProviderError(
                 message="llama-cpp-python package not installed. Install with: pip install llama-cpp-python",
                 context=error_context,
                 provider_context=provider_context,
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             error_str = str(e).lower()
 
@@ -280,22 +302,22 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                         error_type="ProviderError",
                         error_location=f"{self.__class__.__name__}._initialize_model",
                         component=self.name,
-                        operation="load_model"
+                        operation="load_model",
                     )
 
                     provider_context = ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="llm",
                         operation="load_model",
-                        retry_count=0
+                        retry_count=0,
                     )
 
                     raise ProviderError(
                         message=f"Failed to load LlamaCpp model '{model_name}': Model file exists but loading failed. This is typically caused by insufficient memory (OOM) or the model already being loaded by another process.",
                         context=error_context,
                         provider_context=provider_context,
-                        cause=e
-                    )
+                        cause=e,
+) from e
                 else:
                     # File doesn't exist
                     error_context = ErrorContext.create(
@@ -303,22 +325,22 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                         error_type="ProviderError",
                         error_location=f"{self.__class__.__name__}._initialize_model",
                         component=self.name,
-                        operation="load_model"
+                        operation="load_model",
                     )
 
                     provider_context = ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="llm",
                         operation="load_model",
-                        retry_count=0
+                        retry_count=0,
                     )
 
                     raise ProviderError(
                         message=f"Failed to load LlamaCpp model '{model_name}': Model file not found at path: {model_path}",
                         context=error_context,
                         provider_context=provider_context,
-                        cause=e
-                    )
+                        cause=e,
+                    ) from e
             elif "out of memory" in error_str or "oom" in error_str or "memory" in error_str:
                 # Explicit memory errors
                 error_context = ErrorContext.create(
@@ -326,22 +348,22 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                     error_type="ProviderError",
                     error_location=f"{self.__class__.__name__}._initialize_model",
                     component=self.name,
-                    operation="load_model"
+                    operation="load_model",
                 )
 
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="load_model",
-                    retry_count=0
+                    retry_count=0,
                 )
 
                 raise ProviderError(
                     message=f"Failed to initialize LlamaCpp model '{model_name}': Insufficient memory to load model",
                     context=error_context,
                     provider_context=provider_context,
-                    cause=e
-                )
+                    cause=e,
+                ) from e
             elif "device" in error_str or "cuda" in error_str or "gpu" in error_str:
                 # GPU/device related errors
                 error_context = ErrorContext.create(
@@ -349,22 +371,22 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                     error_type="ProviderError",
                     error_location=f"{self.__class__.__name__}._initialize_model",
                     component=self.name,
-                    operation="load_model"
+                    operation="load_model",
                 )
 
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="load_model",
-                    retry_count=0
+                    retry_count=0,
                 )
 
                 raise ProviderError(
                     message=f"Failed to initialize LlamaCpp model '{model_name}': GPU/device error - {str(e)}",
                     context=error_context,
                     provider_context=provider_context,
-                    cause=e
-                )
+                    cause=e,
+                ) from e
             else:
                 # Generic fallback with original error
                 error_context = ErrorContext.create(
@@ -372,22 +394,22 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                     error_type="ProviderError",
                     error_location=f"{self.__class__.__name__}._initialize_model",
                     component=self.name,
-                    operation="load_model"
+                    operation="load_model",
                 )
 
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="load_model",
-                    retry_count=0
+                    retry_count=0,
                 )
 
                 raise ProviderError(
                     message=f"Failed to initialize LlamaCpp model '{model_name}': {str(e)}",
                     context=error_context,
                     provider_context=provider_context,
-                    cause=e
-                )
+                    cause=e,
+                ) from e
 
     async def initialize(self) -> None:
         """Initialize the provider."""
@@ -405,23 +427,28 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
 
     async def shutdown(self) -> None:
         """Release model resources."""
-        for model_name, model_data in self._models.items():
+        for model_name, _model_data in self._models.items():
             logger.info(f"Released LlamaCpp model: {model_name}")
 
         self._models = {}
         self._initialized = False
 
-    async def generate(self, prompt: PromptTemplate, model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> str:
+    async def generate(
+        self,
+        prompt: PromptTemplate,
+        model_name: str,
+        prompt_variables: dict[str, object] | None = None,
+    ) -> str:
         """Generate text completion.
-        
+
         Args:
             prompt: Prompt template object with template and config attributes
             model_name: Name of the model to use
             prompt_variables: Dictionary of variables to format the prompt template
-            
+
         Returns:
             Generated text
-            
+
         Raises:
             ProviderError: If generation fails
             TypeError: If prompt is not a valid template object
@@ -436,8 +463,10 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
 
         try:
             # Validate prompt is a template object with template attribute
-            if not hasattr(prompt, 'template'):
-                raise TypeError(f"prompt must be a template object with 'template' attribute, got {type(prompt).__name__}")
+            if not hasattr(prompt, "template"):
+                raise TypeError(
+                    f"prompt must be a template object with 'template' attribute, got {type(prompt).__name__}"
+                )
 
             # Get template string from prompt
             template_str = prompt.template
@@ -446,10 +475,10 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
             gen_params = GenerationParams.from_model_config(model_config)
 
             # Override with prompt-specific parameters if provided
-            if hasattr(prompt, 'config') and prompt.config:
+            if hasattr(prompt, "config") and prompt.config:
                 # Extract generation parameters from prompt config and override
                 overrides = {}
-                for param_name in ['max_tokens', 'temperature', 'top_p', 'top_k', 'repeat_penalty']:
+                for param_name in ["max_tokens", "temperature", "top_p", "top_k", "repeat_penalty"]:
                     if param_name in prompt.config:
                         overrides[param_name] = prompt.config[param_name]
 
@@ -463,7 +492,16 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
             formatted_prompt = template_str
             if prompt_variables:
                 # Format the template with variables
-                formatted_prompt = self.format_template(template_str, {"variables": prompt_variables})
+                formatted_prompt = self.format_template(
+                    template_str, {"variables": prompt_variables}
+                )
+
+            # CORE FEATURE: Prepend system_prompt if set (generic, not agent-specific)
+            # Agent layer sets self.system_prompt = agent_persona for agent workflows
+            # Core just prepends whatever is set - remains agnostic
+            if self.system_prompt:
+                formatted_prompt = f"{self.system_prompt}\n\n{formatted_prompt}"
+                logger.info(f"System prompt prepended ({len(self.system_prompt)} chars)")
 
             # Run generation using validated parameters
             result = model(
@@ -473,7 +511,7 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 top_p=gen_params.top_p,
                 top_k=gen_params.top_k,
                 repeat_penalty=gen_params.repeat_penalty,
-                stop=[]
+                stop=[],
             )
 
             # Extract generated text
@@ -488,7 +526,9 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 return str(result)
 
         except Exception as e:
-            if isinstance(e, TypeError) and ("must be a template object" in str(e) or "output_type must be a class" in str(e)):
+            if isinstance(e, TypeError) and (
+                "must be a template object" in str(e) or "output_type must be a class" in str(e)
+            ):
                 # Re-raise TypeError for invalid prompt or output_type
                 raise
             error_context = ErrorContext.create(
@@ -496,35 +536,38 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.generate",
                 component=self.name,
-                operation="generate"
+                operation="generate",
             )
 
             provider_context = ProviderErrorContext(
-                provider_name=self.name,
-                provider_type="llm",
-                operation="generate",
-                retry_count=0
+                provider_name=self.name, provider_type="llm", operation="generate", retry_count=0
             )
 
             raise ProviderError(
                 message=f"Generation failed: {str(e)}",
                 context=error_context,
                 provider_context=provider_context,
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def generate_structured(self, prompt: PromptTemplate, output_type: Type[ModelType], model_name: str, prompt_variables: Optional[Dict[str, object]] = None) -> ModelType:
+    async def generate_structured(
+        self,
+        prompt: PromptTemplate,
+        output_type: type[ModelType],
+        model_name: str,
+        prompt_variables: dict[str, object] | None = None,
+    ) -> ModelType:
         """Generate structured output using a JSON grammar.
-        
+
         Args:
             prompt: Prompt template object with template and config attributes
             output_type: Pydantic model for output validation
             model_name: Name of the model to use
             prompt_variables: Dictionary of variables to format the prompt template
-            
+
         Returns:
             Validated response model instance
-            
+
         Raises:
             ProviderError: If generation fails
             TypeError: If prompt is not a valid template object or if output_type is not a class
@@ -543,8 +586,10 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
         chat_format = model_data["chat_format"]
 
         # Validate prompt is a template object with template attribute
-        if not hasattr(prompt, 'template'):
-            raise TypeError(f"prompt must be a template object with 'template' attribute, got {type(prompt).__name__}")
+        if not hasattr(prompt, "template"):
+            raise TypeError(
+                f"prompt must be a template object with 'template' attribute, got {type(prompt).__name__}"
+            )
 
         # Get template string from prompt
         template_str = prompt.template
@@ -553,7 +598,16 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
         formatted_prompt_text = template_str
         if prompt_variables:
             # Format the template with variables
-            formatted_prompt_text = self.format_template(template_str, {"variables": prompt_variables})
+            formatted_prompt_text = self.format_template(
+                template_str, {"variables": prompt_variables}
+            )
+
+        # CORE FEATURE: Prepend system_prompt if set (generic, not agent-specific)
+        # Agent layer sets self.system_prompt = agent_persona for agent workflows
+        # Core just prepends whatever is set - remains agnostic
+        if self.system_prompt:
+            formatted_prompt_text = f"{self.system_prompt}\n\n{formatted_prompt_text}"
+            logger.info(f"System prompt prepended ({len(self.system_prompt)} chars)")
 
         # Format the prompt according to model type
         formatted_prompt = self._format_prompt(formatted_prompt_text, chat_format, output_type)
@@ -567,14 +621,14 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
             temperature=base_gen_params.temperature,
             top_p=base_gen_params.top_p,
             top_k=base_gen_params.top_k,
-            repeat_penalty=base_gen_params.repeat_penalty
+            repeat_penalty=base_gen_params.repeat_penalty,
         )
 
         # Override with prompt-specific parameters if provided
-        if hasattr(prompt, 'config') and prompt.config:
+        if hasattr(prompt, "config") and prompt.config:
             # Extract generation parameters from prompt config and override
             overrides = {}
-            for param_name in ['max_tokens', 'temperature', 'top_p', 'top_k', 'repeat_penalty']:
+            for param_name in ["max_tokens", "temperature", "top_p", "top_k", "repeat_penalty"]:
                 if param_name in prompt.config:
                     overrides[param_name] = prompt.config[param_name]
 
@@ -595,7 +649,7 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
             "temperature": gen_params.temperature,
             "top_p": gen_params.top_p,
             "top_k": gen_params.top_k,
-            "repeat_penalty": gen_params.repeat_penalty
+            "repeat_penalty": gen_params.repeat_penalty,
         }.items():
             logger.info(f"    {name}: {value}")
 
@@ -608,20 +662,20 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.generate_structured",
                 component=self.name,
-                operation="schema_generation"
+                operation="schema_generation",
             )
 
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="schema_generation",
-                retry_count=0
+                retry_count=0,
             )
 
             raise ProviderError(
                 message=f"Cannot generate structured output: {str(e)}. Model type does not support schema generation.",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             ) from e
 
         # Create grammar from schema
@@ -634,20 +688,20 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.generate_structured",
                 component=self.name,
-                operation="grammar_creation"
+                operation="grammar_creation",
             )
 
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="grammar_creation",
-                retry_count=0
+                retry_count=0,
             )
 
             raise ProviderError(
                 message=f"Failed to create grammar from schema: {str(e)}",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             ) from e
 
         # Log the formatted prompt
@@ -670,9 +724,8 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 top_p=gen_params.top_p,
                 top_k=gen_params.top_k,
                 repeat_penalty=gen_params.repeat_penalty,
-                grammar=grammar
+                grammar=grammar,
             )
-
 
         except Exception as e:
             error_context = ErrorContext.create(
@@ -680,20 +733,20 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.generate_structured",
                 component=self.name,
-                operation="grammar_generation"
+                operation="grammar_generation",
             )
 
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="grammar_generation",
-                retry_count=0
+                retry_count=0,
             )
 
             raise ProviderError(
                 message=f"Failed to generate with grammar: {str(e)}",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             ) from e
 
         # Extract generated text
@@ -704,7 +757,6 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
         else:
             generated_text = str(result)
 
-
         logger.info(f"Generated text: {generated_text[:200]}...")
 
         # Attempt to parse the JSON
@@ -714,25 +766,55 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
         # which often cause issues, while preserving escaped ones (\n, \t).
         # It also removes other low-ASCII control characters except tab.
         import re
-        sanitized_text = re.sub(r'(?<!\\)[\x00-\x08\x0B\x0C\x0E-\x1F]', '', generated_text)
-        # Replace unescaped newlines and tabs within strings specifically
-        # This regex is complex: it finds "key": "...content..." and replaces
-        # unescaped newlines/tabs within the content part.
-        def replace_control_chars(match: Any) -> str:
-            key = match.group(1)
-            content = match.group(2)
-            # Replace unescaped newlines/tabs within the content
-            cleaned_content = content.replace('\n', '\\n').replace('\t', '\\t')
-            return f'"{key}": "{cleaned_content}"'
 
-        # Apply the regex substitution - might need refinement based on JSON structure variance
-        # This is a simplified attempt, complex nested structures might need more robust parsing
+        # First pass: More aggressive - find all string values in JSON and escape control chars
+        # This uses a simpler strategy: replace all unescaped control chars with escaped versions
+        def escape_control_chars(text: str) -> str:
+            """Escape control characters in JSON string."""
+            result = []
+            in_string = False
+            escape_next = False
+
+            for _i, char in enumerate(text):
+                if escape_next:
+                    result.append(char)
+                    escape_next = False
+                    continue
+
+                if char == "\\":
+                    result.append(char)
+                    escape_next = True
+                    continue
+
+                if char == '"':
+                    in_string = not in_string
+                    result.append(char)
+                    continue
+
+                # If we're inside a string value, escape control characters
+                if in_string:
+                    if char == "\n":
+                        result.append("\\n")
+                    elif char == "\r":
+                        result.append("\\r")
+                    elif char == "\t":
+                        result.append("\\t")
+                    elif ord(char) < 32:  # Other control characters
+                        # Skip them entirely
+                        continue
+                    else:
+                        result.append(char)
+                else:
+                    result.append(char)
+
+            return "".join(result)
+
         try:
-            sanitized_text = re.sub(r'"(\w+)":\s*"((?:[^"\\]|\\.)*)"' , replace_control_chars, sanitized_text)
-        except Exception as regex_err:
-             logger.warning(f"Regex sanitization failed: {regex_err}. Proceeding with original text.")
-             # Fallback or just use the simpler char removal if regex fails
-             sanitized_text = re.sub(r'(?<!\\)[\x00-\x08\x0B\x0C\x0E-\x1F]', '', generated_text)
+            sanitized_text = escape_control_chars(generated_text)
+        except Exception as escape_err:
+            logger.warning(f"Control char escaping failed: {escape_err}. Using fallback.")
+            # Fallback: just remove control chars entirely
+            sanitized_text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", generated_text)
         # ==========================
 
         # DEBUG: Show sanitized text if it changed
@@ -743,8 +825,6 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
         print("=" * 80)
 
         parsed_data = json.loads(sanitized_text)
-
-
 
         # Validate with Pydantic model if provided
         try:
@@ -764,33 +844,37 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.generate_structured",
                 component=self.name,
-                operation="response_validation"
+                operation="response_validation",
             )
 
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="llm",
                 operation="response_validation",
-                retry_count=0
+                retry_count=0,
             )
 
             raise ProviderError(
                 message=f"Failed to validate response against model {output_type.__name__}: {str(e)}",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             ) from e
 
-
-    def _format_prompt(self, prompt: str, chat_format: str = "default", output_type: Optional[Type[ModelType]] = None) -> str:
+    def _format_prompt(
+        self,
+        prompt: str,
+        chat_format: str = "default",
+        output_type: type[ModelType] | None = None,
+    ) -> str:
         """Format a prompt according to model-specific requirements.
-        
+
         Applies model-specific formatting templates.
-        
+
         Args:
             prompt: The main prompt text
             chat_format: The chat format of the model
             output_type: Optional Pydantic model type for structured output
-            
+
         Returns:
             Formatted prompt string
         """
@@ -808,20 +892,20 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
                     error_type="ProviderError",
                     error_location=f"{self.__class__.__name__}._format_prompt",
                     component=self.name,
-                    operation="template_lookup"
+                    operation="template_lookup",
                 )
 
                 provider_context = ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="llm",
                     operation="template_lookup",
-                    retry_count=0
+                    retry_count=0,
                 )
 
                 raise ProviderError(
                     message=f"No template found for chat format '{chat_format}' and no default template available",
                     context=error_context,
-                    provider_context=provider_context
+                    provider_context=provider_context,
                 )
             template = templates["default"]
         else:
@@ -832,81 +916,48 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
 
         return formatted
 
-    def _get_model_templates(self) -> Dict[str, Dict[str, str]]:
+    def _get_model_templates(self) -> dict[str, dict[str, str]]:
         """Get model-specific prompt templates for different LLM architectures.
 
         Returns:
             Dictionary mapping chat_format to pre/post prompt templates
         """
         return {
-            "default": {
-                "pre_prompt": "",
-                "post_prompt": ""
-            },
+            "default": {"pre_prompt": "", "post_prompt": ""},
             "chatml": {
                 "pre_prompt": "<|im_start|>user\n",
-                "post_prompt": "<|im_end|>\n<|im_start|>assistant\n"
+                "post_prompt": "<|im_end|>\n<|im_start|>assistant\n",
             },
             "llama3": {
                 "pre_prompt": "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n",
-                "post_prompt": "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+                "post_prompt": "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
             },
-            "llama2": {
-                "pre_prompt": "<s>[INST] ",
-                "post_prompt": " [/INST]"
-            },
-            "alpaca": {
-                "pre_prompt": "### Instruction:\n",
-                "post_prompt": "\n\n### Response:\n"
-            },
-            "vicuna": {
-                "pre_prompt": "USER: ",
-                "post_prompt": "\nASSISTANT: "
-            },
-            "phi3": {
-                "pre_prompt": "<|user|>\n",
-                "post_prompt": "<|end|>\n<|assistant|>\n"
-            },
-            "phi4": {
-                "pre_prompt": "<|user|>\n",
-                "post_prompt": "<|end|>\n<|assistant|>\n"
-            },
-            "mistral": {
-                "pre_prompt": "<s>[INST] ",
-                "post_prompt": " [/INST]"
-            },
+            "llama2": {"pre_prompt": "<s>[INST] ", "post_prompt": " [/INST]"},
+            "alpaca": {"pre_prompt": "### Instruction:\n", "post_prompt": "\n\n### Response:\n"},
+            "vicuna": {"pre_prompt": "USER: ", "post_prompt": "\nASSISTANT: "},
+            "phi3": {"pre_prompt": "<|user|>\n", "post_prompt": "<|end|>\n<|assistant|>\n"},
+            "phi4": {"pre_prompt": "<|user|>\n", "post_prompt": "<|end|>\n<|assistant|>\n"},
+            "mistral": {"pre_prompt": "<s>[INST] ", "post_prompt": " [/INST]"},
             "openchat": {
                 "pre_prompt": "GPT4 Correct User: ",
-                "post_prompt": "<|end_of_turn|>GPT4 Correct Assistant: "
+                "post_prompt": "<|end_of_turn|>GPT4 Correct Assistant: ",
             },
-            "zephyr": {
-                "pre_prompt": "<|user|>\n",
-                "post_prompt": "</s>\n<|assistant|>\n"
-            },
+            "zephyr": {"pre_prompt": "<|user|>\n", "post_prompt": "</s>\n<|assistant|>\n"},
             "dolphin": {
                 "pre_prompt": "<|im_start|>user\n",
-                "post_prompt": "<|im_end|>\n<|im_start|>assistant\n"
+                "post_prompt": "<|im_end|>\n<|im_start|>assistant\n",
             },
-            "orca": {
-                "pre_prompt": "### User:\n",
-                "post_prompt": "\n\n### Assistant:\n"
-            },
-            "wizard": {
-                "pre_prompt": "USER: ",
-                "post_prompt": " ASSISTANT: "
-            },
-            "falcon": {
-                "pre_prompt": "User: ",
-                "post_prompt": "\nAssistant: "
-            }
+            "orca": {"pre_prompt": "### User:\n", "post_prompt": "\n\n### Assistant:\n"},
+            "wizard": {"pre_prompt": "USER: ", "post_prompt": " ASSISTANT: "},
+            "falcon": {"pre_prompt": "User: ", "post_prompt": "\nAssistant: "},
         }
 
     def _extract_json(self, text: str) -> str:
         """Extract JSON from text response.
-        
+
         Args:
             text: Text that may contain JSON
-            
+
         Returns:
             Extracted JSON string or empty string if none found
         """
@@ -914,7 +965,7 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
         import re
 
         # Try to find a JSON object using regex
-        json_match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
+        json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
         if json_match:
             potential_json = json_match.group(0)
             try:
@@ -935,16 +986,16 @@ class LlamaCppProvider(LLMProvider[LlamaCppSettings]):
 
     def _sanitize_strings(self, obj: Any) -> Any:
         """Sanitize strings in parsed data to ensure consistent formatting.
-        
+
         Args:
             obj: Object to sanitize (dict, list, string, or primitive)
-            
+
         Returns:
             Sanitized object with special characters in strings properly escaped
         """
         if isinstance(obj, str):
             # Remove any special formatting characters that might cause issues
-            return obj.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+            return obj.replace("\n", " ").replace("\r", " ").replace("\t", " ")
         elif isinstance(obj, dict):
             return {k: self._sanitize_strings(v) for k, v in obj.items()}
         elif isinstance(obj, list):

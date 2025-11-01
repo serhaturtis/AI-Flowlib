@@ -6,7 +6,7 @@ for AWS S3 and S3-compatible storage services using boto3.
 
 import logging
 import os
-from typing import TYPE_CHECKING, Any, BinaryIO, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from pydantic import Field
 
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     import botocore  # type: ignore[import-untyped]
     from aiobotocore.session import get_session  # type: ignore[import-not-found]
     from botocore.exceptions import ClientError  # type: ignore[import-untyped]
+
     BOTO3_AVAILABLE = True
 else:
     try:
@@ -35,6 +36,7 @@ else:
         import botocore  # type: ignore[import-untyped]
         from aiobotocore.session import get_session  # type: ignore[import-not-found]
         from botocore.exceptions import ClientError  # type: ignore[import-untyped]
+
         BOTO3_AVAILABLE = True
     except ImportError:
         logger.warning(
@@ -49,56 +51,78 @@ else:
 
 class S3ProviderSettings(StorageProviderSettings):
     """S3 storage provider settings - direct inheritance, only S3-specific fields.
-    
+
     S3 requires:
     1. AWS credentials (access key, secret key)
     2. Bucket and region configuration
     3. S3-specific settings (endpoint, path style, etc.)
-    
+
     Note: S3 is cloud-based, no traditional host/port needed.
     """
 
     # AWS credentials
-    access_key_id: Optional[str] = Field(default=None, description="AWS access key ID")
-    secret_access_key: Optional[str] = Field(default=None, description="AWS secret access key")
-    session_token: Optional[str] = Field(default=None, description="AWS session token (optional)")
-    profile_name: Optional[str] = Field(default=None, description="AWS profile name (optional, for local credentials)")
+    access_key_id: str | None = Field(default=None, description="AWS access key ID")
+    secret_access_key: str | None = Field(default=None, description="AWS secret access key")
+    session_token: str | None = Field(default=None, description="AWS session token (optional)")
+    profile_name: str | None = Field(
+        default=None, description="AWS profile name (optional, for local credentials)"
+    )
 
     # S3 connection settings
-    endpoint_url: Optional[str] = Field(default=None, description="Custom endpoint URL for S3-compatible services")
-    region_name: Optional[str] = Field(default=None, description="AWS region name")
+    endpoint_url: str | None = Field(
+        default=None, description="Custom endpoint URL for S3-compatible services"
+    )
+    region_name: str | None = Field(default=None, description="AWS region name")
     bucket: str = Field(default="default", description="S3 bucket name")
-    create_bucket: bool = Field(default=True, description="Whether to create bucket if it doesn't exist")
+    create_bucket: bool = Field(
+        default=True, description="Whether to create bucket if it doesn't exist"
+    )
     path_style: bool = Field(default=False, description="Whether to use path-style addressing")
     signature_version: str = Field(default="s3v4", description="AWS signature version")
 
     # Performance settings
-    validate_checksums: bool = Field(default=True, description="Whether to validate checksums on uploads/downloads")
-    max_pool_connections: int = Field(default=10, description="Maximum number of connections to keep in the pool")
+    validate_checksums: bool = Field(
+        default=True, description="Whether to validate checksums on uploads/downloads"
+    )
+    max_pool_connections: int = Field(
+        default=10, description="Maximum number of connections to keep in the pool"
+    )
 
     # Multipart upload settings
-    multipart_threshold: int = Field(default=8 * 1024 * 1024, description="Multipart upload threshold (8MB)")
-    multipart_chunksize: int = Field(default=8 * 1024 * 1024, description="Multipart upload chunk size (8MB)")
+    multipart_threshold: int = Field(
+        default=8 * 1024 * 1024, description="Multipart upload threshold (8MB)"
+    )
+    multipart_chunksize: int = Field(
+        default=8 * 1024 * 1024, description="Multipart upload chunk size (8MB)"
+    )
 
     # S3 metadata settings
-    acl: Optional[str] = Field(default=None, description="S3 ACL setting ('private', 'public-read', etc.)")
-    cache_control: Optional[str] = Field(default=None, description="Cache-Control header for objects")
-    auto_content_type: bool = Field(default=True, description="Whether to automatically detect content type from file extensions")
+    acl: str | None = Field(
+        default=None, description="S3 ACL setting ('private', 'public-read', etc.)"
+    )
+    cache_control: str | None = Field(
+        default=None, description="Cache-Control header for objects"
+    )
+    auto_content_type: bool = Field(
+        default=True,
+        description="Whether to automatically detect content type from file extensions",
+    )
 
 
 # Decorator already imported above
 
+
 @provider(provider_type="storage", name="s3", settings_class=S3ProviderSettings)
 class S3Provider(StorageProvider[S3ProviderSettings]):
     """S3 implementation of the StorageProvider.
-    
+
     This provider implements storage operations using boto3,
     supporting AWS S3 and S3-compatible storage services.
     """
 
-    def __init__(self, name: str = "s3", settings: Optional[S3ProviderSettings] = None):
+    def __init__(self, name: str = "s3", settings: S3ProviderSettings | None = None):
         """Initialize S3 provider.
-        
+
         Args:
             name: Unique provider name
             settings: Optional provider settings
@@ -111,19 +135,19 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
 
         # Store settings for local use with proper type annotation
         self._settings: S3ProviderSettings = settings
-        self._client: Optional[Any] = None
-        self._resource: Optional[Any] = None
-        self._async_session: Optional[Any] = None
+        self._client: Any | None = None
+        self._resource: Any | None = None
+        self._async_session: Any | None = None
 
     def _parse_s3_error(self, client_error: ClientError) -> str:
         """Parse S3 error response strictly.
-        
+
         Args:
             client_error: ClientError from boto3
-            
+
         Returns:
             Error code string
-            
+
         Raises:
             ValueError: If error response is malformed
         """
@@ -134,18 +158,15 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
             raise ValueError(f"S3 error response malformed: {str(e)}") from e
 
     def _create_provider_error(
-        self,
-        message: str,
-        operation: str,
-        cause: Optional[Exception] = None
+        self, message: str, operation: str, cause: Exception | None = None
     ) -> ProviderError:
         """Create a provider error with strict context.
-        
+
         Args:
             message: Error message
             operation: Operation being performed
             cause: Original exception
-            
+
         Returns:
             ProviderError with strict context
         """
@@ -154,21 +175,15 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
             error_type="ProviderError",
             error_location=f"{self.__class__.__name__}.{operation}",
             component=self.name,
-            operation=operation
+            operation=operation,
         )
 
         provider_context = ProviderErrorContext(
-            provider_name=self.name,
-            provider_type="storage",
-            operation=operation,
-            retry_count=0
+            provider_name=self.name, provider_type="storage", operation=operation, retry_count=0
         )
 
         return ProviderError(
-            message=message,
-            context=error_context,
-            provider_context=provider_context,
-            cause=cause
+            message=message, context=error_context, provider_context=provider_context, cause=cause
         )
 
     async def initialize(self) -> None:
@@ -186,14 +201,14 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                         error_type="DependencyError",
                         error_location="initialize",
                         component=self.name,
-                        operation="check_boto3_dependency"
+                        operation="check_boto3_dependency",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="storage",
                         operation="initialize",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             # Create session
@@ -209,8 +224,8 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                 "config": botocore.config.Config(
                     signature_version=self._settings.signature_version,
                     s3={"addressing_style": "path" if self._settings.path_style else "auto"},
-                    max_pool_connections=self._settings.max_pool_connections
-                )
+                    max_pool_connections=self._settings.max_pool_connections,
+                ),
             }
 
             # Add endpoint_url for S3-compatible services
@@ -250,16 +265,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="InitializationError",
                     error_location="initialize",
                     component=self.name,
-                    operation="initialize_s3_client"
+                    operation="initialize_s3_client",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="initialize",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def shutdown(self) -> None:
         """Close S3 client and release resources."""
@@ -283,33 +298,32 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="ShutdownError",
                     error_location="shutdown",
                     component=self.name,
-                    operation="shutdown_s3_client"
+                    operation="shutdown_s3_client",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="shutdown",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def create_bucket(self, bucket: Optional[str] = None) -> bool:
+    async def create_bucket(self, bucket: str | None = None) -> bool:
         """Create a new bucket/container.
-        
+
         Args:
             bucket: Bucket name (default from settings if None)
-            
+
         Returns:
             True if bucket was created successfully
-            
+
         Raises:
             ProviderError: If bucket creation fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -321,7 +335,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                 return True
 
             # Create bucket
-            create_bucket_kwargs: Dict[str, Union[str, Dict[str, str]]] = {"Bucket": bucket}
+            create_bucket_kwargs: dict[str, str | dict[str, str]] = {"Bucket": bucket}
 
             # Add location constraint if region is specified
             if self._settings.region_name and self._settings.region_name != "us-east-1":
@@ -350,33 +364,32 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
             raise self._create_provider_error(
                 message=f"Failed to create bucket {bucket}: {str(e)}",
                 operation="create_bucket",
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise self._create_provider_error(
                 message=f"Failed to create bucket {bucket}: {str(e)}",
                 operation="create_bucket",
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def delete_bucket(self, bucket: Optional[str] = None, force: bool = False) -> bool:
+    async def delete_bucket(self, bucket: str | None = None, force: bool = False) -> bool:
         """Delete a bucket/container.
-        
+
         Args:
             bucket: Bucket name (default from settings if None)
             force: Whether to delete all objects in the bucket first
-            
+
         Returns:
             True if bucket was deleted successfully
-            
+
         Raises:
             ProviderError: If bucket deletion fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -398,10 +411,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
 
                         # Delete objects in a batch
                         if keys:
-                            self._client.delete_objects(
-                                Bucket=bucket,
-                                Delete={"Objects": keys}
-                            )
+                            self._client.delete_objects(Bucket=bucket, Delete={"Objects": keys})
 
             # Delete bucket using sync client (boto3)
             self._client.delete_bucket(Bucket=bucket)
@@ -424,15 +434,15 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                         error_type="BucketNotEmptyError",
                         error_location="delete_bucket",
                         component=self.name,
-                        operation="delete_bucket"
+                        operation="delete_bucket",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="storage",
                         operation="delete_bucket",
-                        retry_count=0
-                    )
-                )
+                        retry_count=0,
+                    ),
+) from e
 
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -442,16 +452,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DeleteBucketError",
                     error_location="delete_bucket",
                     component=self.name,
-                    operation="delete_bucket"
+                    operation="delete_bucket",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="delete_bucket",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -461,33 +471,32 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DeleteBucketError",
                     error_location="delete_bucket",
                     component=self.name,
-                    operation="delete_bucket"
+                    operation="delete_bucket",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="delete_bucket",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def bucket_exists(self, bucket: Optional[str] = None) -> bool:
+    async def bucket_exists(self, bucket: str | None = None) -> bool:
         """Check if a bucket/container exists.
-        
+
         Args:
             bucket: Bucket name (default from settings if None)
-            
+
         Returns:
             True if bucket exists
-            
+
         Raises:
             ProviderError: If check fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -514,16 +523,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="BucketExistsCheckError",
                     error_location="bucket_exists",
                     component=self.name,
-                    operation="bucket_exists"
+                    operation="bucket_exists",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="bucket_exists",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -533,37 +542,41 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="BucketExistsCheckError",
                     error_location="bucket_exists",
                     component=self.name,
-                    operation="bucket_exists"
+                    operation="bucket_exists",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="bucket_exists",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def upload_file(self, file_path: str, object_key: str, bucket: Optional[str] = None,
-                        metadata: Optional[Dict[str, str]] = None) -> FileMetadata:
+    async def upload_file(
+        self,
+        file_path: str,
+        object_key: str,
+        bucket: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> FileMetadata:
         """Upload a file to storage.
-        
+
         Args:
             file_path: Path to local file
             object_key: Storage object key/path
             bucket: Bucket name (default from settings if None)
             metadata: Optional object metadata
-            
+
         Returns:
             File metadata
-            
+
         Raises:
             ProviderError: If upload fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -575,40 +588,40 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     await self.create_bucket(bucket)
                 else:
                     raise ProviderError(
-                    message=f"Bucket {bucket} does not exist",
+                        message=f"Bucket {bucket} does not exist",
+                        context=ErrorContext.create(
+                            flow_name="s3_provider",
+                            error_type="BucketNotFoundError",
+                            error_location="upload_file",
+                            component=self.name,
+                            operation="upload_file",
+                        ),
+                        provider_context=ProviderErrorContext(
+                            provider_name=self.name,
+                            provider_type="storage",
+                            operation="upload_file",
+                            retry_count=0,
+                        ),
+                    )
+
+            # Check if file exists
+            if not os.path.isfile(file_path):
+                raise ProviderError(
+                    message=f"File {file_path} does not exist",
                     context=ErrorContext.create(
                         flow_name="s3_provider",
-                        error_type="BucketNotFoundError",
+                        error_type="FileNotFoundError",
                         error_location="upload_file",
                         component=self.name,
-                        operation="upload_file"
+                        operation="upload_file",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="storage",
                         operation="upload_file",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
-
-            # Check if file exists
-            if not os.path.isfile(file_path):
-                raise ProviderError(
-                message=f"File {file_path} does not exist",
-                context=ErrorContext.create(
-                    flow_name="s3_provider",
-                    error_type="FileNotFoundError",
-                    error_location="upload_file",
-                    component=self.name,
-                    operation="upload_file"
-                ),
-                provider_context=ProviderErrorContext(
-                    provider_name=self.name,
-                    provider_type="storage",
-                    operation="upload_file",
-                    retry_count=0
-                )
-            )
 
             # Determine content type based on file extension
             content_type = None
@@ -616,10 +629,10 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                 content_type = self.get_content_type(file_path)
 
             # Prepare upload parameters
-            upload_args: Dict[str, Union[str, Dict[str, str]]] = {
+            upload_args: dict[str, str | dict[str, str]] = {
                 "Bucket": bucket,
                 "Key": object_key,
-                "Filename": file_path
+                "Filename": file_path,
             }
 
             # Add extra parameters if provided
@@ -640,7 +653,9 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                 Filename=file_path,
                 Bucket=bucket,
                 Key=object_key,
-                ExtraArgs={k: v for k, v in upload_args.items() if k not in ["Bucket", "Key", "Filename"]}
+                ExtraArgs={
+                    k: v for k, v in upload_args.items() if k not in ["Bucket", "Key", "Filename"]
+                },
             )
 
             logger.debug(f"Uploaded file {file_path} to {bucket}/{object_key}")
@@ -657,16 +672,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="UploadFileError",
                     error_location="upload_file",
                     component=self.name,
-                    operation="upload_file"
+                    operation="upload_file",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="upload_file",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -676,38 +691,43 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="UploadFileError",
                     error_location="upload_file",
                     component=self.name,
-                    operation="upload_file"
+                    operation="upload_file",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="upload_file",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def upload_data(self, data: Union[bytes, BinaryIO], object_key: str, bucket: Optional[str] = None,
-                        content_type: Optional[str] = None, metadata: Optional[Dict[str, str]] = None) -> FileMetadata:
+    async def upload_data(
+        self,
+        data: bytes | BinaryIO,
+        object_key: str,
+        bucket: str | None = None,
+        content_type: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> FileMetadata:
         """Upload binary data to storage.
-        
+
         Args:
             data: Binary data or file-like object
             object_key: Storage object key/path
             bucket: Bucket name (default from settings if None)
             content_type: Optional content type
             metadata: Optional object metadata
-            
+
         Returns:
             File metadata
-            
+
         Raises:
             ProviderError: If upload fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -719,30 +739,30 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     await self.create_bucket(bucket)
                 else:
                     raise ProviderError(
-                    message=f"Bucket {bucket} does not exist",
-                    context=ErrorContext.create(
-                        flow_name="s3_provider",
-                        error_type="BucketNotFoundError",
-                        error_location="upload_data",
-                        component=self.name,
-                        operation="upload_data"
-                    ),
-                    provider_context=ProviderErrorContext(
-                        provider_name=self.name,
-                        provider_type="storage",
-                        operation="upload_data",
-                        retry_count=0
+                        message=f"Bucket {bucket} does not exist",
+                        context=ErrorContext.create(
+                            flow_name="s3_provider",
+                            error_type="BucketNotFoundError",
+                            error_location="upload_data",
+                            component=self.name,
+                            operation="upload_data",
+                        ),
+                        provider_context=ProviderErrorContext(
+                            provider_name=self.name,
+                            provider_type="storage",
+                            operation="upload_data",
+                            retry_count=0,
+                        ),
                     )
-                )
 
             # Determine content type if not provided
             if not content_type and self._settings.auto_content_type:
                 content_type = self.get_content_type(object_key)
 
             # Prepare upload parameters
-            upload_args: Dict[str, Union[str, bytes, BinaryIO, Dict[str, str]]] = {
+            upload_args: dict[str, str | bytes | BinaryIO | dict[str, str]] = {
                 "Bucket": bucket,
-                "Key": object_key
+                "Key": object_key,
             }
 
             # Check if data is a file-like object or bytes
@@ -783,16 +803,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="UploadDataError",
                     error_location="upload_data",
                     component=self.name,
-                    operation="upload_data"
+                    operation="upload_data",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="upload_data",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -802,35 +822,36 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="UploadDataError",
                     error_location="upload_data",
                     component=self.name,
-                    operation="upload_data"
+                    operation="upload_data",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="upload_data",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def download_file(self, object_key: str, file_path: str, bucket: Optional[str] = None) -> FileMetadata:
+    async def download_file(
+        self, object_key: str, file_path: str, bucket: str | None = None
+    ) -> FileMetadata:
         """Download a file from storage.
-        
+
         Args:
             object_key: Storage object key/path
             file_path: Path to save file
             bucket: Bucket name (default from settings if None)
-            
+
         Returns:
             File metadata
-            
+
         Raises:
             ProviderError: If download fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -840,11 +861,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
             os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
 
             # Download file using boto3's download_file
-            self._client.download_file(
-                Bucket=bucket,
-                Key=object_key,
-                Filename=file_path
-            )
+            self._client.download_file(Bucket=bucket, Key=object_key, Filename=file_path)
 
             logger.debug(f"Downloaded {bucket}/{object_key} to {file_path}")
 
@@ -863,16 +880,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                         error_type="ObjectNotFoundError",
                         error_location="download_file",
                         component=self.name,
-                        operation="download_file"
+                        operation="download_file",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="storage",
                         operation="download_file",
-                        retry_count=0
+                        retry_count=0,
                     ),
-                    cause=e
-                )
+                    cause=e,
+) from e
 
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -882,16 +899,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DownloadFileError",
                     error_location="download_file",
                     component=self.name,
-                    operation="download_file"
+                    operation="download_file",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="download_file",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -901,34 +918,35 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DownloadFileError",
                     error_location="download_file",
                     component=self.name,
-                    operation="download_file"
+                    operation="download_file",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="download_file",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def download_data(self, object_key: str, bucket: Optional[str] = None) -> Tuple[bytes, FileMetadata]:
+    async def download_data(
+        self, object_key: str, bucket: str | None = None
+    ) -> tuple[bytes, FileMetadata]:
         """Download binary data from storage.
-        
+
         Args:
             object_key: Storage object key/path
             bucket: Bucket name (default from settings if None)
-            
+
         Returns:
             Tuple of (data bytes, file metadata)
-            
+
         Raises:
             ProviderError: If download fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -961,16 +979,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                         error_type="ObjectNotFoundError",
                         error_location="download_data",
                         component=self.name,
-                        operation="download_data"
+                        operation="download_data",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="storage",
                         operation="download_data",
-                        retry_count=0
+                        retry_count=0,
                     ),
-                    cause=e
-                )
+                    cause=e,
+) from e
 
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -980,16 +998,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DownloadDataError",
                     error_location="download_data",
                     component=self.name,
-                    operation="download_data"
+                    operation="download_data",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="download_data",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -999,34 +1017,33 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DownloadDataError",
                     error_location="download_data",
                     component=self.name,
-                    operation="download_data"
+                    operation="download_data",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="download_data",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def get_metadata(self, object_key: str, bucket: Optional[str] = None) -> FileMetadata:
+    async def get_metadata(self, object_key: str, bucket: str | None = None) -> FileMetadata:
         """Get metadata for a storage object.
-        
+
         Args:
             object_key: Storage object key/path
             bucket: Bucket name (default from settings if None)
-            
+
         Returns:
             File metadata
-            
+
         Raises:
             ProviderError: If metadata retrieval fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -1045,7 +1062,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                 etag=s3_response.ETag.strip('"'),
                 content_type=s3_response.ContentType,
                 modified=s3_response.LastModified,
-                metadata=s3_response.Metadata
+                metadata=s3_response.Metadata,
             )
 
             return metadata
@@ -1058,15 +1075,15 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                 raise self._create_provider_error(
                     message=f"Object {object_key} does not exist in bucket {bucket}",
                     operation="get_metadata",
-                    cause=e
-                )
+                    cause=e,
+) from e
 
             # Wrap and re-raise other errors
             raise self._create_provider_error(
                 message=f"Failed to get metadata for {bucket}/{object_key}: {str(e)}",
                 operation="get_metadata",
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -1076,34 +1093,33 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="GetMetadataError",
                     error_location="get_metadata",
                     component=self.name,
-                    operation="get_metadata"
+                    operation="get_metadata",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="get_metadata",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def delete_object(self, object_key: str, bucket: Optional[str] = None) -> bool:
+    async def delete_object(self, object_key: str, bucket: str | None = None) -> bool:
         """Delete a storage object.
-        
+
         Args:
             object_key: Storage object key/path
             bucket: Bucket name (default from settings if None)
-            
+
         Returns:
             True if object was deleted successfully
-            
+
         Raises:
             ProviderError: If deletion fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -1121,7 +1137,9 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
 
             # Handle specific error codes
             if error_code in ("404", "NoSuchKey"):
-                logger.debug(f"Object {object_key} does not exist in bucket {bucket}, nothing to delete")
+                logger.debug(
+                    f"Object {object_key} does not exist in bucket {bucket}, nothing to delete"
+                )
                 return True
 
             # Wrap and re-raise other errors
@@ -1132,16 +1150,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DeleteObjectError",
                     error_location="delete_object",
                     component=self.name,
-                    operation="delete_object"
+                    operation="delete_object",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="delete_object",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -1151,34 +1169,35 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="DeleteObjectError",
                     error_location="delete_object",
                     component=self.name,
-                    operation="delete_object"
+                    operation="delete_object",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="delete_object",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def list_objects(self, prefix: Optional[str] = None, bucket: Optional[str] = None) -> List[FileMetadata]:
+    async def list_objects(
+        self, prefix: str | None = None, bucket: str | None = None
+    ) -> list[FileMetadata]:
         """List objects in a bucket/container.
-        
+
         Args:
             prefix: Optional prefix to filter objects
             bucket: Bucket name (default from settings if None)
-            
+
         Returns:
             List of file metadata
-            
+
         Raises:
             ProviderError: If listing fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -1205,7 +1224,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                             size=s3_obj.Size,
                             etag=s3_obj.ETag.strip('"'),
                             modified=s3_obj.LastModified,
-                            content_type="application/octet-stream"  # Default, we'd need a head_object call to get the real content type
+                            content_type="application/octet-stream",  # Default, we'd need a head_object call to get the real content type
                         )
                         result.append(metadata)
 
@@ -1223,16 +1242,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                         error_type="BucketNotFoundError",
                         error_location="list_objects",
                         component=self.name,
-                        operation="list_objects"
+                        operation="list_objects",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="storage",
                         operation="list_objects",
-                        retry_count=0
+                        retry_count=0,
                     ),
-                    cause=e
-                )
+                    cause=e,
+) from e
 
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -1242,16 +1261,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="ListObjectsError",
                     error_location="list_objects",
                     component=self.name,
-                    operation="list_objects"
+                    operation="list_objects",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="list_objects",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
         except Exception as e:
             # Wrap and re-raise other errors
             raise ProviderError(
@@ -1261,37 +1280,41 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="ListObjectsError",
                     error_location="list_objects",
                     component=self.name,
-                    operation="list_objects"
+                    operation="list_objects",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="list_objects",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def generate_presigned_url(self, object_key: str, expiration: int = 3600, bucket: Optional[str] = None,
-                                  operation: str = "get") -> str:
+    async def generate_presigned_url(
+        self,
+        object_key: str,
+        expiration: int = 3600,
+        bucket: str | None = None,
+        operation: str = "get",
+    ) -> str:
         """Generate a presigned URL for a storage object.
-        
+
         Args:
             object_key: Storage object key/path
             expiration: URL expiration in seconds
             bucket: Bucket name (default from settings if None)
             operation: Operation type ('get', 'put', 'delete')
-            
+
         Returns:
             Presigned URL
-            
+
         Raises:
             ProviderError: If URL generation fails
         """
         if not self._initialized or not self._client:
             raise self._create_provider_error(
-                message="Provider not initialized",
-                operation="operation"
+                message="Provider not initialized", operation="operation"
             )
 
         bucket = bucket or self._settings.bucket
@@ -1301,7 +1324,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
             "get": "get_object",
             "put": "put_object",
             "delete": "delete_object",
-            "head": "head_object"
+            "head": "head_object",
         }
 
         if operation.lower() not in operation_map:
@@ -1312,14 +1335,14 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="InvalidOperationError",
                     error_location="generate_presigned_url",
                     component=self.name,
-                    operation="generate_presigned_url"
+                    operation="generate_presigned_url",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="generate_presigned_url",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
         client_method = operation_map[operation.lower()]
 
@@ -1328,7 +1351,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
             url = self._client.generate_presigned_url(
                 ClientMethod=client_method,
                 Params={"Bucket": bucket, "Key": object_key},
-                ExpiresIn=expiration
+                ExpiresIn=expiration,
             )
 
             return str(url)
@@ -1342,16 +1365,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                     error_type="PresignedUrlError",
                     error_location="generate_presigned_url",
                     component=self.name,
-                    operation="generate_presigned_url"
+                    operation="generate_presigned_url",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="storage",
                     operation="generate_presigned_url",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def check_connection(self) -> bool:
         """Check if storage connection is active.
@@ -1377,12 +1400,12 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
             # Check if bucket exists using direct client call (skip initialization check)
             assert self._client is not None  # Method only called after initialization
             self._client.head_bucket(Bucket=bucket)
-        except Exception:
+        except Exception as bucket_check_error:
             # Bucket doesn't exist, create it if requested
             if self._settings.create_bucket:
                 try:
                     # Create bucket
-                    create_bucket_kwargs: Dict[str, Union[str, Dict[str, str]]] = {"Bucket": bucket}
+                    create_bucket_kwargs: dict[str, str | dict[str, str]] = {"Bucket": bucket}
 
                     # Add location constraint if region is specified
                     if self._settings.region_name and self._settings.region_name != "us-east-1":
@@ -1408,16 +1431,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                                 error_type="CreateBucketError",
                                 error_location="_ensure_bucket_exists",
                                 component=self.name,
-                                operation="create_bucket"
+                                operation="create_bucket",
                             ),
                             provider_context=ProviderErrorContext(
                                 provider_name=self.name,
                                 provider_type="storage",
                                 operation="create_bucket",
-                                retry_count=0
+                                retry_count=0,
                             ),
-                            cause=e
-                        )
+                            cause=e,
+) from e
                 except Exception as e:
                     # Handle non-S3 errors
                     raise ProviderError(
@@ -1427,16 +1450,16 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                             error_type="CreateBucketError",
                             error_location="_ensure_bucket_exists",
                             component=self.name,
-                            operation="create_bucket"
+                            operation="create_bucket",
                         ),
                         provider_context=ProviderErrorContext(
                             provider_name=self.name,
                             provider_type="storage",
                             operation="create_bucket",
-                            retry_count=0
+                            retry_count=0,
                         ),
-                        cause=e
-                    )
+                        cause=e,
+) from e
             else:
                 raise ProviderError(
                     message=f"Bucket {bucket} does not exist and create_bucket is set to False",
@@ -1445,15 +1468,15 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
                         error_type="BucketNotFoundError",
                         error_location="_ensure_bucket_exists",
                         component=self.name,
-                        operation="ensure_bucket_exists"
+                        operation="ensure_bucket_exists",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="storage",
                         operation="ensure_bucket_exists",
-                        retry_count=0
-                    )
-                )
+                        retry_count=0,
+                    ),
+) from bucket_check_error
 
     def _get_async_client(self) -> Any:
         """Get or create an async S3 client context manager."""
@@ -1483,7 +1506,7 @@ class S3Provider(StorageProvider[S3ProviderSettings]):
         client_kwargs["config"] = botocore.config.Config(
             signature_version=self._settings.signature_version,
             s3={"addressing_style": "path" if self._settings.path_style else "auto"},
-            max_pool_connections=self._settings.max_pool_connections
+            max_pool_connections=self._settings.max_pool_connections,
         )
 
         # Create and return the async client context manager

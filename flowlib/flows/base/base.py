@@ -6,15 +6,11 @@ enhanced result handling and error management.
 
 import inspect
 from abc import ABC
+from collections.abc import Callable
 from datetime import datetime
 from typing import (
     Any,
-    Callable,
-    Dict,
     Generic,
-    List,
-    Optional,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -52,10 +48,10 @@ class StrictFlowMetadata(BaseModel):
     """Strict flow metadata model with no fallbacks."""
     model_config = ConfigDict(extra="forbid", frozen=True, validate_assignment=True, strict=True)
 
-    entries: List[FlowMetadataEntry] = Field(default_factory=list, description="Flow metadata entries")
+    entries: list[FlowMetadataEntry] = Field(default_factory=list, description="Flow metadata entries")
 
     @classmethod
-    def create(cls, metadata: Optional[Dict[str, Any]] = None) -> 'StrictFlowMetadata':
+    def create(cls, metadata: dict[str, Any] | None = None) -> 'StrictFlowMetadata':
         """Create metadata from optional dict."""
         if metadata is None:
             return cls()
@@ -66,7 +62,7 @@ class StrictFlowMetadata(BaseModel):
         ]
         return cls(entries=entries)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format for backward compatibility."""
         return {entry.key: entry.value for entry in self.entries}
 
@@ -78,7 +74,7 @@ class StrictErrorManager(BaseModel):
     manager: ErrorManager = Field(description="Error manager instance")
 
     @classmethod
-    def create(cls, error_manager: Optional[ErrorManager] = None) -> 'StrictErrorManager':
+    def create(cls, error_manager: ErrorManager | None = None) -> 'StrictErrorManager':
         """Create error manager wrapper."""
         if error_manager is None:
             return cls(manager=default_manager)
@@ -129,7 +125,7 @@ class PipelineMethodConfig(BaseModel):
 
 class FlowSettings(BaseModel):
     """Settings for configuring flow execution behavior.
-    
+
     This class provides:
     1. Timeout configuration for flow execution
     2. Retry behavior for handling transient errors
@@ -139,7 +135,7 @@ class FlowSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # Execution settings
-    timeout_seconds: Optional[float] = None
+    timeout_seconds: float | None = None
     max_retries: int = 0
     retry_delay_seconds: float = 1.0
 
@@ -152,11 +148,11 @@ class FlowSettings(BaseModel):
     debug_mode: bool = False
 
     # Resource settings
-    max_memory_mb: Optional[int] = None
-    max_cpu_percent: Optional[int] = None
+    max_memory_mb: int | None = None
+    max_cpu_percent: int | None = None
 
     # Advanced settings - using validated entries instead of Dict[str, Any]
-    custom_settings: List[FlowMetadataEntry] = Field(default_factory=list, description="Custom flow settings")
+    custom_settings: list[FlowMetadataEntry] = Field(default_factory=list, description="Custom flow settings")
 
     @field_validator("log_level")
     def validate_log_level(cls, v: str) -> str:
@@ -180,12 +176,12 @@ class FlowSettings(BaseModel):
             raise ValueError("Retry delay must be non-negative")
         return v
 
-    def merge(self, other: Union['FlowSettings', Dict[str, Any]]) -> 'FlowSettings':
+    def merge(self, other: Union['FlowSettings', dict[str, Any]]) -> 'FlowSettings':
         """Merge with another settings object or dictionary.
-        
+
         Args:
             other: Settings object or dictionary to merge with
-            
+
         Returns:
             New merged settings object
         """
@@ -222,12 +218,12 @@ class FlowSettings(BaseModel):
         return FlowSettings.model_validate(merged_dict)
 
     @classmethod
-    def from_dict(cls, settings_dict: Dict[str, Any]) -> 'FlowSettings':
+    def from_dict(cls, settings_dict: dict[str, Any]) -> 'FlowSettings':
         """Create settings from dictionary.
-        
+
         Args:
             settings_dict: Dictionary of settings
-            
+
         Returns:
             Settings object
         """
@@ -235,10 +231,10 @@ class FlowSettings(BaseModel):
 
     def update(self, **kwargs: Any) -> 'FlowSettings':
         """Create a new settings object with updated values.
-        
+
         Args:
             **kwargs: New values to set
-            
+
         Returns:
             New settings object
         """
@@ -255,7 +251,7 @@ T = TypeVar('T')
 
 class Flow(ABC, Generic[T]):
     """Base class for all flow components with enhanced result handling.
-    
+
     This class provides:
     1. Consistent execution pattern with error handling
     2. Input and output validation with Pydantic models
@@ -264,21 +260,21 @@ class Flow(ABC, Generic[T]):
 
     def __init__(
         self,
-        name_or_instance: Union[str, object],
-        input_schema: Optional[Type[BaseModel]] = None,
-        output_schema: Optional[Type[BaseModel]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        error_manager: Optional[ErrorManager] = None
+        name_or_instance: str | object,
+        input_schema: type[BaseModel] | None = None,
+        output_schema: type[BaseModel] | None = None,
+        metadata: dict[str, Any] | None = None,
+        error_manager: ErrorManager | None = None
     ):
         """Initialize flow.
-        
+
         Args:
             name_or_instance: Either a name string or a flow class instance
             input_schema: Optional Pydantic model for input validation. Must be a Pydantic BaseModel subclass.
             output_schema: Optional Pydantic model for output validation. Must be a Pydantic BaseModel subclass.
             metadata: Optional metadata about the flow
             error_manager: Optional error manager instance
-            
+
         Raises:
             ValueError: If input_schema or output_schema is provided but not a Pydantic BaseModel subclass.
         """
@@ -318,13 +314,13 @@ class Flow(ABC, Generic[T]):
 
     def _extract_flow_info_strict(self, flow_instance: object) -> FlowInstanceInfo:
         """Extract flow information without fallbacks.
-        
+
         Args:
             flow_instance: Flow instance to inspect
-            
+
         Returns:
             FlowInstanceInfo with complete information
-            
+
         Raises:
             ValueError: If required information is missing
         """
@@ -361,9 +357,9 @@ class Flow(ABC, Generic[T]):
             pipeline_method_info=pipeline_method_info
         )
 
-    def _get_class_pipeline_method(self) -> Optional[object]:
+    def _get_class_pipeline_method(self) -> object | None:
         """Get pipeline method from class without fallbacks.
-        
+
         Returns:
             Pipeline method object or None if not found
         """
@@ -403,12 +399,12 @@ class Flow(ABC, Generic[T]):
 
         return cast(object, method)  # method is validated as callable, safe to cast
 
-    def get_pipeline_input_model(self) -> Optional[Type[BaseModel]]:
+    def get_pipeline_input_model(self) -> type[BaseModel] | None:
         """Get the input model for this flow's pipeline.
-        
+
         Returns the pipeline method's input model or flow's input schema.
         No fallbacks - returns the first available model found.
-        
+
         Returns:
             The input model class or None if not defined
         """
@@ -419,7 +415,7 @@ class Flow(ABC, Generic[T]):
             if input_model is not None:
                 try:
                     if issubclass(input_model, BaseModel):
-                        return cast(Type[BaseModel], input_model)
+                        return cast(type[BaseModel], input_model)
                 except TypeError:
                     # input_model is not a class, skip it
                     pass
@@ -428,12 +424,12 @@ class Flow(ABC, Generic[T]):
         # Return flow's schema if pipeline method unavailable
         return self.input_schema
 
-    def get_pipeline_output_model(self) -> Optional[Type[BaseModel]]:
+    def get_pipeline_output_model(self) -> type[BaseModel] | None:
         """Get the output model for this flow's pipeline.
-        
+
         Returns the pipeline method's output model or flow's output schema.
         No fallbacks - returns the first available model found.
-        
+
         Returns:
             The output model class or None if not defined
         """
@@ -444,7 +440,7 @@ class Flow(ABC, Generic[T]):
             if output_model is not None:
                 try:
                     if issubclass(output_model, BaseModel):
-                        return cast(Type[BaseModel], output_model)
+                        return cast(type[BaseModel], output_model)
                 except TypeError:
                     # output_model is not a class, skip it
                     pass
@@ -453,9 +449,9 @@ class Flow(ABC, Generic[T]):
         # Return flow's schema if pipeline method unavailable
         return self.output_schema
 
-    def get_pipeline_method(self) -> Optional[Any]:
+    def get_pipeline_method(self) -> Any | None:
         """Get the pipeline method for this flow.
-        
+
         Returns:
             The pipeline method or None if not found
         """
@@ -467,9 +463,9 @@ class Flow(ABC, Generic[T]):
         return None
 
     @classmethod
-    def get_pipeline_method_cls(cls) -> Optional[Any]:
+    def get_pipeline_method_cls(cls) -> Any | None:
         """Get the pipeline method for this flow class.
-        
+
         Returns:
             The pipeline method or None if not found
         """
@@ -482,16 +478,16 @@ class Flow(ABC, Generic[T]):
 
     async def execute(self, context: Context[Any]) -> FlowResult[Any]:
         """Execute the flow with given context.
-        
+
         This is the ONLY method that should be called from outside the flow.
         It automatically executes the flow's pipeline method.
-        
+
         Args:
             context: Execution context
-            
+
         Returns:
             FlowResult containing execution outcome with attribute-based access
-            
+
         Raises:
             BaseError: If execution fails
         """
@@ -636,7 +632,7 @@ class Flow(ABC, Generic[T]):
                         message=f"Pipeline execution failed: {str(e)}",
                         context=error_context,
                         cause=e
-                    )
+                    ) from e
 
                 # Record successful execution
                 execution_time = (datetime.now() - execution_start).total_seconds()
@@ -690,14 +686,14 @@ class Flow(ABC, Generic[T]):
 
             # Attach result to error
             error.result = error_result
-            raise error
+            raise error from e
 
     def _validate_input(self, data: Any) -> None:
         """Validate input data against schema.
-        
+
         Args:
             data: Input data to validate
-            
+
         Raises:
             ValidationError: If validation fails or if data is not a Pydantic model
         """
@@ -722,10 +718,10 @@ class Flow(ABC, Generic[T]):
 
     def _validate_output(self, data: Any) -> None:
         """Validate output data against schema.
-        
+
         Args:
             data: Output data to validate
-            
+
         Raises:
             ValidationError: If validation fails or if data is not a Pydantic model
         """
@@ -768,16 +764,16 @@ class Flow(ABC, Generic[T]):
 
     def _prepare_input(self, context: Context[Any]) -> Any:
         """Prepare input data from context.
-        
+
         If input_schema is defined, retrieves the validated Pydantic model instance
         from the context using `context.as_model()`. Otherwise, returns raw context data.
 
         Args:
             context: Execution context
-            
+
         Returns:
             Prepared input data (Pydantic model instance if schema defined, else dict)
-            
+
         Raises:
             ExecutionError: If preparation fails
             ValidationError: If `context.as_model()` fails or returns wrong type
@@ -849,7 +845,7 @@ class Flow(ABC, Generic[T]):
                     operation="model_reconstruction"
                 ),
                 cause=ve
-             )
+             ) from ve
         except Exception as e:
             # Wrap other exceptions
             # Get context data without fallbacks
@@ -868,15 +864,15 @@ class Flow(ABC, Generic[T]):
                 message="Failed to prepare input",
                 context=error_context,
                 cause=e
-            )
+            ) from e
 
     def add_error_handler(
         self,
-        error_type: Type[BaseError],
+        error_type: type[BaseError],
         handler: Any
     ) -> None:
         """Add error handler to flow.
-        
+
         Args:
             error_type: Type of error to handle
             handler: Handler instance
@@ -895,9 +891,9 @@ class Flow(ABC, Generic[T]):
     def get_description(self) -> str:
         """
         Get the flow description.
-        
+
         This method is automatically added by the @flow decorator.
-        
+
         Returns:
             Flow description
         """

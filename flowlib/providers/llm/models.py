@@ -3,7 +3,7 @@
 No fallbacks, no defaults, no optional fields unless explicitly required.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -12,13 +12,14 @@ from flowlib.core.models import StrictBaseModel
 
 class LlamaModelConfig(StrictBaseModel):
     """Strict configuration for Llama models - Model-specific settings only.
-    
+
     Contains all settings that are specific to a particular model file,
     including the model's capabilities, default generation parameters,
     and model-specific hardware requirements.
-    
+
     All fields are required except where explicitly made optional.
     """
+
     # Inherits strict configuration from StrictBaseModel
     # Model file and identity
     path: str = Field(..., description="Path to the model file")
@@ -40,16 +41,21 @@ class LlamaModelConfig(StrictBaseModel):
     repeat_penalty: float = Field(default=1.1, description="Default repetition penalty")
 
     # Model-specific chat formatting
-    chat_format: str = Field(..., description="Chat format template for this model (e.g., 'chatml', 'alpaca', 'vicuna')")
+    chat_format: str = Field(
+        ..., description="Chat format template for this model (e.g., 'chatml', 'alpaca', 'vicuna')"
+    )
 
     # Optional provider-level overrides
-    verbose: Optional[bool] = Field(default=None, description="Override provider verbose setting for this model")
+    verbose: bool | None = Field(
+        default=None, description="Override provider verbose setting for this model"
+    )
 
     # Note: All strict settings inherited from StrictBaseModel
 
 
 class LLMGenerationConfig(StrictBaseModel):
     """Strict configuration for LLM text generation."""
+
     # Inherits strict configuration from StrictBaseModel
 
     temperature: float = Field(..., description="Sampling temperature")
@@ -62,16 +68,18 @@ class LLMGenerationConfig(StrictBaseModel):
 
 class GoogleAIModelConfig(StrictBaseModel):
     """Strict configuration for Google AI models."""
+
     # Inherits strict configuration from StrictBaseModel
 
     model_name: str = Field(..., description="Name of the Google AI model")
     api_key: str = Field(..., description="Google AI API key")
-    safety_settings: Dict[str, Any] = Field(..., description="Safety filter settings")
+    safety_settings: dict[str, Any] = Field(..., description="Safety filter settings")
     generation_config: LLMGenerationConfig = Field(..., description="Generation parameters")
 
 
 class BaseModelConfig(StrictBaseModel):
     """Base configuration for all LLM models."""
+
     # Inherits strict configuration from StrictBaseModel
 
     model_id: str = Field(..., description="Unique identifier for the model")

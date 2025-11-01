@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -28,33 +28,41 @@ logger = logging.getLogger(__name__)
 
 class MCPClientSettings(ProviderSettings):
     """Settings for MCP client provider."""
-    server_uri: str = Field(default="stdio://server", description="MCP server URI (e.g., 'stdio://server', 'http://localhost:8080')")
-    transport: MCPTransport = Field(default=MCPTransport.STDIO, description="MCP transport type: STDIO or SSE")
+
+    server_uri: str = Field(
+        default="stdio://server",
+        description="MCP server URI (e.g., 'stdio://server', 'http://localhost:8080')",
+    )
+    transport: MCPTransport = Field(
+        default=MCPTransport.STDIO, description="MCP transport type: STDIO or SSE"
+    )
     timeout: float = Field(30.0, description="Connection timeout in seconds")
     retry_attempts: int = Field(3, description="Number of retry attempts")
     retry_delay: float = Field(1.0, description="Delay between retry attempts")
 
     # Transport-specific settings
-    server_command: Optional[str] = Field(None, description="Command to start server (for stdio)")
-    server_args: List[str] = Field(default_factory=list, description="Arguments for server command")
-    auth_token: Optional[str] = Field(None, description="Authentication token (for HTTP/SSE)")
-    headers: Dict[str, str] = Field(default_factory=dict, description="Additional headers")
+    server_command: str | None = Field(None, description="Command to start server (for stdio)")
+    server_args: list[str] = Field(default_factory=list, description="Arguments for server command")
+    auth_token: str | None = Field(None, description="Authentication token (for HTTP/SSE)")
+    headers: dict[str, str] = Field(default_factory=dict, description="Additional headers")
 
 
 # Decorator already imported above
+
 
 @provider(provider_type="mcp_client", name="mcp-client", settings_class=MCPClientSettings)
 class MCPClientProvider(Provider[MCPClientSettings]):
     """Provider that acts as MCP client to connect to external servers."""
 
-    def __init__(self, name: str, provider_type: str = "mcp_client", settings: Optional[MCPClientSettings] = None):
-        super().__init__(
-            name=name,
-            provider_type=provider_type,
-            settings=settings
-        )
-        self._client: Optional[BaseMCPClient] = None
-        self._connection: Optional[MCPConnection] = None
+    def __init__(
+        self,
+        name: str,
+        provider_type: str = "mcp_client",
+        settings: MCPClientSettings | None = None,
+    ):
+        super().__init__(name=name, provider_type=provider_type, settings=settings)
+        self._client: BaseMCPClient | None = None
+        self._connection: MCPConnection | None = None
         self._connected = False
 
     async def initialize(self) -> None:
@@ -71,7 +79,7 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 server_args=self.settings.server_args,
                 timeout=self.settings.timeout,
                 auth_token=self.settings.auth_token,
-                headers=self.settings.headers
+                headers=self.settings.headers,
             )
 
             # Initialize client with connection
@@ -84,7 +92,7 @@ class MCPClientProvider(Provider[MCPClientSettings]):
         except Exception as e:
             logger.error(f"Failed to initialize MCP client '{self.name}': {e}")
             await self._cleanup()
-            raise MCPConnectionError(f"Failed to connect to MCP server: {e}")
+            raise MCPConnectionError(f"Failed to connect to MCP server: {e}") from e
 
     async def shutdown(self) -> None:
         """Shutdown MCP client connection."""
@@ -111,7 +119,7 @@ class MCPClientProvider(Provider[MCPClientSettings]):
             finally:
                 self._connection = None
 
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """Call a tool on the MCP server."""
         if not self._connected or not self._client:
             error_context = ErrorContext.create(
@@ -119,20 +127,17 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.call_tool",
                 component=self.name,
-                operation="call_tool"
+                operation="call_tool",
             )
 
             provider_context = ProviderErrorContext(
-                provider_name=self.name,
-                provider_type="mcp",
-                operation="call_tool",
-                retry_count=0
+                provider_name=self.name, provider_type="mcp", operation="call_tool", retry_count=0
             )
 
             raise ProviderError(
                 message="MCP client not connected",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             )
 
         try:
@@ -157,20 +162,20 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.read_resource",
                 component=self.name,
-                operation="read_resource"
+                operation="read_resource",
             )
 
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="mcp",
                 operation="read_resource",
-                retry_count=0
+                retry_count=0,
             )
 
             raise ProviderError(
                 message="MCP client not connected",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             )
 
         try:
@@ -185,7 +190,7 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 await self._attempt_reconnect()
             raise
 
-    async def list_tools(self) -> Dict[str, MCPTool]:
+    async def list_tools(self) -> dict[str, MCPTool]:
         """List available tools from the MCP server."""
         if not self._connected or not self._client:
             error_context = ErrorContext.create(
@@ -193,25 +198,22 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.list_tools",
                 component=self.name,
-                operation="list_tools"
+                operation="list_tools",
             )
 
             provider_context = ProviderErrorContext(
-                provider_name=self.name,
-                provider_type="mcp",
-                operation="list_tools",
-                retry_count=0
+                provider_name=self.name, provider_type="mcp", operation="list_tools", retry_count=0
             )
 
             raise ProviderError(
                 message="MCP client not connected",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             )
 
         return self._client.get_available_tools()
 
-    async def list_resources(self) -> Dict[str, MCPResource]:
+    async def list_resources(self) -> dict[str, MCPResource]:
         """List available resources from the MCP server."""
         if not self._connected or not self._client:
             error_context = ErrorContext.create(
@@ -219,20 +221,20 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 error_type="ProviderError",
                 error_location=f"{self.__class__.__name__}.list_resources",
                 component=self.name,
-                operation="list_resources"
+                operation="list_resources",
             )
 
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type="mcp",
                 operation="list_resources",
-                retry_count=0
+                retry_count=0,
             )
 
             raise ProviderError(
                 message="MCP client not connected",
                 context=error_context,
-                provider_context=provider_context
+                provider_context=provider_context,
             )
 
         return self._client.get_available_resources()
@@ -252,8 +254,10 @@ class MCPClientProvider(Provider[MCPClientSettings]):
             except Exception as e:
                 logger.warning(f"Reconnection attempt {attempt + 1} failed: {e}")
                 if attempt == self.settings.retry_attempts - 1:
-                    logger.error(f"Failed to reconnect MCP client '{self.name}' after {self.settings.retry_attempts} attempts")
-                    raise MCPConnectionError("Failed to reconnect to MCP server")
+                    logger.error(
+                        f"Failed to reconnect MCP client '{self.name}' after {self.settings.retry_attempts} attempts"
+                    )
+                    raise MCPConnectionError("Failed to reconnect to MCP server") from e
 
     def is_connected(self) -> bool:
         """Check if client is connected."""
@@ -273,18 +277,18 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 error_type="ProviderError",
                 error_location="MCPClientProvider.reconnect",
                 component="mcp_client_provider",
-                operation="reconnect"
+                operation="reconnect",
             )
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type=self.provider_type,
                 operation="reconnect",
-                retry_count=0
+                retry_count=0,
             )
             raise ProviderError(
                 "Cannot reconnect: No existing client or connection",
                 error_context,
-                provider_context
+                provider_context,
             )
 
         try:
@@ -298,22 +302,19 @@ class MCPClientProvider(Provider[MCPClientSettings]):
                 error_type="ProviderError",
                 error_location="MCPClientProvider.reconnect",
                 component="mcp_client_provider",
-                operation="reconnect"
+                operation="reconnect",
             )
             provider_context = ProviderErrorContext(
                 provider_name=self.name,
                 provider_type=self.provider_type,
                 operation="reconnect",
-                retry_count=1
+                retry_count=1,
             )
             raise ProviderError(
-                f"Failed to reconnect: {e}",
-                error_context,
-                provider_context,
-                cause=e
-            )
+                f"Failed to reconnect: {e}", error_context, provider_context, cause=e
+) from e
 
-    async def get_server_info(self) -> Dict[str, Any]:
+    async def get_server_info(self) -> dict[str, Any]:
         """Get information about the connected server."""
         if not self._connected or not self._client:
             return {"connected": False}
@@ -328,7 +329,7 @@ class MCPClientProvider(Provider[MCPClientSettings]):
             "tools_count": len(tools),
             "resources_count": len(resources),
             "available_tools": list(tools.keys()),
-            "available_resources": list(resources.keys())
+            "available_resources": list(resources.keys()),
         }
 
 
@@ -377,36 +378,23 @@ class MCPResourceWrapper:
 
 # Helper functions for easier usage
 async def create_mcp_client(
-    name: str,
-    server_uri: str,
-    transport: MCPTransport = MCPTransport.STDIO,
-    **kwargs: Any
+    name: str, server_uri: str, transport: MCPTransport = MCPTransport.STDIO, **kwargs: Any
 ) -> MCPClientProvider:
     """Create and initialize an MCP client provider."""
-    settings = MCPClientSettings(
-        server_uri=server_uri,
-        transport=transport,
-        **kwargs
-    )
+    settings = MCPClientSettings(server_uri=server_uri, transport=transport, **kwargs)
 
     client = MCPClientProvider(name=name, provider_type="mcp_client", settings=settings)
     await client.initialize()
     return client
 
 
-async def get_mcp_tools(client: MCPClientProvider) -> Dict[str, MCPToolWrapper]:
+async def get_mcp_tools(client: MCPClientProvider) -> dict[str, MCPToolWrapper]:
     """Get wrapped MCP tools from a client."""
     tools = await client.list_tools()
-    return {
-        name: MCPToolWrapper(client, tool)
-        for name, tool in tools.items()
-    }
+    return {name: MCPToolWrapper(client, tool) for name, tool in tools.items()}
 
 
-async def get_mcp_resources(client: MCPClientProvider) -> Dict[str, MCPResourceWrapper]:
+async def get_mcp_resources(client: MCPClientProvider) -> dict[str, MCPResourceWrapper]:
     """Get wrapped MCP resources from a client."""
     resources = await client.list_resources()
-    return {
-        uri: MCPResourceWrapper(client, resource)
-        for uri, resource in resources.items()
-    }
+    return {uri: MCPResourceWrapper(client, resource) for uri, resource in resources.items()}

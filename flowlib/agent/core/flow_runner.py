@@ -6,7 +6,7 @@ operations that were previously in BaseAgent.
 """
 
 import logging
-from typing import Any, Dict, List, cast
+from typing import Any, cast
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ExecutionError, NotInitializedError
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class AgentFlowRunner(AgentComponent):
     """Handles agent flow operations.
-    
+
     This component is responsible for:
     - Flow registration and management
     - Flow execution coordination
@@ -28,12 +28,12 @@ class AgentFlowRunner(AgentComponent):
 
     def __init__(self, name: str = "flow_runner"):
         """Initialize the flow runner.
-        
+
         Args:
             name: Component name
         """
         super().__init__(name)
-        self._flows: Dict[str, Flow[Any]] = {}
+        self._flows: dict[str, Flow[Any]] = {}
 
     async def _initialize_impl(self) -> None:
         """Initialize the flow runner."""
@@ -52,7 +52,7 @@ class AgentFlowRunner(AgentComponent):
                 discovered_flows = flow_registry.get_agent_selectable_flows()
                 logger.info(f"Discovered {len(discovered_flows)} flows")
 
-                for flow_name, flow in discovered_flows.items():
+                for _flow_name, flow in discovered_flows.items():
                     self.register_flow(cast(Flow[Any], flow))
             else:
                 logger.warning("Flow registry not available")
@@ -61,11 +61,11 @@ class AgentFlowRunner(AgentComponent):
 
     def register_flow(self, flow: Flow) -> None:
         """Register a flow with the agent.
-        
+
         Args:
             flow: Flow instance to register
         """
-        if not hasattr(flow, 'name'):
+        if not hasattr(flow, "name"):
             logger.warning(f"Flow {flow} does not have a name attribute, skipping registration")
             return
 
@@ -82,14 +82,14 @@ class AgentFlowRunner(AgentComponent):
 
     async def register_flow_async(self, flow: Flow[Any]) -> None:
         """Register a flow asynchronously.
-        
+
         Args:
             flow: Flow instance to register
         """
         self.register_flow(flow)
 
         # Initialize the flow if it's a component
-        if hasattr(flow, 'initialize'):
+        if hasattr(flow, "initialize"):
             try:
                 await flow.initialize()
             except Exception as e:
@@ -97,7 +97,7 @@ class AgentFlowRunner(AgentComponent):
 
     def unregister_flow(self, flow_name: str) -> None:
         """Unregister a flow from the agent.
-        
+
         Args:
             flow_name: Name of the flow to unregister
         """
@@ -114,15 +114,15 @@ class AgentFlowRunner(AgentComponent):
 
     def get_flow_registry(self) -> FlowRegistry:
         """Get the flow registry.
-        
+
         Returns:
             FlowRegistry instance
         """
         return flow_registry
 
-    def get_flow_descriptions(self) -> List[Dict[str, Any]]:
+    def get_flow_descriptions(self) -> list[dict[str, Any]]:
         """Get descriptions of all registered flows.
-        
+
         Returns:
             List of flow descriptions for planning
         """
@@ -131,51 +131,45 @@ class AgentFlowRunner(AgentComponent):
         for flow_name, flow in self._flows.items():
             try:
                 # Try to get description from the flow
-                if hasattr(flow, 'get_description'):
+                if hasattr(flow, "get_description"):
                     description = flow.get_description()
-                elif hasattr(flow, 'description'):
+                elif hasattr(flow, "description"):
                     description = flow.description
                 else:
                     description = f"Flow: {flow_name}"
 
-                descriptions.append({
-                    "name": flow_name,
-                    "description": description,
-                    "type": type(flow).__name__
-                })
+                descriptions.append(
+                    {"name": flow_name, "description": description, "type": type(flow).__name__}
+                )
             except Exception as e:
                 logger.warning(f"Error getting description for flow {flow_name}: {e}")
-                descriptions.append({
-                    "name": flow_name,
-                    "description": f"Flow: {flow_name} (description unavailable)",
-                    "type": type(flow).__name__
-                })
+                descriptions.append(
+                    {
+                        "name": flow_name,
+                        "description": f"Flow: {flow_name} (description unavailable)",
+                        "type": type(flow).__name__,
+                    }
+                )
 
         return descriptions
 
-    async def execute_flow(self,
-                          flow_name: str,
-                          inputs: Any,
-                          **kwargs: Any) -> FlowResult[Any]:
+    async def execute_flow(self, flow_name: str, inputs: Any, **kwargs: Any) -> FlowResult[Any]:
         """Execute a flow with given inputs.
-        
+
         Args:
             flow_name: Name of the flow to execute
             inputs: Inputs for the flow
             **kwargs: Additional execution arguments
-            
+
         Returns:
             FlowResult from the execution
-            
+
         Raises:
             NotInitializedError: If the flow runner is not initialized
             ExecutionError: If the flow execution fails
         """
         if not self._initialized:
-            raise NotInitializedError(
-                component_name=self._name,
-                operation="execute_flow"
-            )
+            raise NotInitializedError(component_name=self._name, operation="execute_flow")
 
         # Check if flow is registered locally
         flow = self._flows.get(flow_name)
@@ -199,21 +193,24 @@ class AgentFlowRunner(AgentComponent):
                 context = inputs
 
             # Execute the flow
-            if hasattr(flow, 'execute'):
+            if hasattr(flow, "execute"):
                 result = await flow.execute(context)
-            elif hasattr(flow, 'run_pipeline'):
+            elif hasattr(flow, "run_pipeline"):
                 result = await flow.run_pipeline(context)
             else:
-                raise ExecutionError(f"Flow '{flow_name}' does not have execute or run_pipeline method")
+                raise ExecutionError(
+                    f"Flow '{flow_name}' does not have execute or run_pipeline method"
+                )
 
             # Log execution
             activity_stream = self.get_component("activity_stream")
             if activity_stream:
                 from flowlib.agent.core.activity_stream import ActivityStream
+
                 cast(ActivityStream, activity_stream).execution(
                     f"Flow '{flow_name}' executed successfully",
                     inputs=str(inputs)[:100],
-                    result=str(result)[:100] if result else "None"
+                    result=str(result)[:100] if result else "None",
                 )
 
             return result
@@ -222,9 +219,9 @@ class AgentFlowRunner(AgentComponent):
             # Let the real exception bubble up
             raise
 
-    async def list_available_flows(self) -> List[Dict[str, Any]]:
+    async def list_available_flows(self) -> list[dict[str, Any]]:
         """List all available flows.
-        
+
         Returns:
             List of available flow information
         """
@@ -232,12 +229,14 @@ class AgentFlowRunner(AgentComponent):
 
         # Add local flows
         for flow_name, flow in self._flows.items():
-            flows.append({
-                "name": flow_name,
-                "type": type(flow).__name__,
-                "source": "local",
-                "description": getattr(flow, 'description', f"Flow: {flow_name}")
-            })
+            flows.append(
+                {
+                    "name": flow_name,
+                    "type": type(flow).__name__,
+                    "source": "local",
+                    "description": getattr(flow, "description", f"Flow: {flow_name}"),
+                }
+            )
 
         # Add flows from global registry
         if flow_registry:
@@ -246,23 +245,24 @@ class AgentFlowRunner(AgentComponent):
                 for flow_name, flow_obj in global_flows.items():
                     flow = cast(Flow[Any], flow_obj)
                     if flow_name not in self._flows:  # Don't duplicate
-                        flows.append({
-                            "name": flow_name,
-                            "type": type(flow).__name__,
-                            "source": "global_registry",
-                            "description": getattr(flow, 'description', f"Flow: {flow_name}")
-                        })
+                        flows.append(
+                            {
+                                "name": flow_name,
+                                "type": type(flow).__name__,
+                                "source": "global_registry",
+                                "description": getattr(flow, "description", f"Flow: {flow_name}"),
+                            }
+                        )
             except Exception as e:
                 logger.warning(f"Error getting flows from global registry: {e}")
 
         return flows
 
     @property
-    def flows(self) -> Dict[str, Flow[Any]]:
+    def flows(self) -> dict[str, Flow[Any]]:
         """Get registered flows.
-        
+
         Returns:
             Dictionary of registered flows
         """
         return self._flows.copy()
-

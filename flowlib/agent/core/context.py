@@ -6,7 +6,7 @@ into flows without polluting input models with configuration concerns.
 """
 
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Protocol
 
 from pydantic import Field
 
@@ -25,16 +25,16 @@ class FlowProvider(Protocol):
 @dataclass
 class FlowContext:
     """Execution context for flows with automatic provider resolution.
-    
+
     This class provides clean dependency injection for flows without
     polluting input models with configuration concerns.
     """
 
     # Provider instances (lazy-loaded)
-    _llm_provider: Optional[FlowProvider] = None
-    _graph_provider: Optional[FlowProvider] = None
-    _vector_provider: Optional[FlowProvider] = None
-    _cache_provider: Optional[FlowProvider] = None
+    _llm_provider: FlowProvider | None = None
+    _graph_provider: FlowProvider | None = None
+    _vector_provider: FlowProvider | None = None
+    _cache_provider: FlowProvider | None = None
 
     # Processing configuration
     confidence_threshold: float = 0.7
@@ -77,46 +77,36 @@ class FlowContext:
 
 class ProcessingOptions(StrictBaseModel):
     """Optional processing configuration that can be passed to flows.
-    
+
     This replaces the configuration fields that were scattered throughout
     input models, providing clean defaults and clear documentation.
     """
 
     # Quality settings
     confidence_threshold: float = Field(
-        default=0.7,
-        ge=0.0,
-        le=1.0,
-        description="Minimum confidence threshold for results"
+        default=0.7, ge=0.0, le=1.0, description="Minimum confidence threshold for results"
     )
 
     # Performance settings
     model_preference: str = Field(
         default="balanced",
-        description="Model preference: 'fast' (speed), 'balanced' (default), 'quality' (accuracy)"
+        description="Model preference: 'fast' (speed), 'balanced' (default), 'quality' (accuracy)",
     )
 
     # Limits
     max_results: int = Field(
-        default=10,
-        ge=1,
-        le=100,
-        description="Maximum number of results to return"
+        default=10, ge=1, le=100, description="Maximum number of results to return"
     )
 
     # Timeout settings
     timeout_seconds: int = Field(
-        default=60,
-        ge=1,
-        le=300,
-        description="Maximum processing time in seconds"
+        default=60, ge=1, le=300, description="Maximum processing time in seconds"
     )
 
     def create_context(self) -> FlowContext:
         """Create a flow context from these processing options."""
         return FlowContext(
-            confidence_threshold=self.confidence_threshold,
-            model_preference=self.model_preference
+            confidence_threshold=self.confidence_threshold, model_preference=self.model_preference
         )
 
 
@@ -130,13 +120,13 @@ def get_default_processing_options() -> ProcessingOptions:
 
 
 async def create_flow_context(
-    processing_options: Optional[ProcessingOptions] = None
+    processing_options: ProcessingOptions | None = None,
 ) -> FlowContext:
     """Create a flow context with optional processing configuration.
-    
+
     Args:
         processing_options: Optional processing configuration
-        
+
     Returns:
         FlowContext ready for use in flows
     """

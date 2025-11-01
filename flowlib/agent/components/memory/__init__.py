@@ -29,5 +29,5 @@ __all__ = [
     "MemorySearchResultCollection",
     "MemoryContext",
     "ExecutionMemoryItem",
-    "EntityMemoryItem"
+    "EntityMemoryItem",
 ]

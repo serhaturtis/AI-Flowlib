@@ -13,5 +13,4 @@ logger = logging.getLogger(__name__)
 # This might need expansion if more embedding providers are added
 
 
-
 # TODO: Add @embedding_provider decorator if needed for direct class registration

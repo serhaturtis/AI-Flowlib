@@ -8,7 +8,6 @@ import importlib
 import logging
 import pkgutil
 import re
-from typing import Dict, Optional
 
 from .base import BaseDomainScanner
 
@@ -25,11 +24,11 @@ class ScannerRegistry:
 
     def __init__(self) -> None:
         """Initialize empty registry."""
-        self._scanners: Dict[str, BaseDomainScanner] = {}
-        self._domain_pattern = re.compile(r'^[a-z][a-z0-9_]*$')
+        self._scanners: dict[str, BaseDomainScanner] = {}
+        self._domain_pattern = re.compile(r"^[a-z][a-z0-9_]*$")
 
     @property
-    def scanners(self) -> Dict[str, BaseDomainScanner]:
+    def scanners(self) -> dict[str, BaseDomainScanner]:
         """Get registered scanners (read-only view)."""
         return dict(self._scanners)  # Return copy to prevent external modification
 
@@ -52,7 +51,7 @@ class ScannerRegistry:
             )
 
         # Validate scanner has domain_name property
-        if not hasattr(scanner, 'domain_name'):
+        if not hasattr(scanner, "domain_name"):
             raise ValueError(f"Scanner {scanner.__class__.__name__} missing domain_name property")
 
         # Validate domain matches scanner's domain_name
@@ -72,7 +71,7 @@ class ScannerRegistry:
         self._scanners[domain] = scanner
         logger.debug(f"Registered scanner: {domain} -> {scanner.__class__.__name__}")
 
-    def get(self, domain: str) -> Optional[BaseDomainScanner]:
+    def get(self, domain: str) -> BaseDomainScanner | None:
         """Get scanner for domain.
 
         Args:
@@ -102,12 +101,12 @@ class ScannerRegistry:
         # Discover from projects directory
         try:
             import projects
+
             projects_path = projects.__path__
             logger.debug(f"Scanning for domain scanners in projects: {projects_path}")
 
-            for importer, modname, ispkg in pkgutil.walk_packages(
-                path=projects_path,
-                prefix=projects.__name__ + "."
+            for _importer, modname, _ispkg in pkgutil.walk_packages(
+                path=projects_path, prefix=projects.__name__ + "."
             ):
                 # Look for scanner modules
                 if "scanner" in modname.lower():
@@ -119,16 +118,22 @@ class ScannerRegistry:
                         # Find all BaseDomainScanner subclasses in the module
                         for name, obj in inspect.getmembers(module, inspect.isclass):
                             # Check if it's a BaseDomainScanner subclass (but not BaseDomainScanner itself)
-                            if (issubclass(obj, BaseDomainScanner) and
-                                obj is not BaseDomainScanner and
-                                obj.__module__ == modname):
+                            if (
+                                issubclass(obj, BaseDomainScanner)
+                                and obj is not BaseDomainScanner
+                                and obj.__module__ == modname
+                            ):
                                 try:
                                     # Instantiate and register
                                     scanner = obj()
                                     self.register(scanner.domain_name, scanner)
-                                    logger.debug(f"Registered scanner {name} for domain '{scanner.domain_name}'")
+                                    logger.debug(
+                                        f"Registered scanner {name} for domain '{scanner.domain_name}'"
+                                    )
                                 except Exception as e:
-                                    logger.warning(f"Failed to register scanner {name} from {modname}: {e}")
+                                    logger.warning(
+                                        f"Failed to register scanner {name} from {modname}: {e}"
+                                    )
 
                         logger.debug(f"Successfully processed scanner module: {modname}")
                     except Exception as e:
@@ -175,5 +180,5 @@ class ScannerRegistry:
 
     def __str__(self) -> str:
         """String representation."""
-        domains = ', '.join(sorted(self._scanners.keys()))
+        domains = ", ".join(sorted(self._scanners.keys()))
         return f"ScannerRegistry({len(self._scanners)} scanners: [{domains}])"

@@ -24,7 +24,7 @@ __all__ = [
     "PineconeProvider",
     "PineconeProviderSettings",
     "QdrantProvider",
-    "QdrantProviderSettings"
+    "QdrantProviderSettings",
 ]
 
 # Makes vector a package

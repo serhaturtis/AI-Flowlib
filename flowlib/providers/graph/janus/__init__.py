@@ -1,10 +1,11 @@
 """JanusGraph database provider module."""
 
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 # Import availability and components
 try:
     from .provider import JanusGraphProvider, JanusProviderSettings
+
     JANUS_AVAILABLE = True
 
     # Re-export gremlin components for test compatibility
@@ -26,8 +27,8 @@ try:
         GraphBinaryMessageSerializer = None
 
 except ImportError:
-    JanusGraphProvider: Optional[Type[Any]] = None  # type: ignore[no-redef]
-    JanusProviderSettings: Optional[Type[Any]] = None  # type: ignore[no-redef]
+    JanusGraphProvider: type[Any] | None = None  # type: ignore[no-redef]
+    JanusProviderSettings: type[Any] | None = None  # type: ignore[no-redef]
     JANUS_AVAILABLE = False
     Client = None
     DriverRemoteConnection = None

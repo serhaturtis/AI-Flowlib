@@ -2,11 +2,10 @@
 
 from flowlib.providers.llm import PromptConfigOverride
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.resources.models.base import ResourceBase
 
 
 @prompt(name="plugin-manifest-generation")
-class PluginManifestPrompt(ResourceBase):
+class PluginManifestPrompt:
     """Generate plugin manifest metadata."""
 
     template: str = """
@@ -16,7 +15,7 @@ Plugin Name: {{plugin_name}}
 Domains: {{domains}}
 Extracted Statistics:
 - Documents: {{total_documents}}
-- Entities: {{total_entities}} 
+- Entities: {{total_entities}}
 - Relationships: {{total_relationships}}
 - Chunks: {{total_chunks}}
 
@@ -29,14 +28,11 @@ Generate appropriate:
 Consider the extracted data quality and coverage when determining metadata.
 """
 
-    config: PromptConfigOverride = PromptConfigOverride(
-        temperature=0.3,
-        max_tokens=800
-    )
+    config: PromptConfigOverride = PromptConfigOverride(temperature=0.3, max_tokens=800)
 
 
 @prompt(name="plugin-readme-generation")
-class PluginReadmePrompt(ResourceBase):
+class PluginReadmePrompt:
     """Generate plugin README documentation."""
 
     template: str = """
@@ -63,14 +59,11 @@ Generate sections for:
 Make it informative and user-friendly for developers who will use this plugin.
 """
 
-    config: PromptConfigOverride = PromptConfigOverride(
-        temperature=0.4,
-        max_tokens=1500
-    )
+    config: PromptConfigOverride = PromptConfigOverride(temperature=0.4, max_tokens=1500)
 
 
 @prompt(name="plugin-provider-optimization")
-class PluginProviderOptimizationPrompt(ResourceBase):
+class PluginProviderOptimizationPrompt:
     """Optimize plugin provider code for specific use cases."""
 
     template: str = """
@@ -95,7 +88,4 @@ Suggest optimizations for:
 Provide specific code improvements and explain the reasoning.
 """
 
-    config: PromptConfigOverride = PromptConfigOverride(
-        temperature=0.2,
-        max_tokens=2000
-    )
+    config: PromptConfigOverride = PromptConfigOverride(temperature=0.2, max_tokens=2000)

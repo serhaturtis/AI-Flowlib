@@ -1,13 +1,11 @@
 """REPL execution strategy - interactive command-line interface."""
 
 import logging
-from typing import Optional
 
 from pydantic import Field
 
 from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.execution.strategy import ExecutionStrategy
-from flowlib.agent.models.state import AgentState
 from flowlib.core.models import StrictBaseModel
 
 logger = logging.getLogger(__name__)
@@ -17,17 +15,10 @@ class REPLConfig(StrictBaseModel):
     """Configuration for REPL execution strategy."""
 
     history_file: str = Field(
-        default=".flowlib_repl_history.txt",
-        description="Path to readline history file"
+        default=".flowlib_repl_history.txt", description="Path to readline history file"
     )
-    enable_commands: bool = Field(
-        default=True,
-        description="Enable / commands"
-    )
-    enable_streaming: bool = Field(
-        default=True,
-        description="Stream LLM responses"
-    )
+    enable_commands: bool = Field(default=True, description="Enable / commands")
+    enable_streaming: bool = Field(default=True, description="Stream LLM responses")
 
 
 class REPLStrategy(ExecutionStrategy):
@@ -63,7 +54,7 @@ class REPLStrategy(ExecutionStrategy):
         await start_agent_repl(
             agent_id=f"repl_{agent.name}",
             config=agent.config,
-            history_file=self.config.history_file
+            history_file=self.config.history_file,
         )
 
         logger.info("REPL session ended")

@@ -31,5 +31,5 @@ __all__ = [
     "WorkspaceKnowledge",
     "SuccessfulPattern",
     "RecoveryStrategy",
-    "AgentContextManager"
+    "AgentContextManager",
 ]

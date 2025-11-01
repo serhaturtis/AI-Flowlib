@@ -6,7 +6,7 @@ import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
@@ -36,7 +36,7 @@ class CheckpointManager:
         self.streaming_vector_db_dir.mkdir(parents=True, exist_ok=True)
         self.streaming_graph_db_dir.mkdir(parents=True, exist_ok=True)
 
-    async def load_streaming_state(self) -> Optional[ExtractionState]:
+    async def load_streaming_state(self) -> ExtractionState | None:
         """Load existing streaming state if available."""
 
         if not self.state_file.exists():
@@ -44,7 +44,7 @@ class CheckpointManager:
             return None
 
         try:
-            with open(self.state_file, 'r') as f:
+            with open(self.state_file) as f:
                 state_data = json.load(f)
 
             # Convert back to ExtractionState
@@ -54,7 +54,9 @@ class CheckpointManager:
             streaming_state.streaming_vector_db_path = str(self.streaming_vector_db_dir)
             streaming_state.streaming_graph_db_path = str(self.streaming_graph_db_dir)
 
-            logger.info(f"Loaded streaming state: {len(streaming_state.processed_docs)} docs processed")
+            logger.info(
+                f"Loaded streaming state: {len(streaming_state.processed_docs)} docs processed"
+            )
             logger.info(f"Progress: {streaming_state.progress.progress_percentage:.1f}%")
 
             return streaming_state
@@ -72,11 +74,11 @@ class CheckpointManager:
 
             # Convert sets to lists for JSON serialization
             state_dict = state.model_dump()
-            state_dict['processed_docs'] = list(state.processed_docs)
-            state_dict['detected_domains'] = list(state.detected_domains)
+            state_dict["processed_docs"] = list(state.processed_docs)
+            state_dict["detected_domains"] = list(state.detected_domains)
 
             # Save state file
-            with open(self.state_file, 'w') as f:
+            with open(self.state_file, "w") as f:
                 json.dump(state_dict, f, indent=2, default=str)
 
             logger.debug("Streaming state saved successfully")
@@ -94,7 +96,7 @@ class CheckpointManager:
     async def export_incremental_plugin(self, state: ExtractionState) -> str:
         """Export incremental plugin using existing plugin export system."""
 
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         doc_count = len(state.processed_docs)
         plugin_name = f"streaming_checkpoint_{doc_count}_{timestamp}"
 
@@ -134,7 +136,9 @@ class CheckpointManager:
         state.checkpoint_plugins.append(str(plugin_dir))
 
         logger.info(f"Incremental plugin exported: {plugin_dir}")
-        logger.info(f"Contains {len(state.accumulated_entities)} entities, {len(state.accumulated_relationships)} relationships")
+        logger.info(
+            f"Contains {len(state.accumulated_entities)} entities, {len(state.accumulated_relationships)} relationships"
+        )
 
         return str(plugin_dir)
 
@@ -143,12 +147,12 @@ class CheckpointManager:
 
         # Export entities
         entities_data = [entity.model_dump() for entity in state.accumulated_entities]
-        with open(data_dir / "entities.json", 'w') as f:
+        with open(data_dir / "entities.json", "w") as f:
             json.dump(entities_data, f, indent=2, default=str)
 
         # Export relationships
         relationships_data = [rel.model_dump() for rel in state.accumulated_relationships]
-        with open(data_dir / "relationships.json", 'w') as f:
+        with open(data_dir / "relationships.json", "w") as f:
             json.dump(relationships_data, f, indent=2, default=str)
 
         # Export processing metadata
@@ -157,10 +161,10 @@ class CheckpointManager:
             "failed_documents": state.failed_docs,
             "detected_domains": list(state.detected_domains),
             "progress": state.progress.model_dump(),
-            "export_timestamp": datetime.now().isoformat()
+            "export_timestamp": datetime.now().isoformat(),
         }
 
-        with open(data_dir / "metadata.json", 'w') as f:
+        with open(data_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2, default=str)
 
     async def _copy_streaming_databases(self, databases_dir: Path, state: ExtractionState) -> None:
@@ -192,7 +196,9 @@ class CheckpointManager:
                 elif item.is_dir():
                     shutil.copytree(item, graph_db_dest / item.name, dirs_exist_ok=True)
 
-    async def _create_checkpoint_manifest(self, plugin_name: str, state: ExtractionState) -> PluginManifest:
+    async def _create_checkpoint_manifest(
+        self, plugin_name: str, state: ExtractionState
+    ) -> PluginManifest:
         """Create manifest for checkpoint plugin."""
 
         provider_class = f"{plugin_name.title().replace('_', '')}Provider"
@@ -200,16 +206,10 @@ class CheckpointManager:
         # Database configuration
         databases = {}
         if Path(state.streaming_vector_db_path).exists():
-            databases["chromadb"] = {
-                "enabled": True,
-                "config_file": "chromadb_config.yaml"
-            }
+            databases["chromadb"] = {"enabled": True, "config_file": "chromadb_config.yaml"}
 
         if Path(state.streaming_graph_db_path).exists():
-            databases["neo4j"] = {
-                "enabled": True,
-                "config_file": "neo4j_config.yaml"
-            }
+            databases["neo4j"] = {"enabled": True, "config_file": "neo4j_config.yaml"}
 
         # Checkpoint metadata
         checkpoint_info = {
@@ -219,7 +219,7 @@ class CheckpointManager:
             "total_docs": state.progress.total_documents,
             "progress_percentage": state.progress.progress_percentage,
             "created_at": datetime.now().isoformat(),
-            "can_resume_from": True
+            "can_resume_from": True,
         }
 
         return PluginManifest(
@@ -233,7 +233,7 @@ class CheckpointManager:
             documents_processed=len(state.processed_docs),
             domains=list(state.detected_domains),
             databases=databases,
-            checkpoint=checkpoint_info
+            checkpoint=checkpoint_info,
         )
 
     async def _save_manifest(self, plugin_dir: Path, manifest: PluginManifest) -> None:
@@ -241,7 +241,7 @@ class CheckpointManager:
 
         manifest_data = manifest.model_dump()
 
-        with open(plugin_dir / "manifest.yaml", 'w') as f:
+        with open(plugin_dir / "manifest.yaml", "w") as f:
             yaml.dump(manifest_data, f, default_flow_style=False)
 
     async def _generate_checkpoint_provider(self, plugin_name: str, state: ExtractionState) -> str:
@@ -253,87 +253,87 @@ class CheckpointManager:
         # Build provider code safely without complex f-string templates
         lines = [
             '"""',
-            f'Incremental knowledge plugin provider for checkpoint: {plugin_name}',
-            f'Generated from streaming extraction of {len(state.processed_docs)} documents.',
+            f"Incremental knowledge plugin provider for checkpoint: {plugin_name}",
+            f"Generated from streaming extraction of {len(state.processed_docs)} documents.",
             '"""',
-            '',
-            'import json',
-            'import logging',
-            'from pathlib import Path',
-            'from typing import List, Dict, Any',
-            'from flowlib.providers.knowledge.base import KnowledgeProvider, Knowledge',
-            '',
-            'logger = logging.getLogger(__name__)',
-            '',
-            '',
-            f'class {class_name}(KnowledgeProvider):',
+            "",
+            "import json",
+            "import logging",
+            "from pathlib import Path",
+            "from typing import List, Dict, Any",
+            "from flowlib.providers.knowledge.base import KnowledgeProvider, Knowledge",
+            "",
+            "logger = logging.getLogger(__name__)",
+            "",
+            "",
+            f"class {class_name}(KnowledgeProvider):",
             '    """Incremental knowledge provider from streaming checkpoint."""',
-            '',
-            '    def __init__(self, plugin_dir: Path):',
-            '        super().__init__()',
-            '        self.plugin_dir = plugin_dir',
-            f'        self.domains = {domains_list}',
-            '        self._entities_cache = None',
-            '',
-            '    def get_description(self) -> str:',
+            "",
+            "    def __init__(self, plugin_dir: Path):",
+            "        super().__init__()",
+            "        self.plugin_dir = plugin_dir",
+            f"        self.domains = {domains_list}",
+            "        self._entities_cache = None",
+            "",
+            "    def get_description(self) -> str:",
             f'        return "Incremental knowledge provider for checkpoint: {plugin_name}"',
-            '',
-            '    async def query(self, domain: str, query: str, limit: int = 10) -> List[Knowledge]:',
+            "",
+            "    async def query(self, domain: str, query: str, limit: int = 10) -> List[Knowledge]:",
             '        """Query knowledge from checkpoint data."""',
-            '        if domain not in self.domains:',
-            '            return []',
-            '',
-            '        entities = self._load_entities()',
-            '        matches = []',
-            '        query_lower = query.lower()',
-            '',
-            '        for entity in entities:',
+            "        if domain not in self.domains:",
+            "            return []",
+            "",
+            "        entities = self._load_entities()",
+            "        matches = []",
+            "        query_lower = query.lower()",
+            "",
+            "        for entity in entities:",
             '            if "name" in entity and query_lower in entity["name"].lower():',
             '                entity_type = entity.get("entity_type", "unknown")',
             '                entity_desc = entity.get("description", "N/A")',
-            '',
-            '                content = f"Entity: {entity[\'name\']}\\n"',
+            "",
+            "                content = f\"Entity: {entity['name']}\\n\"",
             '                content += f"Type: {entity_type}\\n"',
             '                content += f"Description: {entity_desc}"',
-            '',
-            '                matches.append(Knowledge(',
-            '                    content=content,',
-            '                    domain=domain,',
-            '                    confidence=0.8,',
+            "",
+            "                matches.append(Knowledge(",
+            "                    content=content,",
+            "                    domain=domain,",
+            "                    confidence=0.8,",
             '                    source="json_entities",',
-            '                    metadata={',
+            "                    metadata={",
             '                        "entity_id": entity.get("entity_id"),',
             '                        "type": entity.get("entity_type")',
-            '                    }',
-            '                ))',
-            '',
-            '                if len(matches) >= limit:',
-            '                    break',
-            '',
-            '        return matches',
-            '',
-            '    def _load_entities(self) -> List[Dict]:',
+            "                    }",
+            "                ))",
+            "",
+            "                if len(matches) >= limit:",
+            "                    break",
+            "",
+            "        return matches",
+            "",
+            "    def _load_entities(self) -> List[Dict]:",
             '        """Load entities from checkpoint data."""',
-            '        if self._entities_cache is None:',
+            "        if self._entities_cache is None:",
             '            entities_file = self.plugin_dir / "entities.json"',
-            '            if entities_file.exists():',
-            '                try:',
+            "            if entities_file.exists():",
+            "                try:",
             '                    with open(entities_file, "r", encoding="utf-8") as f:',
-            '                        self._entities_cache = json.load(f)',
-            '                except Exception as e:',
+            "                        self._entities_cache = json.load(f)",
+            "                except Exception as e:",
             '                    logger.warning(f"Failed to load entities: {e}")',
-            '                    self._entities_cache = []',
-            '            else:',
-            '                self._entities_cache = []',
-            '        return self._entities_cache',
+            "                    self._entities_cache = []",
+            "            else:",
+            "                self._entities_cache = []",
+            "        return self._entities_cache",
         ]
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     async def _save_provider_code(self, plugin_dir: Path, provider_code: str) -> None:
         """Save provider code to plugin."""
 
-        with open(plugin_dir / "provider.py", 'w') as f:
+        with open(plugin_dir / "provider.py", "w") as f:
             f.write(provider_code)
 
     async def _create_database_configs(self, plugin_dir: Path) -> None:
@@ -345,23 +345,19 @@ class CheckpointManager:
         chromadb_config = {
             "persist_directory": "./databases/chromadb",
             "collection_name": "streaming_knowledge",
-            "embedding_function": "sentence_transformers"
+            "embedding_function": "sentence_transformers",
         }
 
-        with open(plugin_dir / "chromadb_config.yaml", 'w') as f:
+        with open(plugin_dir / "chromadb_config.yaml", "w") as f:
             yaml.dump(chromadb_config, f, default_flow_style=False)
 
         # Neo4j config
-        neo4j_config = {
-            "database_path": "./databases/neo4j",
-            "embedded": True,
-            "auto_load": True
-        }
+        neo4j_config = {"database_path": "./databases/neo4j", "embedded": True, "auto_load": True}
 
-        with open(plugin_dir / "neo4j_config.yaml", 'w') as f:
+        with open(plugin_dir / "neo4j_config.yaml", "w") as f:
             yaml.dump(neo4j_config, f, default_flow_style=False)
 
-    def create_checksum(self, data: Dict[str, Any]) -> str:
+    def create_checksum(self, data: dict[str, Any]) -> str:
         """Create checksum for data integrity."""
 
         data_str = json.dumps(data, sort_keys=True, default=str)

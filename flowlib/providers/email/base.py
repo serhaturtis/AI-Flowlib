@@ -6,7 +6,7 @@ such as IMAP/SMTP, Gmail API, etc.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import Field
 
@@ -24,16 +24,18 @@ class EmailMessage(StrictBaseModel):
 
     id: str = Field(..., description="Unique message identifier")
     from_address: str = Field(..., description="Sender email address")
-    to_addresses: List[str] = Field(default_factory=list, description="Recipient email addresses")
-    cc_addresses: List[str] = Field(default_factory=list, description="CC email addresses")
-    bcc_addresses: List[str] = Field(default_factory=list, description="BCC email addresses")
+    to_addresses: list[str] = Field(default_factory=list, description="Recipient email addresses")
+    cc_addresses: list[str] = Field(default_factory=list, description="CC email addresses")
+    bcc_addresses: list[str] = Field(default_factory=list, description="BCC email addresses")
     subject: str = Field(..., description="Email subject line")
     body: str = Field(..., description="Email body content")
     timestamp: datetime = Field(..., description="Email timestamp")
-    thread_id: Optional[str] = Field(default=None, description="Thread/conversation ID")
-    in_reply_to: Optional[str] = Field(default=None, description="Message ID this is replying to")
-    attachments: List[Dict[str, Any]] = Field(default_factory=list, description="Email attachments metadata")
-    headers: Dict[str, str] = Field(default_factory=dict, description="Additional email headers")
+    thread_id: str | None = Field(default=None, description="Thread/conversation ID")
+    in_reply_to: str | None = Field(default=None, description="Message ID this is replying to")
+    attachments: list[dict[str, Any]] = Field(
+        default_factory=list, description="Email attachments metadata"
+    )
+    headers: dict[str, str] = Field(default_factory=dict, description="Additional email headers")
     is_read: bool = Field(default=False, description="Whether email has been read")
     folder: str = Field(default="INBOX", description="Folder/mailbox containing this email")
 
@@ -61,10 +63,12 @@ class EmailProviderSettings(ProviderSettings):
 
     # Behavior
     timeout: float = Field(default=30.0, description="Operation timeout in seconds")
-    retry_attempts: int = Field(default=3, description="Number of retry attempts for failed operations")
+    retry_attempts: int = Field(
+        default=3, description="Number of retry attempts for failed operations"
+    )
 
 
-SettingsT = TypeVar('SettingsT', bound=EmailProviderSettings)
+SettingsT = TypeVar("SettingsT", bound=EmailProviderSettings)
 
 
 class EmailProvider(Provider[SettingsT], Generic[SettingsT]):
@@ -78,11 +82,7 @@ class EmailProvider(Provider[SettingsT], Generic[SettingsT]):
     """
 
     def __init__(
-        self,
-        name: str,
-        provider_type: str,
-        settings: Optional[SettingsT] = None,
-        **kwargs: Any
+        self, name: str, provider_type: str, settings: SettingsT | None = None, **kwargs: Any
     ):
         """Initialize email provider.
 
@@ -108,7 +108,7 @@ class EmailProvider(Provider[SettingsT], Generic[SettingsT]):
         """Clean up resources."""
         self._initialized = False
 
-    async def list_folders(self) -> List[str]:
+    async def list_folders(self) -> list[str]:
         """List available email folders/mailboxes.
 
         Returns:
@@ -123,9 +123,9 @@ class EmailProvider(Provider[SettingsT], Generic[SettingsT]):
         self,
         folder: str = "INBOX",
         unread_only: bool = True,
-        limit: Optional[int] = None,
-        since_date: Optional[datetime] = None
-    ) -> List[EmailMessage]:
+        limit: int | None = None,
+        since_date: datetime | None = None,
+    ) -> list[EmailMessage]:
         """Fetch emails from a folder.
 
         Args:
@@ -144,14 +144,14 @@ class EmailProvider(Provider[SettingsT], Generic[SettingsT]):
 
     async def send_email(
         self,
-        to: List[str],
+        to: list[str],
         subject: str,
         body: str,
-        cc: Optional[List[str]] = None,
-        bcc: Optional[List[str]] = None,
-        reply_to: Optional[str] = None,
-        in_reply_to: Optional[str] = None,
-        attachments: Optional[List[Dict[str, Any]]] = None
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+        reply_to: str | None = None,
+        in_reply_to: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Send an email.
 
@@ -235,11 +235,8 @@ class EmailProvider(Provider[SettingsT], Generic[SettingsT]):
         raise NotImplementedError("Subclasses must implement delete_email()")
 
     async def search_emails(
-        self,
-        query: str,
-        folder: str = "INBOX",
-        limit: Optional[int] = None
-    ) -> List[EmailMessage]:
+        self, query: str, folder: str = "INBOX", limit: int | None = None
+    ) -> list[EmailMessage]:
         """Search for emails matching a query.
 
         Args:

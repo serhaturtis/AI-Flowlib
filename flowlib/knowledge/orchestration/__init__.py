@@ -11,5 +11,5 @@ __all__ = [
     "KnowledgeOrchestrationFlow",
     "OrchestrationRequest",
     "OrchestrationResult",
-    "OrchestrationProgress"
+    "OrchestrationProgress",
 ]

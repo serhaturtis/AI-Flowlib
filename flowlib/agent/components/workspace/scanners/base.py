@@ -5,7 +5,6 @@ No optional methods, no fallbacks - fail fast if contract not met.
 """
 
 from abc import ABC, abstractmethod
-from typing import List
 
 from ..models import DomainArtifact
 
@@ -27,7 +26,7 @@ class BaseDomainScanner(ABC):
     """
 
     @abstractmethod
-    async def scan(self, working_directory: str) -> List[DomainArtifact]:
+    async def scan(self, working_directory: str) -> list[DomainArtifact]:
         """Scan working directory for domain artifacts.
 
         MUST return list of DomainArtifact (can be empty list).

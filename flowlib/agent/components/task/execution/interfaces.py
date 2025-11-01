@@ -7,24 +7,27 @@ These are core interfaces, not agent component interfaces, so they should remain
 
 from typing import Protocol, runtime_checkable
 
-from ..models import TodoItem
+from ..core.todo import TodoItem
 from .models import ToolExecutionContext, ToolParameters, ToolResult
 
 
 @runtime_checkable
 class ToolInterface(Protocol):
     """Interface for tool implementations.
-    
+
     Defines the contract that all tools must follow.
     """
 
-    async def execute(self, parameters: ToolParameters, context: ToolExecutionContext) -> ToolResult:
-        """Execute the tool with given parameters.
-        
+    async def execute(
+        self, todo: TodoItem, parameters: ToolParameters, context: ToolExecutionContext
+    ) -> ToolResult:
+        """Execute the tool with given task and parameters.
+
         Args:
-            parameters: Tool parameters
+            todo: TodoItem describing what needs to be done (natural language task)
+            parameters: Structured tool parameters (how to do it)
             context: Execution context
-            
+
         Returns:
             Tool execution result
         """
@@ -57,15 +60,22 @@ class ToolFactory(Protocol):
 
 @runtime_checkable
 class AgentToolInterface(Protocol):
-    """Interface for agent tools."""
+    """Interface for agent tools.
 
-    async def execute(self, todo: TodoItem, context: ToolExecutionContext) -> ToolResult:
-        """Execute tool with TODO item.
-        
+    Tools receive both TodoItem (WHAT to do) and ToolParameters (HOW to do it).
+    Parameters are extracted from TodoItem context before tool execution.
+    """
+
+    async def execute(
+        self, todo: TodoItem, parameters: ToolParameters, context: ToolExecutionContext
+    ) -> ToolResult:
+        """Execute tool with task description and validated parameters.
+
         Args:
-            todo: TODO item to execute
+            todo: TodoItem describing what needs to be done (natural language task)
+            parameters: Validated ToolParameters subclass instance (how to do it)
             context: Execution context
-            
+
         Returns:
             Tool result
         """
@@ -93,10 +103,10 @@ class AgentToolFactory(Protocol):
         ...
 
     def get_planning_description(self) -> str:
-        """Get concise planning description for prompts.
+        """Get planning description for prompts.
 
         Returns:
-            Concise description (defaults to first sentence of full description)
+            Planning description (defaults to full description if not provided)
         """
         ...
 
@@ -116,5 +126,3 @@ class ParameterFactoryInterface(Protocol):
             Tool parameters
         """
         ...
-
-

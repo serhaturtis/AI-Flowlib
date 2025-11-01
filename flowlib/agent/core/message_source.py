@@ -7,7 +7,6 @@ through the MessageSource interface.
 
 import queue
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from pydantic import Field
 
@@ -57,7 +56,7 @@ class MessageSource(ABC):
         self.config = config
         self._enabled = config.enabled
         self._stopped = False
-        self._input_queue: Optional[queue.Queue[AgentMessage]] = None
+        self._input_queue: queue.Queue[AgentMessage] | None = None
 
     @abstractmethod
     async def start(self, input_queue: queue.Queue[AgentMessage]) -> None:

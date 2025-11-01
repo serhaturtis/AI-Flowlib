@@ -45,7 +45,7 @@ class ExecutionReflectorComponent(AgentComponent):
         original_goal: str,
         plan_steps: list[dict],
         execution_results: list[dict],
-        partial_completion: bool
+        partial_completion: bool,
     ) -> ReflectionOutput:
         """Reflect on execution results.
 
@@ -68,7 +68,7 @@ class ExecutionReflectorComponent(AgentComponent):
                 original_goal=original_goal,
                 plan_steps=plan_steps,
                 execution_results=execution_results,
-                partial_completion=partial_completion
+                partial_completion=partial_completion,
             )
 
             # Run reflection flow

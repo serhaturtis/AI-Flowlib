@@ -5,7 +5,7 @@ generation flows can use to build comprehensive context from conversation
 history, original user messages, and domain state.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -16,29 +16,22 @@ from flowlib.flows.decorators.decorators import flow, pipeline
 class ContextBuildingInput(StrictBaseModel):
     """Input for context building flow."""
 
-    task_content: str = Field(
-        ...,
-        description="Task description to extract parameters from"
-    )
-    working_directory: str = Field(
-        default=".",
-        description="Working directory context"
-    )
+    task_content: str = Field(..., description="Task description to extract parameters from")
+    working_directory: str = Field(default=".", description="Working directory context")
 
     # Conversation context for parameter extraction
-    conversation_history: List[Dict[str, Any]] = Field(
+    conversation_history: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Recent conversation history for context-aware parameter generation"
+        description="Recent conversation history for context-aware parameter generation",
     )
-    original_user_message: Optional[str] = Field(
-        default=None,
-        description="Original user message that started this task"
+    original_user_message: str | None = Field(
+        default=None, description="Original user message that started this task"
     )
 
     # Domain-specific state (optional, for domain-specific tools)
-    domain_state: Dict[str, Any] = Field(
+    domain_state: dict[str, Any] = Field(
         default_factory=dict,
-        description="Domain-specific state (e.g., current song, workspace context)"
+        description="Domain-specific state (e.g., current song, workspace context)",
     )
 
 
@@ -46,18 +39,15 @@ class ContextBuildingOutput(StrictBaseModel):
     """Output from context building flow."""
 
     full_context: str = Field(
-        ...,
-        description="Built context string with priority-ordered information"
+        ..., description="Built context string with priority-ordered information"
     )
-    prompt_variables: Dict[str, Any] = Field(
-        ...,
-        description="Standard prompt variables including full_context and working_directory"
+    prompt_variables: dict[str, Any] = Field(
+        ..., description="Standard prompt variables including full_context and working_directory"
     )
 
 
 @flow(
-    name="context-building",
-    description="Build comprehensive context for tool parameter generation"
+    name="context-building", description="Build comprehensive context for tool parameter generation"
 )  # type: ignore[arg-type]
 class ContextBuildingFlow:
     """Flow for building comprehensive context from conversation and domain state.
@@ -91,31 +81,22 @@ class ContextBuildingFlow:
         )
     """
 
-    @pipeline(
-        input_model=ContextBuildingInput,
-        output_model=ContextBuildingOutput
-    )
-    async def run_pipeline(
-        self,
-        request: ContextBuildingInput
-    ) -> ContextBuildingOutput:
+    @pipeline(input_model=ContextBuildingInput, output_model=ContextBuildingOutput)
+    async def run_pipeline(self, request: ContextBuildingInput) -> ContextBuildingOutput:
         """Build comprehensive context with priority order."""
 
         context_parts = []
 
         # 1. Original user message (highest priority)
         if request.original_user_message:
-            context_parts.append(
-                f"ORIGINAL USER REQUEST: {request.original_user_message}"
-            )
+            context_parts.append(f"ORIGINAL USER REQUEST: {request.original_user_message}")
 
         # 2. Recent conversation (last 3 messages for context)
         if request.conversation_history:
             recent_conv = request.conversation_history[-3:]
-            conv_text = "\n".join([
-                f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
-                for msg in recent_conv
-            ])
+            conv_text = "\n".join(
+                [f"{msg.get('role', 'unknown')}: {msg.get('content', '')}" for msg in recent_conv]
+            )
             context_parts.append(f"RECENT CONVERSATION:\n{conv_text}")
 
         # 3. Domain state (if applicable)
@@ -131,15 +112,12 @@ class ContextBuildingFlow:
         # Build standard prompt variables
         prompt_variables = {
             "full_context": full_context,
-            "working_directory": request.working_directory
+            "working_directory": request.working_directory,
         }
 
-        return ContextBuildingOutput(
-            full_context=full_context,
-            prompt_variables=prompt_variables
-        )
+        return ContextBuildingOutput(full_context=full_context, prompt_variables=prompt_variables)
 
-    def _format_domain_state(self, domain_state: Dict[str, Any]) -> str:
+    def _format_domain_state(self, domain_state: dict[str, Any]) -> str:
         """Format domain state for inclusion in context."""
         if not domain_state:
             return "No domain state available"

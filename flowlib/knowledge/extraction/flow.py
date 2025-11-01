@@ -3,9 +3,10 @@
 import asyncio
 import hashlib
 import logging
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncGenerator, Dict, List, Optional, cast
+from typing import cast
 
 # Third-party libraries with missing type stubs
 import ebooklib  # type: ignore[import-untyped]
@@ -58,7 +59,7 @@ class DocumentProcessor:
                 full_text="",
                 chunks=[],
                 status=ProcessingStatus.FAILED,
-                error_message=f"Unsupported file type: {path.suffix}"
+                error_message=f"Unsupported file type: {path.suffix}",
             )
 
         try:
@@ -74,10 +75,7 @@ class DocumentProcessor:
 
             # Create basic chunks (will be enhanced by smart chunking later)
             chunks = self._create_chunks(
-                full_text,
-                self._generate_doc_id(file_path),
-                chunk_size=1000,
-                overlap=200
+                full_text, self._generate_doc_id(file_path), chunk_size=1000, overlap=200
             )
 
             # Create document content
@@ -88,10 +86,12 @@ class DocumentProcessor:
                 chunks=chunks,
                 status=ProcessingStatus.COMPLETED,
                 language_detected=self._detect_language(full_text),
-                reading_time_minutes=self._estimate_reading_time(full_text)
+                reading_time_minutes=self._estimate_reading_time(full_text),
             )
 
-            logger.debug(f"Successfully processed {path.name}: {len(full_text)} chars, {len(chunks)} chunks")
+            logger.debug(
+                f"Successfully processed {path.name}: {len(full_text)} chars, {len(chunks)} chunks"
+            )
             return doc_content
 
         except Exception as e:
@@ -102,7 +102,7 @@ class DocumentProcessor:
                 full_text="",
                 chunks=[],
                 status=ProcessingStatus.FAILED,
-                error_message=str(e)
+                error_message=str(e),
             )
 
     async def process_document(self, file_path: str) -> DocumentContent:
@@ -118,7 +118,7 @@ class DocumentProcessor:
                 full_text="",
                 chunks=[],
                 status=ProcessingStatus.FAILED,
-                error_message=f"Unsupported file type: {path.suffix}"
+                error_message=f"Unsupported file type: {path.suffix}",
             )
 
         try:
@@ -134,10 +134,7 @@ class DocumentProcessor:
 
             # Create chunks
             chunks = self._create_chunks(
-                full_text,
-                self._generate_doc_id(file_path),
-                chunk_size=1000,
-                overlap=200
+                full_text, self._generate_doc_id(file_path), chunk_size=1000, overlap=200
             )
 
             # Create document content
@@ -148,7 +145,7 @@ class DocumentProcessor:
                 chunks=chunks,
                 status=ProcessingStatus.COMPLETED,
                 language_detected=self._detect_language(full_text),
-                reading_time_minutes=self._estimate_reading_time(full_text)
+                reading_time_minutes=self._estimate_reading_time(full_text),
             )
 
             logger.info(f"Processed {path.name}: {len(full_text)} chars, {len(chunks)} chunks")
@@ -162,23 +159,23 @@ class DocumentProcessor:
                 full_text="",
                 chunks=[],
                 status=ProcessingStatus.FAILED,
-                error_message=str(e)
+                error_message=str(e),
             )
 
-    def _detect_document_type(self, path: Path) -> Optional[DocumentType]:
+    def _detect_document_type(self, path: Path) -> DocumentType | None:
         """Detect document type from file extension."""
         extension = path.suffix.lower()
 
         type_mapping = {
-            '.txt': DocumentType.TXT,
-            '.pdf': DocumentType.PDF,
-            '.epub': DocumentType.EPUB,
-            '.mobi': DocumentType.MOBI,
-            '.docx': DocumentType.DOCX,
-            '.html': DocumentType.HTML,
-            '.htm': DocumentType.HTML,
-            '.md': DocumentType.MARKDOWN,
-            '.markdown': DocumentType.MARKDOWN,
+            ".txt": DocumentType.TXT,
+            ".pdf": DocumentType.PDF,
+            ".epub": DocumentType.EPUB,
+            ".mobi": DocumentType.MOBI,
+            ".docx": DocumentType.DOCX,
+            ".html": DocumentType.HTML,
+            ".htm": DocumentType.HTML,
+            ".md": DocumentType.MARKDOWN,
+            ".markdown": DocumentType.MARKDOWN,
         }
 
         return type_mapping.get(extension)
@@ -187,7 +184,7 @@ class DocumentProcessor:
         """Generate unique document ID."""
         return hashlib.md5(file_path.encode()).hexdigest()
 
-    def _create_metadata(self, path: Path, doc_type: Optional[DocumentType]) -> DocumentMetadata:
+    def _create_metadata(self, path: Path, doc_type: DocumentType | None) -> DocumentMetadata:
         """Create document metadata."""
         try:
             stat = path.stat()
@@ -212,12 +209,8 @@ class DocumentProcessor:
             )
 
     def _create_chunks(
-        self,
-        text: str,
-        document_id: str,
-        chunk_size: int = 1000,
-        overlap: int = 200
-    ) -> List[TextChunk]:
+        self, text: str, document_id: str, chunk_size: int = 1000, overlap: int = 200
+    ) -> list[TextChunk]:
         """Split text into overlapping chunks."""
         if not text:
             return []
@@ -233,8 +226,8 @@ class DocumentProcessor:
             if end < len(text):
                 # Look for sentence endings within the next 100 characters
                 sentence_ends = []
-                for i, char in enumerate(text[end:end+100]):
-                    if char in '.!?':
+                for i, char in enumerate(text[end : end + 100]):
+                    if char in ".!?":
                         sentence_ends.append(end + i + 1)
 
                 if sentence_ends:
@@ -251,7 +244,7 @@ class DocumentProcessor:
                     end_char=end,
                     document_id=document_id,
                     word_count=len(chunk_text.split()),
-                    char_count=len(chunk_text)
+                    char_count=len(chunk_text),
                 )
                 chunks.append(chunk)
                 chunk_index += 1
@@ -267,17 +260,17 @@ class DocumentProcessor:
     async def _process_txt(self, path: Path) -> str:
         """Process plain text file."""
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, encoding="utf-8") as f:
                 return f.read()
         except UnicodeDecodeError:
             # Try different encodings
-            for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
+            for encoding in ["latin-1", "cp1252", "iso-8859-1"]:
                 try:
-                    with open(path, 'r', encoding=encoding) as f:
+                    with open(path, encoding=encoding) as f:
                         return f.read()
                 except UnicodeDecodeError:
                     continue
-            raise ValueError("Could not decode text file with any supported encoding")
+            raise ValueError("Could not decode text file with any supported encoding") from None
 
     async def _process_pdf(self, path: Path) -> str:
         """Process PDF file."""
@@ -285,7 +278,7 @@ class DocumentProcessor:
             import PyPDF2
 
             text = ""
-            with open(path, 'rb') as file:
+            with open(path, "rb") as file:
                 pdf_reader = PyPDF2.PdfReader(file)
                 for page in pdf_reader.pages:
                     text += page.extract_text() + "\n"
@@ -302,21 +295,22 @@ class DocumentProcessor:
     async def _process_epub(self, path: Path) -> str:
         """Process EPUB file."""
         try:
-
             book = epub.read_epub(str(path))
             text_content = []
 
             for item in book.get_items():
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    content = item.get_content().decode('utf-8')
-                    soup = BeautifulSoup(content, 'html.parser')
+                    content = item.get_content().decode("utf-8")
+                    soup = BeautifulSoup(content, "html.parser")
                     text = soup.get_text()
                     text_content.append(text)
 
-            return '\n'.join(text_content)
+            return "\n".join(text_content)
 
         except ImportError:
-            logger.error("ebooklib not installed. Install with: pip install ebooklib beautifulsoup4")
+            logger.error(
+                "ebooklib not installed. Install with: pip install ebooklib beautifulsoup4"
+            )
             return ""
         except Exception as e:
             logger.error(f"Error processing EPUB {path}: {e}")
@@ -331,7 +325,7 @@ class DocumentProcessor:
             for paragraph in doc.paragraphs:
                 text_content.append(paragraph.text)
 
-            return '\n'.join(text_content)
+            return "\n".join(text_content)
 
         except ImportError:
             logger.error("python-docx not installed. Install with: pip install python-docx")
@@ -345,10 +339,10 @@ class DocumentProcessor:
         try:
             from bs4 import BeautifulSoup
 
-            with open(path, 'r', encoding='utf-8') as file:
+            with open(path, encoding="utf-8") as file:
                 content = file.read()
 
-            soup = BeautifulSoup(content, 'html.parser')
+            soup = BeautifulSoup(content, "html.parser")
 
             # Remove script and style elements
             for script in soup(["script", "style"]):
@@ -366,7 +360,7 @@ class DocumentProcessor:
     async def _process_markdown(self, path: Path) -> str:
         """Process Markdown file."""
         try:
-            with open(path, 'r', encoding='utf-8') as file:
+            with open(path, encoding="utf-8") as file:
                 md_content = file.read()
 
             # Convert to HTML then extract text
@@ -374,7 +368,8 @@ class DocumentProcessor:
 
             try:
                 from bs4 import BeautifulSoup
-                soup = BeautifulSoup(html, 'html.parser')
+
+                soup = BeautifulSoup(html, "html.parser")
                 return soup.get_text()
             except ImportError:
                 # Fallback: return markdown as-is
@@ -388,7 +383,7 @@ class DocumentProcessor:
             logger.error(f"Error processing Markdown {path}: {e}")
             return ""
 
-    def _detect_language(self, text: str) -> Optional[str]:
+    def _detect_language(self, text: str) -> str | None:
         """Detect text language."""
         if not text:
             return None
@@ -410,7 +405,10 @@ class DocumentProcessor:
         return max(1, word_count // 200)
 
 
-@flow(name="document-extraction-flow", description="Extract and process documents into structured content")  # type: ignore[arg-type]
+@flow(
+    name="document-extraction-flow",
+    description="Extract and process documents into structured content",
+)  # type: ignore[arg-type]
 class DocumentExtractionFlow:
     """Flow for extracting content from various document types."""
 
@@ -425,7 +423,9 @@ class DocumentExtractionFlow:
         # Process the document
         return await processor.process_single_document(doc_path)
 
-    async def stream_document_processing(self, input_directory: str) -> AsyncGenerator[DocumentContent, None]:
+    async def stream_document_processing(
+        self, input_directory: str
+    ) -> AsyncGenerator[DocumentContent, None]:
         """Stream documents one by one for processing (generator)."""
 
         from pathlib import Path
@@ -433,9 +433,7 @@ class DocumentExtractionFlow:
         from ..models import DocumentType
 
         input_path = Path(input_directory)
-        supported_extensions = {
-            f".{doc_type.value}" for doc_type in DocumentType
-        }
+        supported_extensions = {f".{doc_type.value}" for doc_type in DocumentType}
 
         processor = DocumentProcessor()
 
@@ -454,57 +452,56 @@ class DocumentExtractionFlow:
                         full_text="",
                         chunks=[],
                         status=ProcessingStatus.FAILED,
-                        error_message=str(e)
+                        error_message=str(e),
                     )
 
-    async def _extract_documents(self, input_data: DocumentExtractionInput) -> DocumentExtractionOutput:
+    async def _extract_documents(
+        self, input_data: DocumentExtractionInput
+    ) -> DocumentExtractionOutput:
         """Extract content from all provided documents."""
         logger.info(f"Processing {len(input_data.file_paths)} documents")
 
         # Create processor locally
         processor = DocumentProcessor()
 
-        documents: List[DocumentContent] = []
-        failed_files: List[Dict[str, str]] = []
+        documents: list[DocumentContent] = []
+        failed_files: list[dict[str, str]] = []
 
         # Process documents concurrently (in batches to avoid overwhelming system)
         batch_size = 5
         for i in range(0, len(input_data.file_paths), batch_size):
-            batch = input_data.file_paths[i:i+batch_size]
+            batch = input_data.file_paths[i : i + batch_size]
 
             # Process batch concurrently
             tasks = [processor.process_document(file_path) for file_path in batch]
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for file_path, result in zip(batch, batch_results):
+            for file_path, result in zip(batch, batch_results, strict=False):
                 if isinstance(result, Exception):
                     logger.error(f"Failed to process {file_path}: {result}")
-                    failed_files.append({
-                        "file_path": file_path,
-                        "error": str(result)
-                    })
-                elif isinstance(result, DocumentContent) and result.status == ProcessingStatus.COMPLETED:
+                    failed_files.append({"file_path": file_path, "error": str(result)})
+                elif (
+                    isinstance(result, DocumentContent)
+                    and result.status == ProcessingStatus.COMPLETED
+                ):
                     documents.append(result)
                 elif isinstance(result, DocumentContent):
-                    failed_files.append({
-                        "file_path": file_path,
-                        "error": result.error_message or "Unknown error"
-                    })
+                    failed_files.append(
+                        {"file_path": file_path, "error": result.error_message or "Unknown error"}
+                    )
                 else:
                     # Should not reach here due to prior exception handling
-                    failed_files.append({
-                        "file_path": file_path,
-                        "error": "Unexpected result type"
-                    })
+                    failed_files.append({"file_path": file_path, "error": "Unexpected result type"})
 
-            logger.info(f"Processed batch {i//batch_size + 1}/{(len(input_data.file_paths) + batch_size - 1)//batch_size}")
+            logger.info(
+                f"Processed batch {i // batch_size + 1}/{(len(input_data.file_paths) + batch_size - 1) // batch_size}"
+            )
 
-        logger.info(f"Successfully processed {len(documents)} documents, {len(failed_files)} failed")
-
-        return DocumentExtractionOutput(
-            documents=documents,
-            failed_files=failed_files
+        logger.info(
+            f"Successfully processed {len(documents)} documents, {len(failed_files)} failed"
         )
+
+        return DocumentExtractionOutput(documents=documents, failed_files=failed_files)
 
     @pipeline(input_model=KnowledgeExtractionRequest, output_model=DocumentExtractionOutput)
     async def run_pipeline(self, request: KnowledgeExtractionRequest) -> DocumentExtractionOutput:
@@ -513,9 +510,7 @@ class DocumentExtractionFlow:
 
         # Discover files
         file_paths = self._discover_files(
-            request.input_directory,
-            request.supported_formats,
-            request.max_files
+            request.input_directory, request.supported_formats, request.max_files
         )
 
         if not file_paths:
@@ -525,20 +520,14 @@ class DocumentExtractionFlow:
         logger.info(f"Found {len(file_paths)} files to process")
 
         # Create extraction input
-        extraction_input = DocumentExtractionInput(
-            request=request,
-            file_paths=file_paths
-        )
+        extraction_input = DocumentExtractionInput(request=request, file_paths=file_paths)
 
         # Process documents
         return await self._extract_documents(extraction_input)
 
     def _discover_files(
-        self,
-        directory: str,
-        supported_formats: List[DocumentType],
-        max_files: Optional[int] = None
-    ) -> List[str]:
+        self, directory: str, supported_formats: list[DocumentType], max_files: int | None = None
+    ) -> list[str]:
         """Discover files in directory that match supported formats."""
         path = Path(directory)
 
@@ -552,19 +541,19 @@ class DocumentExtractionFlow:
         extensions = []
         for doc_type in supported_formats:
             if doc_type == DocumentType.TXT:
-                extensions.extend(['.txt'])
+                extensions.extend([".txt"])
             elif doc_type == DocumentType.PDF:
-                extensions.extend(['.pdf'])
+                extensions.extend([".pdf"])
             elif doc_type == DocumentType.EPUB:
-                extensions.extend(['.epub'])
+                extensions.extend([".epub"])
             elif doc_type == DocumentType.MOBI:
-                extensions.extend(['.mobi'])
+                extensions.extend([".mobi"])
             elif doc_type == DocumentType.DOCX:
-                extensions.extend(['.docx'])
+                extensions.extend([".docx"])
             elif doc_type == DocumentType.HTML:
-                extensions.extend(['.html', '.htm'])
+                extensions.extend([".html", ".htm"])
             elif doc_type == DocumentType.MARKDOWN:
-                extensions.extend(['.md', '.markdown'])
+                extensions.extend([".md", ".markdown"])
 
         # Find matching files
         file_paths = []
@@ -574,7 +563,7 @@ class DocumentExtractionFlow:
             file_paths.extend([str(f) for f in matching_files if f.is_file()])
 
         # Remove duplicates and sort
-        file_paths = sorted(list(set(file_paths)))
+        file_paths = sorted(set(file_paths))
 
         # Apply limit if specified
         if max_files and len(file_paths) > max_files:

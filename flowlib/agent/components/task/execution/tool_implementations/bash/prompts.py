@@ -3,13 +3,14 @@
 from pydantic import Field
 
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.resources.models.base import ResourceBase
+
 
 @prompt("bash_tool_parameter_generation")
-class BashToolParameterGenerationPrompt(ResourceBase):
+class BashToolParameterGenerationPrompt:
     """Prompt for generating bash tool parameters."""
 
-    template: str = Field(default="""Extract bash parameters from this context.
+    template: str = Field(
+        default="""Extract bash parameters from this context.
 
 # Full Context
 
@@ -24,4 +25,5 @@ Extract parameters from the ORIGINAL USER REQUEST when available, using conversa
 
 # Guidelines
 
-Extract the command from the task description. Be careful to preserve the exact command syntax including quotes, pipes, and redirections.""")
+Extract the command from the task description. Be careful to preserve the exact command syntax including quotes, pipes, and redirections."""
+    )

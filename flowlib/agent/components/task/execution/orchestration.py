@@ -8,12 +8,13 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, cast
 
 from pydantic import Field
 
 from flowlib.core.models import StrictBaseModel
 
+from ..core.todo import TodoItem
 from .models import (
     ToolErrorContext,
     ToolExecutionContext,
@@ -30,8 +31,8 @@ class ToolExecutionRequest(StrictBaseModel):
     """Request for tool execution through orchestration."""
 
     tool_name: str
-    raw_parameters: Dict[str, Any]
-    context: Optional[ToolExecutionContext] = None
+    raw_parameters: dict[str, Any]
+    context: ToolExecutionContext | None = None
     execution_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
 
@@ -41,9 +42,9 @@ class ToolExecutionResponse(StrictBaseModel):
     execution_id: str
     tool_name: str
     status: ToolStatus
-    result: Optional[ToolResult] = None
-    error: Optional[ToolExecutionError] = None
-    execution_time_ms: Optional[float] = None
+    result: ToolResult | None = None
+    error: ToolExecutionError | None = None
+    execution_time_ms: float | None = None
     timestamp: datetime
 
     def get_display_content(self) -> str:
@@ -65,7 +66,7 @@ class ToolExecutionResponse(StrictBaseModel):
 
 class ToolOrchestrator:
     """Generic orchestrator for agent tool execution.
-    
+
     Provides coordination between tools and registry with:
     - Generic parameter validation and creation
     - Tool instance management
@@ -74,16 +75,16 @@ class ToolOrchestrator:
     - Execution tracking
     """
 
-    def __init__(self, registry: Optional[ToolRegistry] = None):
+    def __init__(self, registry: ToolRegistry | None = None):
         self._registry = registry or tool_registry
         logger.debug("Tool orchestrator initialized")
 
     async def execute_tool(self, request: ToolExecutionRequest) -> ToolExecutionResponse:
         """Execute a tool through orchestration.
-        
+
         Args:
             request: Tool execution request with parameters and context
-            
+
         Returns:
             Tool execution response with result or error
         """
@@ -92,30 +93,54 @@ class ToolOrchestrator:
         try:
             logger.debug(f"Executing tool: {request.tool_name} ({request.execution_id})")
 
-            # Create a proper TodoItem from raw parameters
-            from ..models import TodoItem
-            # Ensure content has a default if not in raw_parameters
-            raw_params = dict(request.raw_parameters)
-            if 'content' not in raw_params:
-                raw_params['content'] = f"Execute {request.tool_name}"
+            # Get tool factory and metadata
+            factory = self._registry.get(request.tool_name)
+            metadata = self._registry.get_metadata(request.tool_name)
 
-            # Add assigned tool
-            raw_params['assigned_tool'] = request.tool_name
+            if metadata is None:
+                logger.error(f"No metadata found for tool: {request.tool_name}")
+                return self._create_error_response(
+                    request,
+                    f"No metadata found for tool: {request.tool_name}",
+                    "metadata_missing",
+                    start_time,
+                )
 
-            todo = TodoItem(**raw_params)
+            # Create validated parameters from raw_parameters
+            try:
+                parameters = metadata.parameter_type(**request.raw_parameters)
+            except Exception as e:
+                logger.error(f"Parameter validation failed for {request.tool_name}: {str(e)}")
+                return self._create_error_response(
+                    request,
+                    f"Invalid parameters for {request.tool_name}: {e}",
+                    "parameter_validation",
+                    start_time,
+                )
 
-            # Execute tool using new architecture (tool handles its own parameters)
+            # Create default context if not provided
             from .models import ToolExecutionSharedData
+
             default_context = ToolExecutionContext(
                 working_directory="/tmp",
                 agent_id="system_agent",
                 agent_persona="system",
                 execution_id=f"exec_{int(datetime.now().timestamp())}",
-                shared_data=ToolExecutionSharedData()
+                shared_data=ToolExecutionSharedData(),
             )
-            result = await self._registry.execute_todo(
-                todo,
-                request.context or default_context
+
+            # Create TodoItem for the tool execution
+            # Use tool name and parameters as content description
+            todo = TodoItem(
+                content=f"Execute {request.tool_name}",
+                assigned_tool=request.tool_name,
+                execution_context=request.raw_parameters,
+            )
+
+            # Execute tool with TodoItem, validated parameters, and context
+            tool_instance = factory()
+            result = await tool_instance.execute(
+                todo, parameters, request.context or default_context
             )
 
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -143,30 +168,25 @@ class ToolOrchestrator:
                 status=status,
                 result=result,
                 execution_time_ms=execution_time,
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
         except (ToolNotFoundError, KeyError) as e:
             logger.error(f"Tool not found: {request.tool_name}")
-            return self._create_error_response(
-                request, str(e), "tool_not_found", start_time
-            )
+            return self._create_error_response(request, str(e), "tool_not_found", start_time)
 
         except Exception as e:
             logger.error(f"Tool execution failed: {request.tool_name} - {str(e)}", exc_info=True)
-            return self._create_error_response(
-                request, str(e), "execution_error", start_time
-            )
+            return self._create_error_response(request, str(e), "execution_error", start_time)
 
     async def execute_multiple_tools(
-        self,
-        requests: List[ToolExecutionRequest]
-    ) -> List[ToolExecutionResponse]:
+        self, requests: list[ToolExecutionRequest]
+    ) -> list[ToolExecutionResponse]:
         """Execute multiple tools concurrently.
-        
+
         Args:
             requests: List of tool execution requests
-            
+
         Returns:
             List of tool execution responses in same order
         """
@@ -189,23 +209,23 @@ class ToolOrchestrator:
 
         return final_responses
 
-    def get_available_tools(self) -> List[str]:
+    def get_available_tools(self) -> list[str]:
         """Get list of available tools from registry.
-        
+
         Returns:
             List of available tool names
         """
         return self._registry.list_tools()
 
-    def get_tool_schema(self, tool_name: str) -> Dict[str, Any]:
+    def get_tool_schema(self, tool_name: str) -> dict[str, Any]:
         """Get parameter schema for a specific tool.
-        
+
         Args:
             tool_name: Name of tool to get schema for
-            
+
         Returns:
             JSON schema for tool parameters
-            
+
         Raises:
             ToolNotFoundError: If tool is not found
         """
@@ -214,9 +234,9 @@ class ToolOrchestrator:
             raise ToolNotFoundError(f"Tool not found: {tool_name}")
         return {"type": "object", "properties": {"content": {"type": "string"}}}
 
-    def get_all_schemas(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_schemas(self) -> dict[str, dict[str, Any]]:
         """Get parameter schemas for all available tools.
-        
+
         Returns:
             Dict mapping tool names to their parameter schemas
         """
@@ -225,23 +245,23 @@ class ToolOrchestrator:
             schemas[tool_name] = self.get_tool_schema(tool_name)
         return schemas
 
-    def get_tools_by_category(self, category: str) -> List[str]:
+    def get_tools_by_category(self, category: str) -> list[str]:
         """Get tools by category.
-        
+
         Args:
             category: Tool category to filter by
-            
+
         Returns:
             List of tool names in the category
         """
         return self._registry.list({"category": category})
 
-    def get_tools_by_capability(self, **capabilities: Union[str, int, bool]) -> List[str]:
+    def get_tools_by_capability(self, **capabilities: str | int | bool) -> list[str]:
         """Get tools by capabilities.
-        
+
         Args:
             **capabilities: Capability requirements to match
-            
+
         Returns:
             List of tool names matching capabilities
         """
@@ -255,7 +275,7 @@ class ToolOrchestrator:
         working_directory: str = ".",
         session_id: str = "",
         task_id: str = "",
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolExecutionContext:
         """Create a tool execution context.
 
@@ -272,8 +292,8 @@ class ToolOrchestrator:
         from .models import ToolExecutionSharedData
 
         # Ensure shared_data is provided - either from kwargs or create new
-        if 'shared_data' not in kwargs:
-            kwargs['shared_data'] = ToolExecutionSharedData()
+        if "shared_data" not in kwargs:
+            kwargs["shared_data"] = ToolExecutionSharedData()
 
         return ToolExecutionContext(
             working_directory=working_directory,
@@ -282,7 +302,7 @@ class ToolOrchestrator:
             session_id=session_id,
             task_id=task_id,
             execution_id=str(uuid.uuid4()),
-            **kwargs
+            **kwargs,
         )
 
     def _create_error_response(
@@ -290,7 +310,7 @@ class ToolOrchestrator:
         request: ToolExecutionRequest,
         error_message: str,
         error_type: str,
-        start_time: datetime
+        start_time: datetime,
     ) -> ToolExecutionResponse:
         """Create an error response for failed tool execution."""
         execution_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -299,9 +319,8 @@ class ToolOrchestrator:
             error_type=error_type,
             error_message=error_message,
             context=ToolErrorContext(
-                operation="tool_execution",
-                attempted_values={"tool_name": request.tool_name}
-            )
+                operation="tool_execution", attempted_values={"tool_name": request.tool_name}
+            ),
         )
 
         return ToolExecutionResponse(
@@ -310,7 +329,7 @@ class ToolOrchestrator:
             status=ToolStatus.ERROR,
             error=error,
             execution_time_ms=execution_time,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
 

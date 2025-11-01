@@ -33,22 +33,29 @@ class StructuredPlannerComponent(AgentComponent):
 
     async def _initialize_impl(self) -> None:
         """Initialize the structured planner."""
-        # Verify flow exists in registry
-        flow = flow_registry.get_flow("structured-planning")
-        if not flow:
-            raise RuntimeError("StructuredPlanningFlow not found in registry")
+        # Verify flows exist in registry
+        execution_flow = flow_registry.get_flow("execution-planning")
+        if not execution_flow:
+            raise RuntimeError("ExecutionPlanningFlow not found in registry")
 
-        logger.info("StructuredPlanner initialized")
+        clarification_flow = flow_registry.get_flow("clarification-planning")
+        if not clarification_flow:
+            raise RuntimeError("ClarificationPlanningFlow not found in registry")
+
+        logger.info("StructuredPlanner initialized with execution and clarification flows")
 
     async def _shutdown_impl(self) -> None:
         """Shutdown the structured planner."""
         logger.info("StructuredPlanner shutdown")
 
-    async def create_plan(self, context: ExecutionContext) -> PlanningOutput:
+    async def create_plan(
+        self, context: ExecutionContext, validation_result=None
+    ) -> PlanningOutput:
         """Create a structured execution plan from user message.
 
         Args:
             context: Unified execution context containing all necessary information
+            validation_result: Optional context validation result (from ContextValidatorComponent)
 
         Returns:
             PlanningOutput with complete structured plan
@@ -61,11 +68,8 @@ class StructuredPlannerComponent(AgentComponent):
             # Extract information from unified context
             user_message = context.session.current_message
             conversation_history = [
-                {
-                    "role": msg.role,
-                    "content": msg.content,
-                    "timestamp": msg.timestamp
-                } for msg in context.session.conversation_history
+                {"role": msg.role, "content": msg.content, "timestamp": msg.timestamp}
+                for msg in context.session.conversation_history
             ]
             # Get available tools for agent role
             available_tools = self._get_available_tools_for_role(context.session.agent_role)
@@ -80,11 +84,15 @@ class StructuredPlannerComponent(AgentComponent):
             # Discover workspace artifacts if component is available
             if self._registry:
                 from flowlib.agent.components.workspace import WorkspaceDiscoveryComponent
+
                 workspace_discovery = self._registry.get("workspace_discovery")
 
-                if (workspace_discovery and
-                    isinstance(workspace_discovery, WorkspaceDiscoveryComponent) and
-                    workspace_discovery.initialized and working_directory):
+                if (
+                    workspace_discovery
+                    and isinstance(workspace_discovery, WorkspaceDiscoveryComponent)
+                    and workspace_discovery.initialized
+                    and working_directory
+                ):
                     try:
                         # Scan workspace to get lightweight manifest of available artifacts
                         manifest = await workspace_discovery.scan_workspace(working_directory)
@@ -99,13 +107,13 @@ class StructuredPlannerComponent(AgentComponent):
                                             "name": artifact.name,
                                             "path": artifact.path,
                                             "type": artifact.artifact_type,
-                                            "metadata": artifact.metadata
+                                            "metadata": artifact.metadata,
                                         }
                                         for artifact in artifacts
                                     ]
                                     for domain, artifacts in manifest.domains.items()
                                 },
-                                "scan_timestamp": manifest.scan_timestamp
+                                "scan_timestamp": manifest.scan_timestamp,
                             }
                             logger.info(
                                 f"Workspace scan found {len(manifest.domains)} domain(s) with "
@@ -124,25 +132,45 @@ class StructuredPlannerComponent(AgentComponent):
             # Task-level execution results
             if context.task.execution_results:
                 domain_state["previous_execution_results"] = [
-                    result.model_dump() if hasattr(result, 'model_dump') else result
+                    result.model_dump() if hasattr(result, "model_dump") else result
                     for result in context.task.execution_results
                 ]
 
+            # Use enriched task context if validation provided one (e.g., after clarification delegation)
+            # This ensures planner sees the full context including delegation/clarification responses
+            effective_user_message = user_message
+            if validation_result and hasattr(validation_result, "enriched_task_context"):
+                if validation_result.enriched_task_context:
+                    effective_user_message = validation_result.enriched_task_context
+                    logger.info(
+                        f"Using enriched task context from validation: {effective_user_message[:100]}..."
+                    )
+
             # Create input for planning flow
             planning_input = PlanningInput(
-                user_message=user_message,
+                user_message=effective_user_message,
                 conversation_history=conversation_history,
                 available_tools=available_tools,
                 agent_role=agent_role,
                 working_directory=working_directory,
                 domain_state=domain_state,  # FIX: Pass domain state
-                shared_variables=shared_variables
+                shared_variables=shared_variables,
+                validation_result=validation_result,  # Pass validation result to planner
             )
 
-            # Run structured planning flow (single LLM call)
-            planning_flow = flow_registry.get_flow("structured-planning")
-            if planning_flow is None:
-                raise RuntimeError("StructuredPlanningFlow not found in registry")
+            # Route to appropriate planning flow based on validation result
+            if validation_result and validation_result.next_action == "clarify":
+                # Use clarification planning - simple conversation-based plan
+                logger.info("Using clarification planning (context insufficient)")
+                planning_flow = flow_registry.get_flow("clarification-planning")
+                if planning_flow is None:
+                    raise RuntimeError("ClarificationPlanningFlow not found in registry")
+            else:
+                # Use execution planning - complex multi-step plan with parameter extraction
+                logger.info("Using execution planning (context sufficient)")
+                planning_flow = flow_registry.get_flow("execution-planning")
+                if planning_flow is None:
+                    raise RuntimeError("ExecutionPlanningFlow not found in registry")
 
             result = await planning_flow.run_pipeline(planning_input)
 

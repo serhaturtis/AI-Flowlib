@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import aiohttp
 
@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 class StdioTransport(MCPConnection):
     """STDIO transport for MCP."""
 
-    def __init__(self, server_command: str, server_args: Optional[List[str]] = None):
+    def __init__(self, server_command: str, server_args: list[str] | None = None):
         self.server_command = server_command
         self.server_args = server_args or []
-        self.process: Optional[asyncio.subprocess.Process] = None
+        self.process: asyncio.subprocess.Process | None = None
         self._closed = False
 
     async def connect(self) -> None:
@@ -29,12 +29,12 @@ class StdioTransport(MCPConnection):
                 *self.server_args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             logger.debug(f"Started MCP server process: {self.server_command}")
 
         except Exception as e:
-            raise MCPConnectionError(f"Failed to start MCP server process: {e}")
+            raise MCPConnectionError(f"Failed to start MCP server process: {e}") from e
 
     async def send(self, message: MCPMessage) -> None:
         """Send message via stdin."""
@@ -51,7 +51,7 @@ class StdioTransport(MCPConnection):
             await self.process.stdin.drain()
 
         except Exception as e:
-            raise MCPConnectionError(f"Failed to send message: {e}")
+            raise MCPConnectionError(f"Failed to send message: {e}") from e
 
     async def receive(self) -> MCPMessage:
         """Receive message from stdout."""
@@ -69,9 +69,9 @@ class StdioTransport(MCPConnection):
             return MCPMessage(**data)
 
         except json.JSONDecodeError as e:
-            raise MCPConnectionError(f"Invalid JSON received: {e}")
+            raise MCPConnectionError(f"Invalid JSON received: {e}") from e
         except Exception as e:
-            raise MCPConnectionError(f"Failed to receive message: {e}")
+            raise MCPConnectionError(f"Failed to receive message: {e}") from e
 
     async def close(self) -> None:
         """Close the connection and terminate process."""
@@ -109,15 +109,15 @@ class SSETransport(MCPConnection):
     def __init__(
         self,
         server_url: str,
-        auth_token: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None
+        auth_token: str | None = None,
+        headers: dict[str, str] | None = None,
     ):
         self.server_url = server_url
         self.auth_token = auth_token
         self.headers = headers or {}
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
         self._event_source = None
-        self._message_queue: asyncio.Queue[Union[MCPMessage, Exception]] = asyncio.Queue()
+        self._message_queue: asyncio.Queue[MCPMessage | Exception] = asyncio.Queue()
         self._closed = False
 
     async def connect(self) -> None:
@@ -139,20 +139,17 @@ class SSETransport(MCPConnection):
             logger.debug(f"Connected to MCP SSE server: {self.server_url}")
 
         except ImportError:
-            raise MCPConnectionError("aiohttp is required for SSE transport")
+            raise MCPConnectionError("aiohttp is required for SSE transport") from None
         except Exception as e:
-            raise MCPConnectionError(f"Failed to connect to SSE server: {e}")
+            raise MCPConnectionError(f"Failed to connect to SSE server: {e}") from e
 
-    async def _listen_for_events(self, headers: Dict[str, str]) -> None:
+    async def _listen_for_events(self, headers: dict[str, str]) -> None:
         """Listen for SSE events."""
         if not self._session:
             raise RuntimeError("Session not initialized. Call connect() first.")
 
         try:
-            async with self._session.get(
-                f"{self.server_url}/events",
-                headers=headers
-            ) as response:
+            async with self._session.get(f"{self.server_url}/events", headers=headers) as response:
                 async for line_bytes in response.content:
                     if self._closed:
                         break
@@ -186,15 +183,13 @@ class SSETransport(MCPConnection):
             data = message.model_dump(exclude_none=True)
 
             async with self._session.post(
-                f"{self.server_url}/messages",
-                json=data,
-                headers=headers
+                f"{self.server_url}/messages", json=data, headers=headers
             ) as response:
                 if response.status >= 400:
                     raise MCPConnectionError(f"HTTP {response.status}: {await response.text()}")
 
         except Exception as e:
-            raise MCPConnectionError(f"Failed to send message: {e}")
+            raise MCPConnectionError(f"Failed to send message: {e}") from e
 
     async def receive(self) -> MCPMessage:
         """Receive message from event queue."""
@@ -230,13 +225,13 @@ class WebSocketTransport(MCPConnection):
     def __init__(
         self,
         server_url: str,
-        auth_token: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None
+        auth_token: str | None = None,
+        headers: dict[str, str] | None = None,
     ):
         self.server_url = server_url
         self.auth_token = auth_token
         self.headers = headers or {}
-        self._websocket: Optional[Any] = None
+        self._websocket: Any | None = None
         self._closed = False
 
     async def connect(self) -> None:
@@ -253,17 +248,14 @@ class WebSocketTransport(MCPConnection):
             ws_url = self.server_url.replace("http://", "ws://").replace("https://", "wss://")
 
             # Connect
-            self._websocket = await websockets.connect(
-                ws_url,
-                extra_headers=headers
-            )
+            self._websocket = await websockets.connect(ws_url, extra_headers=headers)
 
             logger.debug(f"Connected to MCP WebSocket server: {ws_url}")
 
         except ImportError:
-            raise MCPConnectionError("websockets is required for WebSocket transport")
+            raise MCPConnectionError("websockets is required for WebSocket transport") from None
         except Exception as e:
-            raise MCPConnectionError(f"Failed to connect to WebSocket server: {e}")
+            raise MCPConnectionError(f"Failed to connect to WebSocket server: {e}") from e
 
     async def send(self, message: MCPMessage) -> None:
         """Send message via WebSocket."""
@@ -276,7 +268,7 @@ class WebSocketTransport(MCPConnection):
             await self._websocket.send(json_str)
 
         except Exception as e:
-            raise MCPConnectionError(f"Failed to send message: {e}")
+            raise MCPConnectionError(f"Failed to send message: {e}") from e
 
     async def receive(self) -> MCPMessage:
         """Receive message from WebSocket."""
@@ -289,9 +281,9 @@ class WebSocketTransport(MCPConnection):
             return MCPMessage(**data)
 
         except json.JSONDecodeError as e:
-            raise MCPConnectionError(f"Invalid JSON received: {e}")
+            raise MCPConnectionError(f"Invalid JSON received: {e}") from e
         except Exception as e:
-            raise MCPConnectionError(f"Failed to receive message: {e}")
+            raise MCPConnectionError(f"Failed to receive message: {e}") from e
 
     async def close(self) -> None:
         """Close the WebSocket connection."""
@@ -312,11 +304,11 @@ class WebSocketTransport(MCPConnection):
 async def create_transport(
     transport_type: MCPTransport,
     server_uri: str,
-    server_command: Optional[str] = None,
-    server_args: Optional[List[str]] = None,
+    server_command: str | None = None,
+    server_args: list[str] | None = None,
     timeout: float = 30.0,
-    auth_token: Optional[str] = None,
-    headers: Optional[Dict[str, str]] = None
+    auth_token: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> MCPConnection:
     """Create and connect appropriate transport."""
 
@@ -342,7 +334,7 @@ async def create_transport(
         return transport
     except asyncio.TimeoutError:
         await transport.close()
-        raise MCPConnectionError(f"Connection timeout after {timeout} seconds")
+        raise MCPConnectionError(f"Connection timeout after {timeout} seconds") from None
     except Exception:
         await transport.close()
         raise

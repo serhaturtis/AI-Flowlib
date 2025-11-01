@@ -13,5 +13,8 @@ from .models import (
 
 __all__ = [
     # Strict Models - CLAUDE.md compliance
-    'StrictBaseModel', 'MutableStrictBaseModel', 'StrictModel', 'MutableStrictModel'
+    "StrictBaseModel",
+    "MutableStrictBaseModel",
+    "StrictModel",
+    "MutableStrictModel",
 ]

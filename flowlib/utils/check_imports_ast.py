@@ -2,7 +2,7 @@ import ast
 import importlib.util
 import os
 import sys
-from typing import Generator, List, Optional, Tuple
+from collections.abc import Generator
 
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(base_dir))  # Ensure project root is in sys.path
@@ -11,36 +11,49 @@ sys.path.insert(0, os.path.dirname(base_dir))  # Ensure project root is in sys.p
 def find_python_files(root: str) -> Generator[str, None, None]:
     for dirpath, _, files in os.walk(root):
         for file in files:
-            if file.endswith('.py'):
+            if file.endswith(".py"):
                 yield os.path.join(dirpath, file)
 
-def search_codebase_for_symbol(root: str, symbol: str) -> List[str]:
+
+def search_codebase_for_symbol(root: str, symbol: str) -> list[str]:
     matches = []
     for dirpath, dirs, files in os.walk(root):
         for file in files:
-            if file.endswith('.py') and file[:-3] == symbol:
+            if file.endswith(".py") and file[:-3] == symbol:
                 matches.append(os.path.join(dirpath, file))
         for d in dirs:
             if d == symbol:
                 matches.append(os.path.join(dirpath, d))
     return matches
 
-def resolve_mod_name(mod: str) -> Optional[str]:
+
+def resolve_mod_name(mod: str) -> str | None:
     # Only prefix if not already absolute or a known external package
     if not mod:
         return mod
-    if mod.startswith("flowlib.") or mod.startswith("tests.") or mod.startswith("pytest.") or mod.startswith("os") or mod.startswith("sys") or mod.startswith("json") or mod.startswith("importlib"):
+    if (
+        mod.startswith("flowlib.")
+        or mod.startswith("tests.")
+        or mod.startswith("pytest.")
+        or mod.startswith("os")
+        or mod.startswith("sys")
+        or mod.startswith("json")
+        or mod.startswith("importlib")
+    ):
         return mod
     # If it's a relative or bare import, prefix with flowlib
     return f"flowlib.{mod}"
 
-def check_imports_in_file(filepath: str, root: str) -> List[Tuple[str, int, str, List[str], Optional[str]]]:
-    with open(filepath, 'r', encoding='utf-8') as f:
+
+def check_imports_in_file(
+    filepath: str, root: str
+) -> list[tuple[str, int, str, list[str], str | None]]:
+    with open(filepath, encoding="utf-8") as f:
         try:
             tree = ast.parse(f.read(), filename=filepath)
         except Exception as e:
             return [(filepath, 0, f"[PARSE ERROR] {e}", [], None)]
-    broken: List[Tuple[str, int, str, List[str], Optional[str]]] = []
+    broken: list[tuple[str, int, str, list[str], str | None]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -51,7 +64,7 @@ def check_imports_in_file(filepath: str, root: str) -> List[Tuple[str, int, str,
                 except Exception:
                     found = None
                 if not found:
-                    suggestions = search_codebase_for_symbol(root, mod.split('.')[-1])
+                    suggestions = search_codebase_for_symbol(root, mod.split(".")[-1])
                     broken.append((filepath, node.lineno, f"import {mod}", suggestions, mod))
         elif isinstance(node, ast.ImportFrom):
             if node.module is None:
@@ -63,9 +76,10 @@ def check_imports_in_file(filepath: str, root: str) -> List[Tuple[str, int, str,
             except Exception:
                 found = None
             if mod and not found:
-                suggestions = search_codebase_for_symbol(root, mod.split('.')[-1])
+                suggestions = search_codebase_for_symbol(root, mod.split(".")[-1])
                 broken.append((filepath, node.lineno, f"from {mod} import ...", suggestions, mod))
     return broken
+
 
 def main(root: str) -> None:
     all_broken = []
@@ -81,7 +95,9 @@ def main(root: str) -> None:
             print("  No suggestions found.")
     print(f"\nTotal broken imports: {len(all_broken)}")
 
+
 if __name__ == "__main__":
     import sys
+
     root = sys.argv[1] if len(sys.argv) > 1 else "flowlib"
     main(root)

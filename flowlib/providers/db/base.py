@@ -6,7 +6,7 @@ database operations.
 """
 
 import logging
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,12 +16,13 @@ from flowlib.providers.core.base import Provider, ProviderSettings
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T', bound=BaseModel)
-SettingsT = TypeVar('SettingsT', bound='DBProviderSettings')
+T = TypeVar("T", bound=BaseModel)
+SettingsT = TypeVar("SettingsT", bound="DBProviderSettings")
 
 
 class DatabaseInfo(BaseModel):
     """Database connection information."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     path: str = Field(..., description="Database path or connection string")
@@ -30,6 +31,7 @@ class DatabaseInfo(BaseModel):
 
 class PoolInfo(BaseModel):
     """Connection pool information."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     active_connections: int = Field(..., description="Number of active connections")
@@ -38,6 +40,7 @@ class PoolInfo(BaseModel):
 
 class DatabaseHealthInfo(BaseModel):
     """Database health information."""
+
     model_config = ConfigDict(extra="forbid")
 
     status: str = Field(..., description="Overall health status")
@@ -45,13 +48,15 @@ class DatabaseHealthInfo(BaseModel):
     connection_active: bool = Field(..., description="Whether connection is active")
     database: DatabaseInfo = Field(..., description="Database information")
     pool: PoolInfo = Field(..., description="Connection pool information")
-    version: Optional[str] = Field(None, description="Database version")
-    additional_info: Dict[str, Any] = Field(default_factory=dict, description="Additional health metrics")
+    version: str | None = Field(None, description="Database version")
+    additional_info: dict[str, Any] = Field(
+        default_factory=dict, description="Additional health metrics"
+    )
 
 
 class DBProviderSettings(ProviderSettings):
     """Base settings for database providers.
-    
+
     Attributes:
         host: Database server host address
         port: Database server port
@@ -64,10 +69,10 @@ class DBProviderSettings(ProviderSettings):
 
     # Connection settings
     host: str = "localhost"
-    port: Optional[int] = None
+    port: int | None = None
     database: str = ""
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
 
     # Pool settings
     pool_size: int = 5
@@ -80,9 +85,9 @@ class DBProviderSettings(ProviderSettings):
 
     # SSL settings
     use_ssl: bool = False
-    ssl_ca_cert: Optional[str] = None
-    ssl_cert: Optional[str] = None
-    ssl_key: Optional[str] = None
+    ssl_ca_cert: str | None = None
+    ssl_cert: str | None = None
+    ssl_key: str | None = None
 
     # Query settings
     query_timeout: float = 30.0
@@ -95,7 +100,7 @@ class DBProviderSettings(ProviderSettings):
 
 class DBProvider(Provider[SettingsT], Generic[SettingsT]):
     """Base class for database providers.
-    
+
     This class provides:
     1. Common database operations (query, execute, transaction)
     2. Type-safe operations with Pydantic models
@@ -103,9 +108,9 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
     4. Error handling and retries
     """
 
-    def __init__(self, name: str = "db", settings: Optional[SettingsT] = None):
+    def __init__(self, name: str = "db", settings: SettingsT | None = None):
         """Initialize database provider.
-        
+
         Args:
             name: Unique provider name
             settings: Optional provider settings
@@ -122,7 +127,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
 
     async def initialize(self) -> None:
         """Initialize the database provider.
-        
+
         This method should be implemented by subclasses to establish
         connections to the database and set up connection pools.
         """
@@ -130,55 +135,56 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
 
     async def shutdown(self) -> None:
         """Close all connections and release resources.
-        
+
         This method should be implemented by subclasses to properly
         close connections and clean up resources.
         """
         self._initialized = False
         self._pool = None
 
-    async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    async def execute(self, query: str, params: dict[str, Any] | None = None) -> Any:
         """Execute a database query.
-        
+
         Args:
             query: SQL query to execute
             params: Query parameters
-            
+
         Returns:
             Query results
-            
+
         Raises:
             ProviderError: If query execution fails
         """
         raise NotImplementedError("Subclasses must implement execute()")
 
-    async def execute_many(self, query: str, params_list: List[Dict[str, Any]]) -> List[Any]:
+    async def execute_many(self, query: str, params_list: list[dict[str, Any]]) -> list[Any]:
         """Execute a batch of database queries.
-        
+
         Args:
             query: SQL query to execute
             params_list: List of query parameters
-            
+
         Returns:
             List of query results
-            
+
         Raises:
             ProviderError: If query execution fails
         """
         raise NotImplementedError("Subclasses must implement execute_many()")
 
-    async def execute_structured(self, query: str, output_type: Type[T],
-                              params: Optional[Dict[str, Any]] = None) -> List[T]:
+    async def execute_structured(
+        self, query: str, output_type: type[T], params: dict[str, Any] | None = None
+    ) -> list[T]:
         """Execute a query and parse results into structured types.
-        
+
         Args:
             query: SQL query to execute
             output_type: Pydantic model to parse results into
             params: Query parameters
-            
+
         Returns:
             List of parsed model instances
-            
+
         Raises:
             ProviderError: If query execution or parsing fails
         """
@@ -200,7 +206,9 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
                 elif isinstance(row, (tuple, list)):
                     # Get column names from the cursor description
                     # This is implementation-specific and should be handled by subclasses
-                    raise NotImplementedError("Tuple/list conversion must be implemented by subclasses")
+                    raise NotImplementedError(
+                        "Tuple/list conversion must be implemented by subclasses"
+                    )
                 else:
                     # Try to convert to dict if it has a method for it
                     if hasattr(row, "_asdict"):
@@ -224,23 +232,23 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
                     error_type="StructuredQueryError",
                     error_location="execute_structured",
                     component=self.name,
-                    operation="query_execution"
+                    operation="query_execution",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_structured",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def begin_transaction(self) -> Any:
         """Begin a database transaction.
-        
+
         Returns:
             Transaction object
-            
+
         Raises:
             ProviderError: If transaction start fails
         """
@@ -248,13 +256,13 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
 
     async def commit_transaction(self, transaction: Any) -> bool:
         """Commit a database transaction.
-        
+
         Args:
             transaction: Transaction object from begin_transaction()
-            
+
         Returns:
             True if transaction was committed successfully
-            
+
         Raises:
             ProviderError: If transaction commit fails
         """
@@ -262,13 +270,13 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
 
     async def rollback_transaction(self, transaction: Any) -> bool:
         """Rollback a database transaction.
-        
+
         Args:
             transaction: Transaction object from begin_transaction()
-            
+
         Returns:
             True if transaction was rolled back successfully
-            
+
         Raises:
             ProviderError: If transaction rollback fails
         """
@@ -276,7 +284,7 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
 
     async def check_connection(self) -> bool:
         """Check if database connection is active.
-        
+
         Returns:
             True if connection is active, False otherwise
         """
@@ -284,10 +292,10 @@ class DBProvider(Provider[SettingsT], Generic[SettingsT]):
 
     async def get_health(self) -> DatabaseHealthInfo:
         """Get database health information.
-        
+
         Returns:
             Structured health information
-            
+
         Raises:
             ProviderError: If health check fails
         """

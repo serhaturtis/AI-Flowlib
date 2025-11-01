@@ -8,46 +8,79 @@ system has been removed in favor of clean subflow composition.
 import datetime
 import functools
 import logging
-from typing import Any, Callable, Optional, TypeVar, Union
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
 from flowlib.flows.base.base import Flow
 from flowlib.flows.registry.registry import flow_registry
 
-F = TypeVar('F', bound=Callable[..., Any])
-C = TypeVar('C', bound=type)
+F = TypeVar("F", bound=Callable[..., Any])
+C = TypeVar("C", bound=type)
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
-def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: str, is_infrastructure: bool = False) -> Union[Callable[[C], C], C]:
+
+def _block_flow_instantiation(cls: type, flow_name: str) -> None:
+    """Prevent direct instantiation of flow classes.
+
+    Flows are automatically instantiated and registered by the @flow decorator.
+    They should be retrieved from the flow registry, not instantiated directly.
+
+    Args:
+        cls: The flow class to protect
+        flow_name: The flow name for the error message
+    """
+
+    def __init_blocked(self: Any, *args: Any, **kwargs: Any) -> None:
+        """Prevent direct instantiation of flow classes."""
+        raise RuntimeError(
+            f"Cannot instantiate flow class '{cls.__name__}' directly.\n"
+            f"Flows are automatically instantiated by the @flow decorator.\n"
+            f"Retrieve flows from the flow registry:\n"
+            f"  flow = flow_registry.get_flow('{flow_name}')\n\n"
+            f"This ensures single source of truth and prevents duplicate instances."
+        )
+
+    cls.__init__ = __init_blocked  # type: ignore[method-assign]
+
+
+def flow(
+    cls: C | None = None,
+    *,
+    name: str | None = None,
+    description: str,
+    is_infrastructure: bool = False,
+) -> Callable[[C], C] | C:
     """
     Decorator to mark a class as a flow.
-    
+
     This decorator registers a class as a flow in the stage registry and enforces
     that the class implements the required Flow interface.
-    
+
     Args:
         cls: The class to decorate
         name: Optional custom name for the flow
         description: Description of the flow's purpose (required)
         is_infrastructure: Whether this is an infrastructure flow
-        
+
     Returns:
         The decorated flow class
-        
+
     Raises:
         ValueError: If description is not provided
     """
+
     def wrap(cls: C) -> C:
         # Create a get_description method that returns the provided description
         def get_description(self: Any) -> str:
             return description
 
         # Add the method to the class
-        if not hasattr(cls, 'get_description'):
-            setattr(cls, 'get_description', get_description)
+        if not hasattr(cls, "get_description"):
+            cls.get_description = get_description
             logger.debug(f"Added get_description method to flow class '{cls.__name__}'")
 
         # If the class already has a get_description method, we keep it
@@ -59,15 +92,13 @@ def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: st
             original_dict = dict(cls.__dict__)
 
             # Remove items that would cause conflicts
-            for key in ['__dict__', '__weakref__']:
+            for key in ["__dict__", "__weakref__"]:
                 if key in original_dict:
                     del original_dict[key]
 
             # Create the new class with multiple inheritance
             cls = type(  # type: ignore[assignment]
-                original_name,
-                (original_cls, Flow),
-                original_dict
+                original_name, (original_cls, Flow), original_dict
             )
 
             # Initialize Flow with default parameters
@@ -81,7 +112,7 @@ def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: st
                     flow_name,  # Positional argument
                     input_schema=None,  # Will be set from pipeline method
                     output_schema=None,  # Will be set from pipeline method
-                    metadata={"is_infrastructure": is_infrastructure}
+                    metadata={"is_infrastructure": is_infrastructure},
                 )
 
                 # Set name attribute on instance too
@@ -103,7 +134,7 @@ def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: st
         flow_name = name or cls.__name__
         cls.__flow_metadata__ = {  # type: ignore[attr-defined]
             "name": flow_name,
-            "is_infrastructure": is_infrastructure
+            "is_infrastructure": is_infrastructure,
         }
 
         # Set the name and is_infrastructure as direct attributes for easy access
@@ -116,18 +147,22 @@ def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: st
         # Only iterate through class's own __dict__ to avoid inherited methods
         for attr_name, attr_value in cls.__dict__.items():
             # Skip special methods and attributes
-            if attr_name.startswith('__') and attr_name.endswith('__'):
+            if attr_name.startswith("__") and attr_name.endswith("__"):
                 continue
 
             # Check if this is a pipeline method
-            if hasattr(attr_value, '__pipeline__') and attr_value.__pipeline__:
+            if hasattr(attr_value, "__pipeline__") and attr_value.__pipeline__:
                 pipeline_methods.append(attr_name)
 
         # Enforce exactly one pipeline method
         if len(pipeline_methods) == 0:
-            raise ValueError(f"Flow class '{flow_name}' must define exactly one pipeline method using @pipeline decorator")
+            raise ValueError(
+                f"Flow class '{flow_name}' must define exactly one pipeline method using @pipeline decorator"
+            )
         elif len(pipeline_methods) > 1:
-            raise ValueError(f"Flow class '{flow_name}' has multiple pipeline methods: {', '.join(pipeline_methods)}. Only one is allowed.")
+            raise ValueError(
+                f"Flow class '{flow_name}' has multiple pipeline methods: {', '.join(pipeline_methods)}. Only one is allowed."
+            )
 
         # Store the pipeline method name
         cls.__pipeline_method__ = pipeline_methods[0]  # type: ignore[attr-defined]
@@ -137,17 +172,21 @@ def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: st
         try:
             flow_instance = cls()
             # Set the name attribute directly on the flow instance
-            setattr(flow_instance, "name", flow_name)
+            flow_instance.name = flow_name
 
             # Get the pipeline method to extract schemas
             pipeline_method = getattr(cls, cls.__pipeline_method__)  # type: ignore[attr-defined]
-            if hasattr(pipeline_method, 'input_model') and pipeline_method.input_model:
-                setattr(flow_instance, "input_schema", pipeline_method.input_model)
-                logger.debug(f"Set input_schema={pipeline_method.input_model.__name__} on flow '{flow_name}'")
+            if hasattr(pipeline_method, "input_model") and pipeline_method.input_model:
+                flow_instance.input_schema = pipeline_method.input_model
+                logger.debug(
+                    f"Set input_schema={pipeline_method.input_model.__name__} on flow '{flow_name}'"
+                )
 
-            if hasattr(pipeline_method, 'output_model') and pipeline_method.output_model:
-                setattr(flow_instance, "output_schema", pipeline_method.output_model)
-                logger.debug(f"Set output_schema={pipeline_method.output_model.__name__} on flow '{flow_name}'")
+            if hasattr(pipeline_method, "output_model") and pipeline_method.output_model:
+                flow_instance.output_schema = pipeline_method.output_model
+                logger.debug(
+                    f"Set output_schema={pipeline_method.output_model.__name__} on flow '{flow_name}'"
+                )
 
             logger.debug(f"Created flow instance: {flow_name}")
         except Exception as e:
@@ -164,9 +203,14 @@ def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: st
                 flow_registry.register_flow(flow_name, flow_instance)
                 logger.debug(f"Registered flow instance '{flow_name}' in global registry")
             else:
-                logger.error(f"Failed to create instance for flow '{flow_name}', skipping registration")
+                logger.error(
+                    f"Failed to create instance for flow '{flow_name}', skipping registration"
+                )
         except Exception as e:
             logger.warning(f"Failed to register flow '{flow_name}' in registry: {e}")
+
+        # Block direct instantiation - flows should be retrieved from registry
+        _block_flow_instantiation(cls, flow_name)
 
         return cls
 
@@ -183,24 +227,24 @@ def flow(cls: Optional[C] = None, *, name: Optional[str] = None, description: st
 # Create dedicated flow classes for reusable processing logic
 
 
-def pipeline(func: Optional[F] = None, **pipeline_kwargs: Any) -> Callable[..., Any]:
+def pipeline(func: F | None = None, **pipeline_kwargs: Any) -> Callable[..., Any]:
     """Mark a method as a flow pipeline.
-    
+
     This decorator wraps a method to provide pipeline execution capabilities:
     1. Manages execution context
     2. Tracks pipeline metadata and execution status
     3. Initializes stages if needed
     4. Validates output conforms to declared output model
-    
+
     Args:
         func: The method to decorate
         **pipeline_kwargs: Additional pipeline options including:
             - input_model: Pydantic model for input validation (must be a BaseModel subclass)
             - output_model: Pydantic model for output validation (must be a BaseModel subclass)
-        
+
     Returns:
         Decorated pipeline method
-        
+
     Raises:
         ValueError: If input_model or output_model is provided but not a Pydantic BaseModel subclass.
     """
@@ -209,11 +253,19 @@ def pipeline(func: Optional[F] = None, **pipeline_kwargs: Any) -> Callable[..., 
     output_model = pipeline_kwargs["output_model"] if "output_model" in pipeline_kwargs else None
 
     # Validate input_model and output_model are Pydantic models if provided
-    if input_model is not None and not (isinstance(input_model, type) and issubclass(input_model, BaseModel)):
-        raise ValueError(f"Pipeline input_model must be a Pydantic BaseModel subclass, got {input_model}")
+    if input_model is not None and not (
+        isinstance(input_model, type) and issubclass(input_model, BaseModel)
+    ):
+        raise ValueError(
+            f"Pipeline input_model must be a Pydantic BaseModel subclass, got {input_model}"
+        )
 
-    if output_model is not None and not (isinstance(output_model, type) and issubclass(output_model, BaseModel)):
-        raise ValueError(f"Pipeline output_model must be a Pydantic BaseModel subclass, got {output_model}")
+    if output_model is not None and not (
+        isinstance(output_model, type) and issubclass(output_model, BaseModel)
+    ):
+        raise ValueError(
+            f"Pipeline output_model must be a Pydantic BaseModel subclass, got {output_model}"
+        )
 
     def decorator(method: F) -> F:
         @functools.wraps(method)
@@ -233,7 +285,9 @@ def pipeline(func: Optional[F] = None, **pipeline_kwargs: Any) -> Callable[..., 
                 # Log execution details
                 if len(args) > 0 and hasattr(args[0], "__class__"):
                     flow_class = args[0].__class__.__name__
-                    logger.debug(f"Pipeline execution: {flow_class}.{method.__name__} ({execution_time.total_seconds():.3f}s)")
+                    logger.debug(
+                        f"Pipeline execution: {flow_class}.{method.__name__} ({execution_time.total_seconds():.3f}s)"
+                    )
 
         # Set pipeline attributes for flow decorator and test compatibility
         wrapper.__pipeline__ = True  # type: ignore[attr-defined]

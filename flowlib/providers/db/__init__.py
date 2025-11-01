@@ -17,5 +17,5 @@ __all__ = [
     "MongoDBProvider",
     "MongoDBProviderSettings",
     "SQLiteDBProvider",
-    "SQLiteProviderSettings"
+    "SQLiteProviderSettings",
 ]

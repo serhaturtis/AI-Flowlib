@@ -5,7 +5,7 @@ based on the provider_type specified in the configuration.
 """
 
 import logging
-from typing import Any, Dict, Optional, Type, cast
+from typing import Any, cast
 
 from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 # Registry of provider specific implementations
 # This is separate from the provider_registry and helps with factory creation
-PROVIDER_IMPLEMENTATIONS: Dict[str, Dict[str, Optional[Type[Provider[Any]]]]] = {
+PROVIDER_IMPLEMENTATIONS: dict[str, dict[str, type[Provider[Any]] | None]] = {
     "llm": {
         "llamacpp": None,  # Will be populated on import
-        "llama": None,     # Will be populated on import
+        "llama": None,  # Will be populated on import
         "googleai": None,  # Will be populated on import
     },
     "database": {
@@ -73,25 +73,26 @@ PROVIDER_IMPLEMENTATIONS: Dict[str, Dict[str, Optional[Type[Provider[Any]]]]] = 
     },
 }
 
+
 def create_provider(
     provider_type: str,
     name: str,
-    implementation: Optional[str] = None,
+    implementation: str | None = None,
     register: bool = True,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> Provider[Any]:
     """Create a provider based on the provider_type and optional implementation.
-    
+
     Args:
         provider_type: Type of provider (e.g., "llm", "database")
         name: Unique name for the provider instance
         implementation: Optional specific implementation (e.g., "postgres" for db)
         register: Whether to register the provider in the registry
         **kwargs: Additional arguments to pass to the provider constructor
-        
+
     Returns:
         Provider instance of the appropriate type
-        
+
     Raises:
         ProviderError: If the specified provider_type or implementation is not supported
     """
@@ -123,14 +124,14 @@ def create_provider(
                     error_type="UnsupportedImplementationError",
                     error_location="create_provider",
                     component="provider_factory",
-                    operation="validate_implementation"
+                    operation="validate_implementation",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=name,
                     provider_type=provider_type,
                     operation="create_provider",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
     if provider_class is None:
@@ -141,22 +142,22 @@ def create_provider(
                 error_type="UnsupportedProviderTypeError",
                 error_location="create_provider",
                 component="provider_factory",
-                operation="validate_provider_type"
+                operation="validate_provider_type",
             ),
             provider_context=ProviderErrorContext(
                 provider_name=name,
                 provider_type=provider_type,
                 operation="create_provider",
-                retry_count=0
-            )
+                retry_count=0,
+            ),
         )
 
     try:
         # If 'settings' is a dict, convert to the provider's settings_class
-        if 'settings' in kwargs and isinstance(kwargs['settings'], dict):
-            if hasattr(provider_class, 'settings_class') and provider_class.settings_class:
-                settings_obj = provider_class.settings_class(**kwargs['settings'])
-                kwargs['settings'] = settings_obj
+        if "settings" in kwargs and isinstance(kwargs["settings"], dict):
+            if hasattr(provider_class, "settings_class") and provider_class.settings_class:
+                settings_obj = provider_class.settings_class(**kwargs["settings"])
+                kwargs["settings"] = settings_obj
             else:
                 raise ProviderError(
                     message=f"Provider class {provider_class.__name__} is missing a valid settings_class for conversion.",
@@ -165,25 +166,31 @@ def create_provider(
                         error_type="MissingSettingsClassError",
                         error_location="create_provider",
                         component="provider_factory",
-                        operation="convert_settings"
+                        operation="convert_settings",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=name,
                         provider_type=provider_type,
                         operation="create_provider",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
         # Pop settings from kwargs to avoid passing it twice.
         # kwargs['settings'] would have been converted to a Pydantic object by the block above if it was a dict.
         # If 'settings' was not in kwargs initially, or was not a dict, pop will return None (due to default) or the original value.
-        final_settings_arg = kwargs.pop('settings', None) # Get the processed settings, remove from kwargs
+        final_settings_arg = kwargs.pop(
+            "settings", None
+        )  # Get the processed settings, remove from kwargs
 
         # Some providers handle provider_type internally
         if issubclass(provider_class, (GraphDBProvider, DBProvider)):
-            provider = cast(Provider[Any], provider_class(name=name, settings=final_settings_arg, **kwargs))
+            provider = cast(
+                Provider[Any], provider_class(name=name, settings=final_settings_arg, **kwargs)
+            )
         else:
-            provider = provider_class(name=name, settings=final_settings_arg, provider_type=provider_type, **kwargs)
+            provider = provider_class(
+                name=name, settings=final_settings_arg, provider_type=provider_type, **kwargs
+            )
         # Register if requested
         if register:
             # Use register_provider for provider objects
@@ -197,38 +204,39 @@ def create_provider(
                 error_type="ProviderCreationError",
                 error_location="create_provider",
                 component="provider_factory",
-                operation="instantiate_provider"
+                operation="instantiate_provider",
             ),
             provider_context=ProviderErrorContext(
                 provider_name=name,
                 provider_type=provider_type,
                 operation="create_provider",
-                retry_count=0
+                retry_count=0,
             ),
-            cause=e
-        )
+            cause=e,
+) from e
+
 
 async def create_and_initialize_provider(
     provider_type: str,
     name: str,
-    implementation: Optional[str] = None,
+    implementation: str | None = None,
     register: bool = True,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> Provider[Any]:
     """Create and initialize a provider.
-    
+
     This is a convenience function that combines create_provider with initialization.
-    
+
     Args:
         provider_type: Type of provider
         name: Unique name for the provider
         implementation: Optional specific implementation
         register: Whether to register the provider
         **kwargs: Additional arguments for the provider
-        
+
     Returns:
         Initialized provider instance
-        
+
     Raises:
         ProviderError: If provider creation or initialization fails
     """
@@ -240,7 +248,7 @@ async def create_and_initialize_provider(
         name=name,
         implementation=implementation,
         register=register,
-        **kwargs
+        **kwargs,
     )
 
     # Initialize and return
@@ -255,27 +263,28 @@ async def create_and_initialize_provider(
                 error_type="ProviderInitializationError",
                 error_location="create_and_initialize_provider",
                 component="provider_factory",
-                operation="initialize_provider"
+                operation="initialize_provider",
             ),
             provider_context=ProviderErrorContext(
                 provider_name=name,
                 provider_type=provider_type,
                 operation="initialize_provider",
-                retry_count=0
+                retry_count=0,
             ),
-            cause=e
-        )
+            cause=e,
+) from e
 
-def _import_provider_class(provider_type: str, implementation: str) -> Type[Provider[Any]]:
+
+def _import_provider_class(provider_type: str, implementation: str) -> type[Provider[Any]]:
     """Import a provider class by type and implementation.
-    
+
     Args:
         provider_type: Type of provider
         implementation: Specific implementation
-        
+
     Returns:
         Provider class
-        
+
     Raises:
         ImportError: If provider class cannot be imported
     """
@@ -331,9 +340,12 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
         if provider_type == "state_persister" and implementation == "file":
             try:
                 from flowlib.agent.components.persistence.file import FileStatePersister
-                return cast(Type[Provider[Any]], FileStatePersister)
+
+                return cast(type[Provider[Any]], FileStatePersister)
             except ImportError as e:
-                logger.error(f"Failed to import provider class for {provider_type}/{implementation}: {str(e)}")
+                logger.error(
+                    f"Failed to import provider class for {provider_type}/{implementation}: {str(e)}"
+                )
                 raise
         else:
             raise ImportError(f"No provider mapping for {provider_type}/{implementation}")
@@ -341,89 +353,107 @@ def _import_provider_class(provider_type: str, implementation: str) -> Type[Prov
     # Get the module path and class name
     # Handle potential special case for file persister path
     if provider_type == "state_persister" and implementation == "file":
-         pass
+        pass
     else:
-         module_map[provider_type]
-         provider_map[provider_type][implementation]
+        module_map[provider_type]
+        provider_map[provider_type][implementation]
 
     try:
         # Use direct imports for each provider type/implementation
         if provider_type == "llm":
             if implementation == "llamacpp":
                 from ..llm.llama_cpp.provider import LlamaCppProvider
-                return cast(Type[Provider[Any]], LlamaCppProvider)
+
+                return cast(type[Provider[Any]], LlamaCppProvider)
         elif provider_type == "database":
             if implementation == "postgresql":
                 from ..db.postgres.provider import PostgreSQLProvider
-                return cast(Type[Provider[Any]], PostgreSQLProvider)
+
+                return cast(type[Provider[Any]], PostgreSQLProvider)
             elif implementation == "mongodb":
                 from ..db.mongodb.provider import MongoDBProvider
-                return cast(Type[Provider[Any]], MongoDBProvider)
+
+                return cast(type[Provider[Any]], MongoDBProvider)
             elif implementation == "sqlite":
                 from ..db.sqlite.provider import SQLiteDBProvider
-                return cast(Type[Provider[Any]], SQLiteDBProvider)
+
+                return cast(type[Provider[Any]], SQLiteDBProvider)
         elif provider_type == "vector_db":
             if implementation == "chromadb":
                 from ..vector.chroma.provider import ChromaDBProvider
-                return cast(Type[Provider[Any]], ChromaDBProvider)
+
+                return cast(type[Provider[Any]], ChromaDBProvider)
             elif implementation == "pinecone":
                 from ..vector.pinecone.provider import PineconeProvider
-                return cast(Type[Provider[Any]], PineconeProvider)
+
+                return cast(type[Provider[Any]], PineconeProvider)
             elif implementation == "qdrant":
                 from ..vector.qdrant.provider import QdrantProvider
-                return cast(Type[Provider[Any]], QdrantProvider)
+
+                return cast(type[Provider[Any]], QdrantProvider)
         elif provider_type == "embedding":
             if implementation == "llamacpp":
                 from ..embedding.llama_cpp.provider import LlamaCppEmbeddingProvider
-                return cast(Type[Provider[Any]], LlamaCppEmbeddingProvider)
+
+                return cast(type[Provider[Any]], LlamaCppEmbeddingProvider)
             elif implementation == "llamacpp_embedding":
                 from ..embedding.llama_cpp.provider import LlamaCppEmbeddingProvider
-                return cast(Type[Provider[Any]], LlamaCppEmbeddingProvider)
+
+                return cast(type[Provider[Any]], LlamaCppEmbeddingProvider)
         elif provider_type == "graph_db":
             if implementation == "neo4j":
                 from ..graph.neo4j.provider import Neo4jProvider
-                return cast(Type[Provider[Any]], Neo4jProvider)
+
+                return cast(type[Provider[Any]], Neo4jProvider)
         elif provider_type == "message_queue":
             if implementation == "rabbitmq":
                 from ..mq.rabbitmq.provider import RabbitMQProvider
+
                 return RabbitMQProvider
         elif provider_type == "state_persister":
-             if implementation == "redis":
-                 from flowlib.agent.components.persistence.adapters import (
-                     RedisStatePersister,
-                 )
-                 return cast(Type[Provider[Any]], RedisStatePersister)
-             elif implementation == "mongodb":
-                 from flowlib.agent.components.persistence.adapters import (
-                     MongoStatePersister,
-                 )
-                 return cast(Type[Provider[Any]], MongoStatePersister)
-             elif implementation == "postgres":
-                 from flowlib.agent.components.persistence.adapters import (
-                     PostgresStatePersister,
-                 )
-                 return cast(Type[Provider[Any]], PostgresStatePersister)
-             elif implementation == "file": # Import handled earlier
-                 from flowlib.agent.components.persistence.file import (
-                     FileStatePersister,
-                 )
-                 return cast(Type[Provider[Any]], FileStatePersister)
+            if implementation == "redis":
+                from flowlib.agent.components.persistence.adapters import (
+                    RedisStatePersister,
+                )
+
+                return cast(type[Provider[Any]], RedisStatePersister)
+            elif implementation == "mongodb":
+                from flowlib.agent.components.persistence.adapters import (
+                    MongoStatePersister,
+                )
+
+                return cast(type[Provider[Any]], MongoStatePersister)
+            elif implementation == "postgres":
+                from flowlib.agent.components.persistence.adapters import (
+                    PostgresStatePersister,
+                )
+
+                return cast(type[Provider[Any]], PostgresStatePersister)
+            elif implementation == "file":  # Import handled earlier
+                from flowlib.agent.components.persistence.file import (
+                    FileStatePersister,
+                )
+
+                return cast(type[Provider[Any]], FileStatePersister)
 
         # If we get here, something went wrong with our mappings
         raise ImportError(f"Provider import failed for {provider_type}/{implementation}")
     except ImportError as e:
-        logger.error(f"Failed to import provider class for {provider_type}/{implementation}: {str(e)}")
+        logger.error(
+            f"Failed to import provider class for {provider_type}/{implementation}: {str(e)}"
+        )
         raise
 
-def _import_provider_type(provider_type: str) -> Type[Provider[Any]]:
+
+def _import_provider_type(provider_type: str) -> type[Provider[Any]]:
     """Dynamically import a base provider class by type.
-    
+
     Args:
         provider_type: Type of provider
-        
+
     Returns:
         Provider class
-        
+
     Raises:
         ImportError: If provider class cannot be imported
     """
@@ -444,9 +474,9 @@ def _import_provider_type(provider_type: str) -> Type[Provider[Any]]:
         import_statement = import_map[provider_type]
         try:
             # Execute import statement
-            local_vars: Dict[str, Any] = {}
+            local_vars: dict[str, Any] = {}
             exec(import_statement, globals(), local_vars)
-            return cast(Type[Provider[Any]], local_vars["return"])
+            return cast(type[Provider[Any]], local_vars["return"])
         except ImportError as e:
             logger.error(f"Failed to import provider class for {provider_type}: {str(e)}")
             raise

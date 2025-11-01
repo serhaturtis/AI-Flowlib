@@ -7,7 +7,7 @@ replacing fragmented context types with unified models.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -27,9 +27,7 @@ class ContextManagerConfig(StrictBaseModel):
     session_persistence: bool = Field(
         default=True, description="Whether to persist session context"
     )
-    learning_enabled: bool = Field(
-        default=True, description="Whether to learn from user patterns"
-    )
+    learning_enabled: bool = Field(default=True, description="Whether to learn from user patterns")
     workspace_scanning: bool = Field(
         default=True, description="Whether to scan workspace for knowledge"
     )
@@ -52,20 +50,28 @@ class ConversationMessage(StrictBaseModel):
 class UserProfile(StrictBaseModel):
     """Learned user patterns and preferences."""
 
-    preferred_tools: List[str] = Field(default_factory=list, description="User's preferred tools")
-    coding_style: Dict[str, Any] = Field(default_factory=dict, description="User's coding style preferences")
+    preferred_tools: list[str] = Field(default_factory=list, description="User's preferred tools")
+    coding_style: dict[str, Any] = Field(
+        default_factory=dict, description="User's coding style preferences"
+    )
     communication_style: str = Field(default="direct", description="User's communication style")
-    domain_expertise: List[str] = Field(default_factory=list, description="User's areas of expertise")
+    domain_expertise: list[str] = Field(
+        default_factory=list, description="User's areas of expertise"
+    )
 
 
 class WorkspaceKnowledge(StrictBaseModel):
     """Knowledge about the current project/workspace."""
 
-    project_type: Optional[str] = Field(default=None, description="Detected project type")
-    languages: List[str] = Field(default_factory=list, description="Programming languages in project")
-    dependencies: List[str] = Field(default_factory=list, description="Project dependencies")
-    common_patterns: List[str] = Field(default_factory=list, description="Common code patterns")
-    file_structure: Dict[str, Any] = Field(default_factory=dict, description="Project file structure overview")
+    project_type: str | None = Field(default=None, description="Detected project type")
+    languages: list[str] = Field(
+        default_factory=list, description="Programming languages in project"
+    )
+    dependencies: list[str] = Field(default_factory=list, description="Project dependencies")
+    common_patterns: list[str] = Field(default_factory=list, description="Common code patterns")
+    file_structure: dict[str, Any] = Field(
+        default_factory=dict, description="Project file structure overview"
+    )
 
 
 class SuccessfulPattern(MutableStrictBaseModel):
@@ -74,7 +80,9 @@ class SuccessfulPattern(MutableStrictBaseModel):
     pattern_type: str = Field(..., description="Type of successful pattern")
     description: str = Field(..., description="Pattern description")
     success_count: int = Field(default=1, description="Number of times this pattern succeeded")
-    last_used: datetime = Field(default_factory=datetime.now, description="Last time pattern was used")
+    last_used: datetime = Field(
+        default_factory=datetime.now, description="Last time pattern was used"
+    )
 
 
 class RecoveryStrategy(StrictBaseModel):
@@ -91,22 +99,28 @@ class SessionContext(MutableStrictBaseModel):
 
     # Session identification
     session_id: str = Field(..., description="Unique session identifier")
-    user_id: Optional[str] = Field(default=None, description="User identifier")
+    user_id: str | None = Field(default=None, description="User identifier")
     agent_name: str = Field(..., description="Agent name")
-    agent_role: str = Field(default="general_purpose", description="Agent role for tool access control")
+    agent_role: str = Field(
+        default="general_purpose", description="Agent role for tool access control"
+    )
     agent_persona: str = Field(..., description="Agent persona")
     working_directory: str = Field(..., description="Current working directory")
 
     # Conversation state
     current_message: str = Field(..., description="Current user message")
-    conversation_history: List[ConversationMessage] = Field(
+    conversation_history: list[ConversationMessage] = Field(
         default_factory=list, description="Full conversation history"
     )
 
     # Shared context for collaboration
-    shared_context: Dict[str, Any] = Field(default_factory=dict, description="Shared context between agents")
-    collaborating_agents: List[str] = Field(default_factory=list, description="List of collaborating agent names")
-    conversation_summary: Optional[str] = Field(
+    shared_context: dict[str, Any] = Field(
+        default_factory=dict, description="Shared context between agents"
+    )
+    collaborating_agents: list[str] = Field(
+        default_factory=list, description="List of collaborating agent names"
+    )
+    conversation_summary: str | None = Field(
         default=None, description="Auto-compacted conversation summary"
     )
 
@@ -124,8 +138,8 @@ class TaskContext(MutableStrictBaseModel):
 
     description: str = Field(..., description="Task description")
     cycle: int = Field(default=1, description="Current execution cycle")
-    todos: List[TodoItem] = Field(default_factory=list, description="Current TODOs")
-    execution_results: List[Dict[str, Any]] = Field(
+    todos: list[TodoItem] = Field(default_factory=list, description="Current TODOs")
+    execution_results: list[dict[str, Any]] = Field(
         default_factory=list, description="Results from previous cycles"
     )
     started_at: datetime = Field(default_factory=datetime.now, description="Task start time")
@@ -135,15 +149,20 @@ class ComponentContext(StrictBaseModel):
     """Component-specific execution context."""
 
     component_type: Literal[
-        "task_generation", "task_thinking", "task_decomposition", "task_execution", "task_debriefing",
-        "task_planning", "task_evaluation"  # New Plan-Execute-Evaluate components
+        "task_generation",
+        "task_thinking",
+        "task_decomposition",
+        "task_execution",
+        "task_debriefing",
+        "task_planning",
+        "task_evaluation",  # New Plan-Execute-Evaluate components
     ] = Field(..., description="Current component type")
-    component_config: Dict[str, Any] = Field(
+    component_config: dict[str, Any] = Field(
         default_factory=dict, description="Component-specific configuration"
     )
 
     # Tool and execution settings
-    execution_timeout: Optional[int] = Field(
+    execution_timeout: int | None = Field(
         default=None, description="Execution timeout in seconds"
     )
     retry_policy: str = Field(default="simple", description="Retry policy for failed operations")
@@ -152,13 +171,13 @@ class ComponentContext(StrictBaseModel):
 class LearningContext(MutableStrictBaseModel):
     """Learning and adaptation context."""
 
-    successful_patterns: List[SuccessfulPattern] = Field(
+    successful_patterns: list[SuccessfulPattern] = Field(
         default_factory=list, description="Previously successful patterns"
     )
-    user_preferences: Dict[str, Any] = Field(
+    user_preferences: dict[str, Any] = Field(
         default_factory=dict, description="Learned user preferences"
     )
-    error_recovery_strategies: List[RecoveryStrategy] = Field(
+    error_recovery_strategies: list[RecoveryStrategy] = Field(
         default_factory=list, description="Error recovery strategies"
     )
     total_executions: int = Field(default=0, description="Total number of executions")

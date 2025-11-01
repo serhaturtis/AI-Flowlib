@@ -7,7 +7,7 @@ for PostgreSQL database using asyncpg.
 import asyncio
 import logging
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
@@ -28,10 +28,12 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import asyncpg  # type: ignore[import-untyped]
+
     ASYNCPG_AVAILABLE = True
 else:
     try:
         import asyncpg  # type: ignore[import-untyped]
+
         ASYNCPG_AVAILABLE = True
     except ImportError:
         ASYNCPG_AVAILABLE = False
@@ -43,63 +45,69 @@ else:
         asyncpg = _AsyncPGModule()  # type: ignore
 
 try:
-    from ..base import DBProvider as BaseDBProvider  # Alias to avoid confusion
+    from ..base import DBProvider as BaseDBProvider  # noqa: F401 - Alias to avoid confusion
 except ImportError:
     logger.warning("Provider not found. Install with 'from ..base import Provider'")
 
 
-
 class PostgreSQLProviderSettings(DBProviderSettings):
     """Settings for PostgreSQL provider - direct inheritance, only PostgreSQL-specific fields.
-    
+
     PostgreSQL is a traditional database requiring:
     1. Host/port connection details
     2. Database name and credentials
     3. PostgreSQL-specific configuration
-    
+
     This follows Interface Segregation - only fields PostgreSQL actually needs.
     """
 
     # PostgreSQL connection settings
     host: str = Field(default="localhost", description="PostgreSQL host")
     port: int = Field(default=5432, description="PostgreSQL port")
-    database: str = Field(default="postgres", description="Database name (e.g., 'myapp', 'flowlib_db')")
-    username: Optional[str] = Field(default=None, description="Database username")
-    password: Optional[str] = Field(default=None, description="Database password")
+    database: str = Field(
+        default="postgres", description="Database name (e.g., 'myapp', 'flowlib_db')"
+    )
+    username: str | None = Field(default=None, description="Database username")
+    password: str | None = Field(default=None, description="Database password")
 
     # PostgreSQL-specific settings
     db_schema: str = Field(default="public", description="Database schema to use")
-    ssl_mode: str = Field(default="prefer", description="SSL mode: disable, allow, prefer, require, verify-ca, verify-full")
-    statement_timeout: Optional[int] = Field(default=None, description="Statement timeout in ms")
+    ssl_mode: str = Field(
+        default="prefer",
+        description="SSL mode: disable, allow, prefer, require, verify-ca, verify-full",
+    )
+    statement_timeout: int | None = Field(default=None, description="Statement timeout in ms")
 
     # Connection pool settings
     min_connections: int = Field(default=1, description="Minimum connections in pool")
     max_connections: int = Field(default=10, description="Maximum connections in pool")
 
     # Additional connection arguments
-    connect_args: Dict[str, Any] = Field(default_factory=dict, description="Additional asyncpg connection arguments")
+    connect_args: dict[str, Any] = Field(
+        default_factory=dict, description="Additional asyncpg connection arguments"
+    )
 
 
 @provider(provider_type="db", name="postgresql", settings_class=PostgreSQLProviderSettings)
 class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
     """PostgreSQL implementation of the DBProvider.
-    
+
     This provider implements database operations using asyncpg,
     an efficient asynchronous PostgreSQL driver.
     """
 
-    def __init__(self, name: str = "postgres", settings: Optional[PostgreSQLProviderSettings] = None):
+    def __init__(
+        self, name: str = "postgres", settings: PostgreSQLProviderSettings | None = None
+    ):
         """Initialize PostgreSQL provider.
-        
+
         Args:
             name: Unique provider name
             settings: Optional provider settings
         """
         # Create settings first to avoid issues with _default_settings() method
         settings = settings or PostgreSQLProviderSettings(
-            database="test",
-            username="test",
-            password="test"
+            database="test", username="test", password="test"
         )
 
         # Pass explicit settings to parent class
@@ -111,7 +119,7 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
         self._json_encoders = {
             # Custom JSON encoders for PostgreSQL
             datetime: lambda dt: dt.isoformat(),
-            date: lambda d: d.isoformat()
+            date: lambda d: d.isoformat(),
         }
 
     async def initialize(self) -> None:
@@ -129,14 +137,14 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                         error_type="DependencyError",
                         error_location="initialize",
                         component=self.name,
-                        operation="check_asyncpg_dependency"
+                        operation="check_asyncpg_dependency",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="db",
                         operation="initialize",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             # Prepare DSN (Data Source Name) for connection
@@ -146,6 +154,7 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
             ssl = None
             if self._settings.ssl_mode not in ["disable", "allow"]:
                 import ssl as ssl_module
+
                 ssl_context = ssl_module.create_default_context()
                 ssl = ssl_context
 
@@ -161,13 +170,14 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                 max_cached_statement_lifetime=300.0,  # 5 minutes
                 ssl=ssl,
                 server_settings={
-                    'search_path': self._settings.db_schema,
+                    "search_path": self._settings.db_schema,
                     **(
-                        {'statement_timeout': str(self._settings.statement_timeout)}
-                        if self._settings.statement_timeout else {}
-                    )
+                        {"statement_timeout": str(self._settings.statement_timeout)}
+                        if self._settings.statement_timeout
+                        else {}
+                    ),
                 },
-                **self._settings.connect_args
+                **self._settings.connect_args,
             )
 
             # Register custom type encoders and decoders
@@ -185,16 +195,16 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="InitializationError",
                     error_location="initialize",
                     component=self.name,
-                    operation="create_connection_pool"
+                    operation="create_connection_pool",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="initialize",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def shutdown(self) -> None:
         """Close PostgreSQL connection pool and release resources."""
@@ -215,32 +225,35 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="ShutdownError",
                     error_location="shutdown",
                     component=self.name,
-                    operation="close_connection_pool"
+                    operation="close_connection_pool",
                 ),
                 provider_context=ProviderErrorContext(
-                    provider_name=self.name,
-                    provider_type="db",
-                    operation="shutdown",
-                    retry_count=0
+                    provider_name=self.name, provider_type="db", operation="shutdown", retry_count=0
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    async def execute(
+        self, query: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a database query.
-        
+
         Args:
             query: SQL query to execute
             params: Query parameters
-            
+
         Returns:
             List of dictionaries representing rows
-            
+
         Raises:
             ProviderError: If query execution fails
         """
         if not self._initialized or self._pool is None:
-            error_msg = "Provider not initialized" if not self._initialized else "Connection pool not available"
+            error_msg = (
+                "Provider not initialized"
+                if not self._initialized
+                else "Connection pool not available"
+            )
             operation = "check_initialization" if not self._initialized else "check_pool"
             raise ProviderError(
                 message=error_msg,
@@ -249,14 +262,11 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="StateError",
                     error_location="execute",
                     component=self.name,
-                    operation=operation
+                    operation=operation,
                 ),
                 provider_context=ProviderErrorContext(
-                    provider_name=self.name,
-                    provider_type="db",
-                    operation="execute",
-                    retry_count=0
-                )
+                    provider_name=self.name, provider_type="db", operation="execute", retry_count=0
+                ),
             )
 
         # Convert named parameters to positional if present
@@ -306,27 +316,24 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_location="execute",
                     component=self.name,
                     operation="execute_sql_query",
-                    query=query[:100] + "..." if len(query) > 100 else query
+                    query=query[:100] + "..." if len(query) > 100 else query,
                 ),
                 provider_context=ProviderErrorContext(
-                    provider_name=self.name,
-                    provider_type="db",
-                    operation="execute",
-                    retry_count=0
+                    provider_name=self.name, provider_type="db", operation="execute", retry_count=0
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def execute_many(self, query: str, params_list: List[Dict[str, Any]]) -> List[Any]:
+    async def execute_many(self, query: str, params_list: list[dict[str, Any]]) -> list[Any]:
         """Execute a batch of database queries.
-        
+
         Args:
             query: SQL query to execute
             params_list: List of query parameters
-            
+
         Returns:
             List of query results
-            
+
         Raises:
             ProviderError: If query execution fails
         """
@@ -338,14 +345,14 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="StateError",
                     error_location="execute_many",
                     component=self.name,
-                    operation="check_initialization"
+                    operation="check_initialization",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_many",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         if not params_list:  # type: ignore[unreachable]
@@ -362,8 +369,8 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
             # Convert query to use positional parameters
             positional_query = query
             for i, name in enumerate(param_names):
-                positional_query = positional_query.replace(f":{name}", f"${i+1}")
-                positional_query = positional_query.replace(f"@{name}", f"${i+1}")
+                positional_query = positional_query.replace(f":{name}", f"${i + 1}")
+                positional_query = positional_query.replace(f"@{name}", f"${i + 1}")
 
             # Prepare positional parameters for each set
             for params in params_list:
@@ -402,23 +409,23 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     component=self.name,
                     operation="execute_batch_sql_query",
                     query=query[:100] + "..." if len(query) > 100 else query,
-                    batch_size=len(params_list)
+                    batch_size=len(params_list),
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_many",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def begin_transaction(self) -> Any:
         """Begin a database transaction.
-        
+
         Returns:
             Transaction wrapper object
-            
+
         Raises:
             ProviderError: If transaction start fails
         """
@@ -430,14 +437,14 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="StateError",
                     error_location="begin_transaction",
                     component=self.name,
-                    operation="check_initialization"
+                    operation="check_initialization",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="begin_transaction",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:  # type: ignore[unreachable]
@@ -473,30 +480,34 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="TransactionError",
                     error_location="begin_transaction",
                     component=self.name,
-                    operation="start_database_transaction"
+                    operation="start_database_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="begin_transaction",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def commit_transaction(self, transaction: Any) -> bool:
         """Commit a database transaction.
-        
+
         Args:
             transaction: Transaction wrapper from begin_transaction()
-            
+
         Returns:
             True if transaction was committed successfully
-            
+
         Raises:
             ProviderError: If transaction commit fails
         """
-        if not transaction or not hasattr(transaction, 'transaction') or not hasattr(transaction, 'connection'):
+        if (
+            not transaction
+            or not hasattr(transaction, "transaction")
+            or not hasattr(transaction, "connection")
+        ):
             raise ProviderError(
                 message="Invalid transaction object",
                 context=ErrorContext.create(
@@ -504,14 +515,14 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="ValidationError",
                     error_location="commit_transaction",
                     component=self.name,
-                    operation="validate_transaction_object"
+                    operation="validate_transaction_object",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="commit_transaction",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -540,30 +551,34 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="TransactionError",
                     error_location="commit_transaction",
                     component=self.name,
-                    operation="commit_database_transaction"
+                    operation="commit_database_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="commit_transaction",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from None
 
     async def rollback_transaction(self, transaction: Any) -> bool:
         """Rollback a database transaction.
-        
+
         Args:
             transaction: Transaction wrapper from begin_transaction()
-            
+
         Returns:
             True if transaction was rolled back successfully
-            
+
         Raises:
             ProviderError: If transaction rollback fails
         """
-        if not transaction or not hasattr(transaction, 'transaction') or not hasattr(transaction, 'connection'):
+        if (
+            not transaction
+            or not hasattr(transaction, "transaction")
+            or not hasattr(transaction, "connection")
+        ):
             raise ProviderError(
                 message="Invalid transaction object",
                 context=ErrorContext.create(
@@ -571,14 +586,14 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="ValidationError",
                     error_location="rollback_transaction",
                     component=self.name,
-                    operation="validate_transaction_object"
+                    operation="validate_transaction_object",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="rollback_transaction",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -607,20 +622,20 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                     error_type="TransactionError",
                     error_location="rollback_transaction",
                     component=self.name,
-                    operation="rollback_database_transaction"
+                    operation="rollback_database_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="rollback_transaction",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from None
 
     async def check_connection(self) -> bool:
         """Check if database connection is active.
-        
+
         Returns:
             True if connection is active, False otherwise
         """
@@ -637,10 +652,10 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
 
     async def get_health(self) -> DatabaseHealthInfo:
         """Get database health information.
-        
+
         Returns:
             Dict containing health metrics
-            
+
         Raises:
             ProviderError: If health check fails
         """
@@ -651,13 +666,10 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                 connection_active=False,
                 database=DatabaseInfo(
                     path=f"{self._settings.host}:{self._settings.port}",
-                    name=self._settings.database
+                    name=self._settings.database,
                 ),
-                pool=PoolInfo(
-                    active_connections=0,
-                    pool_size=0
-                ),
-                version=None
+                pool=PoolInfo(active_connections=0, pool_size=0),
+                version=None,
             )
 
         try:  # type: ignore[unreachable]
@@ -668,9 +680,13 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
             pool_stats = {
                 "min_size": self._settings.min_connections,
                 "max_size": self._settings.max_connections,
-                "current_size": len(self._pool._holders) if hasattr(self._pool, '_holders') else 0,
-                "free_connections": len(self._pool._queue._queue) if hasattr(self._pool, '_queue') else 0,
-                "used_connections": (len(self._pool._holders) - len(self._pool._queue._queue)) if hasattr(self._pool, '_holders') and hasattr(self._pool, '_queue') else 0,
+                "current_size": len(self._pool._holders) if hasattr(self._pool, "_holders") else 0,
+                "free_connections": len(self._pool._queue._queue)
+                if hasattr(self._pool, "_queue")
+                else 0,
+                "used_connections": (len(self._pool._holders) - len(self._pool._queue._queue))
+                if hasattr(self._pool, "_holders") and hasattr(self._pool, "_queue")
+                else 0,
             }
 
             # Get PostgreSQL version
@@ -685,20 +701,16 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                 "connection_active": connection_active,
                 "version": version,
                 "host": self._settings.host,
-                "database": self._settings.database
+                "database": self._settings.database,
             }
 
         except Exception as e:
             # Return error status
-            return {
-                "status": "error",
-                "error": str(e),
-                "connection_active": False
-            }
+            return {"status": "error", "error": str(e), "connection_active": False}
 
     def _create_connection_string(self) -> str:
         """Create PostgreSQL connection string from settings.
-        
+
         Returns:
             Connection string (DSN)
         """
@@ -723,13 +735,15 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
 
         return f"postgresql://{auth_part}{host_part}{port_part}{database_part}{query_part}"
 
-    def _convert_params(self, query: str, params: Optional[Dict[str, Any]]) -> Tuple[str, List[Any]]:
+    def _convert_params(
+        self, query: str, params: dict[str, Any] | None
+    ) -> tuple[str, list[Any]]:
         """Convert named parameters to positional parameters.
-        
+
         Args:
             query: SQL query with named parameters
             params: Query parameters
-            
+
         Returns:
             Tuple of (modified query, positional parameters)
         """
@@ -762,18 +776,23 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
 
     def _should_retry(self, exception: Exception) -> bool:
         """Check if an exception should trigger a retry.
-        
+
         Args:
             exception: Exception that occurred
-            
+
         Returns:
             True if should retry, False otherwise
         """
         # Check if asyncpg is available and it's a specific asyncpg error
         if ASYNCPG_AVAILABLE:
-            if isinstance(exception, (asyncpg.ConnectionDoesNotExistError,
-                                      asyncpg.ConnectionFailureError,
-                                      asyncpg.InterfaceError)):
+            if isinstance(
+                exception,
+                (
+                    asyncpg.ConnectionDoesNotExistError,
+                    asyncpg.ConnectionFailureError,
+                    asyncpg.InterfaceError,
+                ),
+            ):
                 return True
 
         # Check for network-related errors
@@ -782,37 +801,38 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
 
         return False
 
-    async def _retry_execute(self, query: str, params: Optional[Dict[str, Any]] = None,
-                          attempt: int = 1) -> List[Dict[str, Any]]:
+    async def _retry_execute(
+        self, query: str, params: dict[str, Any] | None = None, attempt: int = 1
+    ) -> list[dict[str, Any]]:
         """Retry executing a query with exponential backoff.
-        
+
         Args:
             query: SQL query to execute
             params: Query parameters
             attempt: Current attempt number
-            
+
         Returns:
             Query results
-            
+
         Raises:
             ProviderError: If all retries fail
         """
         if attempt > self._settings.max_retries:
             raise ProviderError(
-                message=f"Failed to execute query after {attempt-1} retries",
+                message=f"Failed to execute query after {attempt - 1} retries",
                 context=ErrorContext.create(
                     flow_name="postgres_provider",
                     error_type="RetryExhaustionError",
                     error_location="_retry_execute",
                     component=self.name,
-                    operation="retry_query_execution"
+                    operation="retry_query_execution",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="retry_execute",
-                    retry_count=attempt-1
-                )
+                    retry_count=attempt - 1,
+                ),
             )
 
         # Calculate backoff delay
@@ -832,37 +852,38 @@ class PostgreSQLProvider(DBProvider[PostgreSQLProviderSettings]):
                 # Re-raise if not retriable
                 raise
 
-    async def _retry_execute_many(self, query: str, params_list: List[Dict[str, Any]],
-                               attempt: int = 1) -> List[Any]:
+    async def _retry_execute_many(
+        self, query: str, params_list: list[dict[str, Any]], attempt: int = 1
+    ) -> list[Any]:
         """Retry executing a batch query with exponential backoff.
-        
+
         Args:
             query: SQL query to execute
             params_list: List of query parameters
             attempt: Current attempt number
-            
+
         Returns:
             List of query results
-            
+
         Raises:
             ProviderError: If all retries fail
         """
         if attempt > self._settings.max_retries:
             raise ProviderError(
-                message=f"Failed to execute batch query after {attempt-1} retries",
+                message=f"Failed to execute batch query after {attempt - 1} retries",
                 context=ErrorContext.create(
                     flow_name="postgres_provider",
                     error_type="RetryExhaustionError",
                     error_location="_retry_execute_many",
                     component=self.name,
-                    operation="retry_batch_query_execution"
+                    operation="retry_batch_query_execution",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="retry_execute_many",
-                    retry_count=attempt-1
-                )
+                    retry_count=attempt - 1,
+                ),
             )
 
         # Calculate backoff delay

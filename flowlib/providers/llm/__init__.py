@@ -16,7 +16,7 @@ __all__ = [
     "LlamaCppProvider",
     "LlamaCppSettings",
     "GoogleAIProvider",
-    "GoogleAISettings"
+    "GoogleAISettings",
 ]
 
 """

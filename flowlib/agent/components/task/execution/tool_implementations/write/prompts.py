@@ -3,13 +3,14 @@
 from pydantic import Field
 
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.resources.models.base import ResourceBase
+
 
 @prompt("write_tool_parameter_generation")
-class WriteToolParameterGenerationPrompt(ResourceBase):
+class WriteToolParameterGenerationPrompt:
     """Prompt for generating write tool parameters."""
 
-    template: str = Field(default="""Extract write parameters from this context.
+    template: str = Field(
+        default="""Extract write parameters from this context.
 
 # Full Context
 
@@ -24,4 +25,5 @@ Extract parameters from the ORIGINAL USER REQUEST when available, using conversa
 
 # Guidelines
 
-Extract the file path and content to write from the task description.""")
+Extract the file path and content to write from the task description."""
+    )

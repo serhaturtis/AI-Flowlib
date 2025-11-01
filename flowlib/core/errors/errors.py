@@ -6,20 +6,13 @@ including structured error types, error context, and error management.
 
 import logging
 import traceback
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import (
     Any,
-    AsyncIterator,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
-    Optional,
     Protocol,
-    Type,
     TypeVar,
-    Union,
 )
 
 from .models import (
@@ -33,11 +26,12 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class ErrorContext:
     """Enhanced error context with structured information.
-    
+
     This class provides:
     1. Structured context information for errors
     2. Clean serialization for logging and reporting
@@ -46,7 +40,7 @@ class ErrorContext:
 
     def __init__(self, context_data: ErrorContextData):
         """Initialize error context.
-        
+
         Args:
             context_data: Required error context data
         """
@@ -54,22 +48,17 @@ class ErrorContext:
 
     @classmethod
     def create(
-        cls,
-        flow_name: str,
-        error_type: str,
-        error_location: str,
-        component: str,
-        operation: str
-    ) -> 'ErrorContext':
+        cls, flow_name: str, error_type: str, error_location: str, component: str, operation: str
+    ) -> "ErrorContext":
         """Create a new error context with required data.
-        
+
         Args:
             flow_name: Name of the flow
             error_type: Type of error
             error_location: Location in code
             component: Component raising error
             operation: Operation being performed
-            
+
         Returns:
             New ErrorContext instance
         """
@@ -78,7 +67,7 @@ class ErrorContext:
             error_type=error_type,
             error_location=error_location,
             component=component,
-            operation=operation
+            operation=operation,
         )
         return cls(context_data)
 
@@ -99,21 +88,16 @@ class ErrorContext:
 
 class BaseError(Exception):
     """Base class for all framework errors with enhanced context.
-    
+
     This class provides:
     1. Structured error information with context
     2. Clean serialization for logging and reporting
     3. Cause tracking for nested errors
     """
 
-    def __init__(
-        self,
-        message: str,
-        context: ErrorContext,
-        cause: Optional[Exception] = None
-    ):
+    def __init__(self, message: str, context: ErrorContext, cause: Exception | None = None):
         """Initialize error.
-        
+
         Args:
             message: Error message
             context: Required error context
@@ -124,7 +108,7 @@ class BaseError(Exception):
         self.cause = cause
         self.timestamp = datetime.now()
         self.traceback = self._capture_traceback()
-        self.result: Optional[Any] = None  # Can be set by error handlers
+        self.result: Any | None = None  # Can be set by error handlers
 
         # Initialize with message
         super().__init__(message)
@@ -133,9 +117,9 @@ class BaseError(Exception):
         """Capture the current traceback."""
         return traceback.format_exc()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert error to dictionary.
-        
+
         Returns:
             Dictionary representation of error
         """
@@ -145,7 +129,7 @@ class BaseError(Exception):
             "timestamp": self.timestamp.isoformat(),
             "context": self.context.data.model_dump(),
             "cause": str(self.cause) if self.cause else None,
-            "traceback": self.traceback
+            "traceback": self.traceback,
         }
 
     def __str__(self) -> str:
@@ -156,7 +140,7 @@ class BaseError(Exception):
 
 class ValidationError(BaseError):
     """Error raised when validation fails.
-    
+
     This class provides:
     1. Structured validation error information
     2. Clean access to validation error details
@@ -165,12 +149,12 @@ class ValidationError(BaseError):
     def __init__(
         self,
         message: str,
-        validation_errors: List[ValidationErrorDetail],
+        validation_errors: list[ValidationErrorDetail],
         context: ErrorContext,
-        cause: Optional[Exception] = None
+        cause: Exception | None = None,
     ):
         """Initialize validation error.
-        
+
         Args:
             message: Error message
             validation_errors: List of validation error details
@@ -184,10 +168,7 @@ class ValidationError(BaseError):
         """String representation."""
         base_str = super().__str__()
         if self.validation_errors:
-            errors_str = "; ".join(
-                f"{e.location}: {e.message}"
-                for e in self.validation_errors[:3]
-            )
+            errors_str = "; ".join(f"{e.location}: {e.message}" for e in self.validation_errors[:3])
             if len(self.validation_errors) > 3:
                 errors_str += f" (and {len(self.validation_errors) - 3} more)"
             return f"{base_str} - {errors_str}"
@@ -196,20 +177,15 @@ class ValidationError(BaseError):
 
 class ExecutionError(BaseError):
     """Error raised when flow execution fails.
-    
+
     This class provides:
     1. Structured execution error information
     2. Clean access to execution context
     """
 
-    def __init__(
-        self,
-        message: str,
-        context: ErrorContext,
-        cause: Optional[Exception] = None
-    ):
+    def __init__(self, message: str, context: ErrorContext, cause: Exception | None = None):
         """Initialize execution error.
-        
+
         Args:
             message: Error message
             context: Required error context
@@ -220,7 +196,7 @@ class ExecutionError(BaseError):
 
 class StateError(BaseError):
     """Error raised when state operations fail.
-    
+
     This class provides:
     1. Structured state error information
     2. Clean access to state context
@@ -231,10 +207,10 @@ class StateError(BaseError):
         message: str,
         context: ErrorContext,
         state_context: StateErrorContext,
-        cause: Optional[Exception] = None
+        cause: Exception | None = None,
     ):
         """Initialize state error.
-        
+
         Args:
             message: Error message
             context: Required error context
@@ -247,7 +223,7 @@ class StateError(BaseError):
 
 class ConfigurationError(BaseError):
     """Error raised when configuration is invalid.
-    
+
     This class provides:
     1. Structured configuration error information
     2. Clean access to configuration context
@@ -258,10 +234,10 @@ class ConfigurationError(BaseError):
         message: str,
         context: ErrorContext,
         config_context: ConfigurationErrorContext,
-        cause: Optional[Exception] = None
+        cause: Exception | None = None,
     ):
         """Initialize configuration error.
-        
+
         Args:
             message: Error message
             context: Required error context
@@ -274,7 +250,7 @@ class ConfigurationError(BaseError):
 
 class ResourceError(BaseError):
     """Error raised when resource operations fail.
-    
+
     This class provides:
     1. Structured resource error information
     2. Clean access to resource context
@@ -285,10 +261,10 @@ class ResourceError(BaseError):
         message: str,
         context: ErrorContext,
         resource_context: ResourceErrorContext,
-        cause: Optional[Exception] = None
+        cause: Exception | None = None,
     ):
         """Initialize resource error.
-        
+
         Args:
             message: Error message
             context: Required error context
@@ -301,7 +277,7 @@ class ResourceError(BaseError):
 
 class ProviderError(BaseError):
     """Error raised when provider operations fail.
-    
+
     This class provides:
     1. Structured provider error information
     2. Clean access to provider context
@@ -312,10 +288,10 @@ class ProviderError(BaseError):
         message: str,
         context: ErrorContext,
         provider_context: ProviderErrorContext,
-        cause: Optional[Exception] = None
+        cause: Exception | None = None,
     ):
         """Initialize provider error.
-        
+
         Args:
             message: Error message
             context: Required error context
@@ -328,14 +304,17 @@ class ProviderError(BaseError):
 
 # Placeholder for removed duplicate ErrorManager class
 
-ErrorHandlerFunc = Callable[[BaseError, Dict[str, Any]], Union[None, Dict[str, Any]]]
-AsyncErrorHandlerFunc = Callable[[BaseError, Dict[str, Any]], Awaitable[Union[None, Dict[str, Any]]]]
+ErrorHandlerFunc = Callable[[BaseError, dict[str, Any]], None | dict[str, Any]]
+AsyncErrorHandlerFunc = Callable[
+    [BaseError, dict[str, Any]], Awaitable[None | dict[str, Any]]
+]
 
-ErrorHandler = Union[ErrorHandlerFunc, AsyncErrorHandlerFunc]
+ErrorHandler = ErrorHandlerFunc | AsyncErrorHandlerFunc
+
 
 class ErrorManager:
     """Centralized error management with customizable handlers.
-    
+
     This class provides:
     1. Error boundary capabilities
     2. Customizable error handlers
@@ -345,12 +324,12 @@ class ErrorManager:
 
     def __init__(self) -> None:
         """Initialize error manager."""
-        self._handlers: Dict[Type[BaseError], List[ErrorHandler]] = {}
-        self._global_handlers: List[ErrorHandler] = []
+        self._handlers: dict[type[BaseError], list[ErrorHandler]] = {}
+        self._global_handlers: list[ErrorHandler] = []
 
-    def register(self, error_type: Type[BaseError], handler: ErrorHandler) -> None:
+    def register(self, error_type: type[BaseError], handler: ErrorHandler) -> None:
         """Register an error handler for a specific error type.
-        
+
         Args:
             error_type: Type of error to handle
             handler: Handler function or coroutine
@@ -362,19 +341,19 @@ class ErrorManager:
 
     def register_global(self, handler: ErrorHandler) -> None:
         """Register a global error handler that processes all errors.
-        
+
         Args:
             handler: Handler function or coroutine
         """
         self._global_handlers.append(handler)
 
-    async def _handle_error(self, error: BaseError, context: Dict[str, Any]) -> None:
+    async def _handle_error(self, error: BaseError, context: dict[str, Any]) -> None:
         """Handle an error with registered handlers.
-        
+
         Args:
             error: Error to handle
             context: Context data
-            
+
         Returns:
             Optional handler result
         """
@@ -408,29 +387,22 @@ class ErrorManager:
 
     @asynccontextmanager
     async def error_boundary(
-        self,
-        flow_name: str,
-        component: str,
-        operation: str
+        self, flow_name: str, component: str, operation: str
     ) -> AsyncIterator[None]:
         """Create an error boundary that handles errors with registered handlers.
-        
+
         Args:
             flow_name: Name of the flow
             component: Component name
             operation: Operation being performed
-            
+
         Yields:
             None
-            
+
         Raises:
             BaseError: Propagated after handling
         """
-        context = {
-            "flow_name": flow_name,
-            "component": component,
-            "operation": operation
-        }
+        context = {"flow_name": flow_name, "component": component, "operation": operation}
 
         try:
             # Yield control to the wrapped code
@@ -444,20 +416,15 @@ class ErrorManager:
             raise
 
         except Exception as e:
-
             error_context = ErrorContext.create(
                 flow_name=flow_name,
                 error_type=type(e).__name__,
                 error_location=f"{component}.{operation}",
                 component=component,
-                operation=operation
+                operation=operation,
             )
 
-            error = ExecutionError(
-                message=str(e),
-                context=error_context,
-                cause=e
-            )
+            error = ExecutionError(message=str(e), context=error_context, cause=e)
 
             # Handle converted error
             await self._handle_error(error, context)
@@ -469,9 +436,10 @@ class ErrorManager:
 # Create default error manager instance
 default_manager = ErrorManager()
 
+
 class LoggingHandler:
     """Error handler that logs errors with configurable verbosity.
-    
+
     This class provides detailed logging of errors, including
     context information and causal chains.
     """
@@ -481,10 +449,10 @@ class LoggingHandler:
         level: int = logging.ERROR,
         include_context: bool = True,
         include_traceback: bool = True,
-        logger_name: Optional[str] = None
+        logger_name: str | None = None,
     ):
         """Initialize logging handler.
-        
+
         Args:
             level: Logging level
             include_context: Whether to include context in logs
@@ -496,9 +464,9 @@ class LoggingHandler:
         self.include_traceback = include_traceback
         self.logger = logging.getLogger(logger_name or __name__)
 
-    def __call__(self, error: BaseError, context: Dict[str, Any]) -> None:
+    def __call__(self, error: BaseError, context: dict[str, Any]) -> None:
         """Handle error by logging it.
-        
+
         Args:
             error: Error to handle
             context: Context data
@@ -512,19 +480,21 @@ class LoggingHandler:
 
         # Add traceback if enabled
         if self.include_traceback and error.cause:
-            cause_tb = "".join(traceback.format_exception(
-                type(error.cause),
-                error.cause,
-                error.cause.__traceback__
-            ))
+            cause_tb = "".join(
+                traceback.format_exception(
+                    type(error.cause), error.cause, error.cause.__traceback__
+                )
+            )
             message += f"\nCaused by: {cause_tb}"
 
         # Log the error
         self.logger.log(self.level, message)
 
+
 class MetricsClient(Protocol):
     """Protocol for metrics clients."""
-    def increment(self, metric: str, tags: Optional[Dict[str, str]] = None) -> None:
+
+    def increment(self, metric: str, tags: dict[str, str] | None = None) -> None:
         """Increment a metric counter."""
         ...
 
@@ -537,13 +507,13 @@ class MetricsHandler:
 
     def __init__(self, metrics_client: MetricsClient):
         """Initialize metrics handler.
-        
+
         Args:
             metrics_client: Client for recording metrics
         """
         self.metrics_client = metrics_client
 
-    def __call__(self, error: BaseError, context: Dict[str, Union[str, int, bool, None]]) -> None:
+    def __call__(self, error: BaseError, context: dict[str, str | int | bool | None]) -> None:
         """Handle error by recording metrics.
 
         Args:
@@ -553,17 +523,14 @@ class MetricsHandler:
         # Record error count
         self.metrics_client.increment(
             "flow.errors",
-            tags={
-                "error_type": type(error).__name__,
-                "flow_name": error.context.data.flow_name
-            }
+            tags={"error_type": type(error).__name__, "flow_name": error.context.data.flow_name},
         )
 
 
 # Create default logging handler
-def default_logging_handler(error: BaseError, context: Dict[str, Any]) -> None:
+def default_logging_handler(error: BaseError, context: dict[str, Any]) -> None:
     """Default logging handler for errors.
-    
+
     Args:
         error: Error to log
         context: Context data

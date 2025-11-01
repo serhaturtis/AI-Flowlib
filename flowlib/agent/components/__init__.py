@@ -7,8 +7,4 @@ Each component has its own module with models, interfaces, and implementations.
 # Core component interfaces
 from flowlib.agent.components.memory import MemoryComponent
 
-__all__ = [
-    "MemoryComponent",
-    "engine",
-    "memory"
-]
+__all__ = ["MemoryComponent", "engine", "memory"]

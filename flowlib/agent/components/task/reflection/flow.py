@@ -19,7 +19,7 @@ from .models import (
 @flow(  # type: ignore[arg-type]
     name="execution-reflection",
     description="Reflect on execution results to determine if re-planning is needed",
-    is_infrastructure=False
+    is_infrastructure=False,
 )
 class ExecutionReflectionFlow:
     """Reflects on execution results in the Plan-Execute-Reflect loop."""
@@ -52,7 +52,7 @@ class ExecutionReflectionFlow:
         prompt_vars = {
             "original_goal": input_data.original_goal,
             "planned_steps": plan_steps_text,
-            "execution_results": execution_results_text
+            "execution_results": execution_results_text,
         }
 
         # Get reflection from LLM
@@ -60,7 +60,7 @@ class ExecutionReflectionFlow:
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=LLMReflectionResult,
             model_name="default-model",
-            prompt_variables=cast(dict[str, object], prompt_vars)
+            prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
         # Validate consistency - fail fast if LLM contradicts itself
@@ -85,7 +85,7 @@ class ExecutionReflectionFlow:
             replanning_guidance=llm_result.replanning_guidance,
             clarification_question=llm_result.clarification_question,
             reflection_time_ms=(time.time() - start_time) * 1000,  # Programmatic
-            llm_calls_made=1  # Programmatic
+            llm_calls_made=1,  # Programmatic
         )
 
         processing_time = (time.time() - start_time) * 1000
@@ -93,7 +93,7 @@ class ExecutionReflectionFlow:
         return ReflectionOutput(
             result=reflection_result,
             success=True,  # Programmatic
-            processing_time_ms=processing_time  # Programmatic
+            processing_time_ms=processing_time,  # Programmatic
         )
 
     def _format_plan_steps(self, steps: list[dict]) -> str:

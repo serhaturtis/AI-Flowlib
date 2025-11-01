@@ -6,15 +6,14 @@ providing a lightweight interface aligned with flowlib patterns.
 """
 
 import logging
-from abc import ABC
-from typing import Optional
+from abc import ABC, abstractmethod
 
 from .component_registry import ComponentRegistry
 
 
 class AgentComponent(ABC):
     """Base component for the agent system.
-    
+
     Provides:
     1. Basic lifecycle management (initialize/shutdown)
     2. Registry access for inter-component communication
@@ -22,41 +21,37 @@ class AgentComponent(ABC):
 
     def __init__(self, name: str):
         """Initialize component.
-        
+
         Args:
             name: Component name
         """
         self._name = name or self.__class__.__name__.lower()
         self._initialized = False
-        self._registry: Optional[ComponentRegistry] = None
+        self._registry: ComponentRegistry | None = None
         self._logger = logging.getLogger(f"{__name__}.{self._name}")
 
     def set_registry(self, registry: ComponentRegistry) -> None:
         """Set the component registry for inter-component access.
-        
+
         Args:
             registry: The agent's component registry
         """
         self._registry = registry
         # Update logger to include agent context
         if registry:
-            self._logger = logging.getLogger(
-                f"{__name__}.{registry._agent_name}.{self._name}"
-            )
+            self._logger = logging.getLogger(f"{__name__}.{registry._agent_name}.{self._name}")
 
-    def get_component(self, name: str) -> Optional[object]:
+    def get_component(self, name: str) -> object | None:
         """Get another component from the registry.
-        
+
         Args:
             name: Component name
-            
+
         Returns:
             Component instance or None
         """
         if not self._registry:
-            self._logger.warning(
-                f"Component {self._name} has no registry access"
-            )
+            self._logger.warning(f"Component {self._name} has no registry access")
             return None
         return self._registry.get(name)
 
@@ -72,16 +67,14 @@ class AgentComponent(ABC):
 
     def _check_initialized(self) -> None:
         """Check if the component is initialized.
-        
+
         Raises:
             NotInitializedError: If the component is not initialized
         """
         if not self._initialized:
             from .errors import NotInitializedError
-            raise NotInitializedError(
-                component_name=self._name,
-                operation="component operation"
-            )
+
+            raise NotInitializedError(component_name=self._name, operation="component operation")
 
     async def initialize(self) -> None:
         """Initialize the component."""
@@ -92,9 +85,10 @@ class AgentComponent(ABC):
         self._initialized = True
         self._logger.debug(f"Component '{self._name}' initialized")
 
+    @abstractmethod
     async def _initialize_impl(self) -> None:
         """Implementation-specific initialization.
-        
+
         Override this method in subclasses.
         """
         pass
@@ -108,9 +102,10 @@ class AgentComponent(ABC):
         self._initialized = False
         self._logger.debug(f"Component '{self._name}' shut down")
 
+    @abstractmethod
     async def _shutdown_impl(self) -> None:
         """Implementation-specific shutdown.
-        
+
         Override this method in subclasses.
         """
         pass

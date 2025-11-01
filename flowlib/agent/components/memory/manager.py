@@ -6,7 +6,7 @@ that were previously in BaseAgent.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 from flowlib.agent.core.activity_stream import ActivityStream
 from flowlib.agent.core.base import AgentComponent
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class AgentMemoryManager(AgentComponent):
     """Handles agent memory operations.
-    
+
     This component is responsible for:
     - Memory system initialization and coordination
     - Memory storage, retrieval, and search operations
@@ -34,12 +34,12 @@ class AgentMemoryManager(AgentComponent):
 
     def __init__(self, name: str = "memory_manager"):
         """Initialize the memory manager.
-        
+
         Args:
             name: Component name
         """
         super().__init__(name)
-        self._memory: Optional[MemoryComponent] = None
+        self._memory: MemoryComponent | None = None
 
     async def _initialize_impl(self) -> None:
         """Initialize the memory manager."""
@@ -53,10 +53,10 @@ class AgentMemoryManager(AgentComponent):
 
     async def setup_memory(self, memory_config: AgentMemoryConfig) -> MemoryComponent:
         """Setup memory system from configuration.
-        
+
         Args:
             memory_config: Memory configuration
-            
+
         Returns:
             Initialized MemoryComponent instance
         """
@@ -87,24 +87,24 @@ class AgentMemoryManager(AgentComponent):
         # All providers are required - no conditional creation
         vector_mem_config = VectorMemoryConfig(
             vector_provider_config="default-vector-db",
-            embedding_provider_config="default-embedding"
+            embedding_provider_config="default-embedding",
         )
-        knowledge_mem_config = KnowledgeMemoryConfig(
-            graph_provider_config="default-graph-db"
-        )
+        knowledge_mem_config = KnowledgeMemoryConfig(graph_provider_config="default-graph-db")
 
         agent_memory_config = AgentMemoryConfig(
             working_memory=working_mem_config,
             vector_memory=vector_mem_config,
             knowledge_memory=knowledge_mem_config,
-            fusion_llm_config=mem_config.fusion_llm_config
+            fusion_llm_config=mem_config.fusion_llm_config,
         )
 
         # Instantiate comprehensive memory
         self._memory = MemoryComponent(
             config=agent_memory_config,
-            activity_stream=cast(Optional[ActivityStream], self.get_component("activity_stream")),
-            knowledge_plugins=cast(Optional[KnowledgePluginManager], self.get_component("knowledge_plugins"))
+            activity_stream=cast(ActivityStream | None, self.get_component("activity_stream")),
+            knowledge_plugins=cast(
+                KnowledgePluginManager | None, self.get_component("knowledge_plugins")
+            ),
         )
         # AgentMemory no longer uses parent relationships
 
@@ -115,7 +115,7 @@ class AgentMemoryManager(AgentComponent):
         try:
             await self._memory.create_context(
                 context_name="agent_execution",
-                metadata={"builtin": True, "description": "Context for agent execution cycles"}
+                metadata={"builtin": True, "description": "Context for agent execution cycles"},
             )
             logger.debug("Created agent_execution memory context")
         except Exception as e:
@@ -125,103 +125,84 @@ class AgentMemoryManager(AgentComponent):
 
     async def store_memory(self, key: str, value: Any, **kwargs: Any) -> None:
         """Store a value in memory.
-        
+
         Args:
             key: Memory key
             value: Value to store
             **kwargs: Additional arguments for memory storage
-            
+
         Raises:
             NotInitializedError: If memory is not initialized
         """
         if not self._memory or not self._memory.initialized:
-            raise NotInitializedError(
-                component_name=self._name,
-                operation="store_memory"
-            )
+            raise NotInitializedError(component_name=self._name, operation="store_memory")
 
         # Extract valid MemoryStoreRequest parameters from kwargs
         valid_params = {}
         for k, v in kwargs.items():
-            if k in ['context', 'ttl', 'metadata', 'importance']:
+            if k in ["context", "ttl", "metadata", "importance"]:
                 valid_params[k] = v
 
-        request = MemoryStoreRequest(
-            key=key,
-            value=value,
-            **valid_params
-        )
+        request = MemoryStoreRequest(key=key, value=value, **valid_params)
 
         await self._memory.store_with_model(request)
 
     async def retrieve_memory(self, key: str, **kwargs: Any) -> Any:
         """Retrieve a value from memory.
-        
+
         Args:
             key: Memory key
             **kwargs: Additional arguments for memory retrieval
-            
+
         Returns:
             Retrieved value
-            
+
         Raises:
             NotInitializedError: If memory is not initialized
         """
         if not self._memory or not self._memory.initialized:
-            raise NotInitializedError(
-                component_name=self._name,
-                operation="retrieve_memory"
-            )
+            raise NotInitializedError(component_name=self._name, operation="retrieve_memory")
 
         # Extract valid MemoryRetrieveRequest parameters from kwargs
         valid_params = {}
         for k, v in kwargs.items():
-            if k in ['context', 'default', 'metadata_only']:
+            if k in ["context", "default", "metadata_only"]:
                 valid_params[k] = v
 
-        request = MemoryRetrieveRequest(
-            key=key,
-            **valid_params
-        )
+        request = MemoryRetrieveRequest(key=key, **valid_params)
 
         return await self._memory.retrieve_with_model(request)
 
-    async def search_memory(self, query: str, **kwargs: Any) -> List[Any]:
+    async def search_memory(self, query: str, **kwargs: Any) -> list[Any]:
         """Search memory for relevant information.
-        
+
         Args:
             query: Search query
             **kwargs: Additional arguments for memory search
-            
+
         Returns:
             List of relevant memories
-            
+
         Raises:
             NotInitializedError: If memory is not initialized
         """
         if not self._memory or not self._memory.initialized:
-            raise NotInitializedError(
-                component_name=self._name,
-                operation="search_memory"
-            )
+            raise NotInitializedError(component_name=self._name, operation="search_memory")
 
         # Extract valid MemorySearchRequest parameters from kwargs
         valid_params = {}
         for k, v in kwargs.items():
-            if k in ['context', 'limit', 'threshold', 'sort_by', 'search_type', 'metadata_filter']:
+            if k in ["context", "limit", "threshold", "sort_by", "search_type", "metadata_filter"]:
                 valid_params[k] = v
 
-        request = MemorySearchRequest(
-            query=query,
-            **valid_params
-        )
+        request = MemorySearchRequest(query=query, **valid_params)
 
         result = await self._memory.search(request)
         return result
 
-    async def get_memory_stats(self) -> Dict[str, Any]:
+    async def get_memory_stats(self) -> dict[str, Any]:
         """Get memory system statistics.
-        
+
         Returns:
             Dictionary of memory statistics
         """
@@ -233,7 +214,7 @@ class AgentMemoryManager(AgentComponent):
             "vector_memory_items": 0,
             "knowledge_graph_nodes": 0,
             "knowledge_graph_edges": 0,
-            "total_storage_mb": 0
+            "total_storage_mb": 0,
         }
 
         # Get working memory stats
@@ -255,9 +236,9 @@ class AgentMemoryManager(AgentComponent):
         return stats
 
     @property
-    def memory(self) -> Optional[MemoryComponent]:
+    def memory(self) -> MemoryComponent | None:
         """Get the memory instance.
-        
+
         Returns:
             MemoryComponent instance
         """

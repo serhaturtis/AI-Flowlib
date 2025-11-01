@@ -17,5 +17,5 @@ __all__ = [
     "PluginGenerationSummary",
     "ExtractionStats",
     "ProcessedDataStats",
-    "ProcessedData"
+    "ProcessedData",
 ]

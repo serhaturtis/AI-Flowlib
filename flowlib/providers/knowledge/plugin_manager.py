@@ -5,7 +5,7 @@ import importlib.util
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class KnowledgePluginManager:
     """Manages discovery and loading of knowledge plugins.
-    
+
     The plugin manager automatically discovers plugins from multiple paths,
     loads them in priority order, and provides a unified interface for
     querying across all loaded plugins.
@@ -26,8 +26,8 @@ class KnowledgePluginManager:
 
     def __init__(self) -> None:
         """Initialize the plugin manager."""
-        self.loaded_plugins: Dict[str, KnowledgeProvider] = {}
-        self.plugin_configs: Dict[str, Dict] = {}
+        self.loaded_plugins: dict[str, KnowledgeProvider] = {}
+        self.plugin_configs: dict[str, dict] = {}
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -73,7 +73,7 @@ class KnowledgePluginManager:
 
         logger.info(f"Successfully loaded {loaded_count} knowledge plugins")
 
-    def _get_plugin_discovery_paths(self) -> List[Path]:
+    def _get_plugin_discovery_paths(self) -> list[Path]:
         """Get all possible plugin discovery paths in priority order."""
         paths = []
 
@@ -89,7 +89,11 @@ class KnowledgePluginManager:
         logger.debug(f"User plugin path: {user_path}")
 
         # 3. Environment variable paths
-        env_path = os.environ.get("FLOWLIB_KNOWLEDGE_PLUGINS") if "FLOWLIB_KNOWLEDGE_PLUGINS" in os.environ else None
+        env_path = (
+            os.environ.get("FLOWLIB_KNOWLEDGE_PLUGINS")
+            if "FLOWLIB_KNOWLEDGE_PLUGINS" in os.environ
+            else None
+        )
         if env_path:
             env_paths = [Path(p.strip()) for p in env_path.split(":") if p.strip()]
             paths.extend(env_paths)
@@ -108,7 +112,7 @@ class KnowledgePluginManager:
                     # Validate project config structure
                     project_config_obj = ProjectConfig(**config_raw)
 
-                    for plugin_name, plugin_config in project_config_obj.plugins.items():
+                    for _plugin_name, plugin_config in project_config_obj.plugins.items():
                         if plugin_config.enabled:
                             plugin_path = Path(plugin_config.path).expanduser()
                             paths.append(plugin_path)
@@ -140,10 +144,10 @@ class KnowledgePluginManager:
 
     async def _load_plugin(self, plugin_path: Path) -> bool:
         """Load a single plugin.
-        
+
         Args:
             plugin_path: Path to the plugin directory
-            
+
         Returns:
             True if plugin loaded successfully, False otherwise
         """
@@ -187,13 +191,13 @@ class KnowledgePluginManager:
             logger.error(f"Failed to load plugin at {plugin_path}: {e}")
             return False
 
-    async def _load_database_configs(self, plugin_path: Path, manifest: Any) -> Dict[str, Any]:
+    async def _load_database_configs(self, plugin_path: Path, manifest: Any) -> dict[str, Any]:
         """Load database configuration files for the plugin.
-        
+
         Args:
             plugin_path: Path to plugin directory
             manifest: Plugin manifest (PluginManifest object or dict)
-            
+
         Returns:
             Dictionary with database configurations
         """
@@ -209,7 +213,9 @@ class KnowledgePluginManager:
         if "databases" in manifest_data and "chromadb" in manifest_data["databases"]:
             chromadb_config = manifest_data["databases"]["chromadb"]
             if "enabled" in chromadb_config and chromadb_config["enabled"]:
-                config_file = chromadb_config["config_file"] if "config_file" in chromadb_config else None
+                config_file = (
+                    chromadb_config["config_file"] if "config_file" in chromadb_config else None
+                )
                 if config_file:
                     config_path = plugin_path / config_file
                     if config_path.exists():
@@ -237,14 +243,14 @@ class KnowledgePluginManager:
 
     def _import_provider_class(self, plugin_path: Path, manifest: Any) -> Any:
         """Dynamically import the provider class from the plugin.
-        
+
         Args:
             plugin_path: Path to plugin directory
             manifest: Plugin manifest (PluginManifest object or dict)
-            
+
         Returns:
             Provider class
-            
+
         Raises:
             ImportError: If provider class cannot be imported
         """
@@ -279,14 +285,14 @@ class KnowledgePluginManager:
 
         return getattr(module, provider_class_name)
 
-    async def query_domain(self, domain: str, query: str, limit: int = 10) -> List[Knowledge]:
+    async def query_domain(self, domain: str, query: str, limit: int = 10) -> list[Knowledge]:
         """Query all plugins that handle the specified domain.
-        
+
         Args:
             domain: Knowledge domain to search
-            query: Search query  
+            query: Search query
             limit: Maximum results across all plugins
-            
+
         Returns:
             Merged and ranked knowledge results
         """
@@ -301,7 +307,8 @@ class KnowledgePluginManager:
 
         # Find plugins that support this domain
         relevant_plugins = [
-            (name, provider) for name, provider in self.loaded_plugins.items()
+            (name, provider)
+            for name, provider in self.loaded_plugins.items()
             if provider.supports_domain(domain)
         ]
 
@@ -336,17 +343,18 @@ class KnowledgePluginManager:
 
         return merged_results
 
-    async def _query_plugin_safely(self, plugin_name: str, provider: KnowledgeProvider,
-                                 domain: str, query: str, limit: int) -> List[Knowledge]:
+    async def _query_plugin_safely(
+        self, plugin_name: str, provider: KnowledgeProvider, domain: str, query: str, limit: int
+    ) -> list[Knowledge]:
         """Query a single plugin with error handling.
-        
+
         Args:
             plugin_name: Name of the plugin
             provider: Provider instance
             domain: Knowledge domain
             query: Search query
             limit: Maximum results
-            
+
         Returns:
             Knowledge results from the plugin
         """
@@ -356,13 +364,13 @@ class KnowledgePluginManager:
             logger.error(f"Query failed for plugin {plugin_name}: {e}")
             return []
 
-    def _merge_plugin_results(self, results: List[Knowledge], limit: int) -> List[Knowledge]:
+    def _merge_plugin_results(self, results: list[Knowledge], limit: int) -> list[Knowledge]:
         """Merge and rank results from multiple plugins.
-        
+
         Args:
             results: Results from all plugins
             limit: Maximum results to return
-            
+
         Returns:
             Deduplicated and ranked knowledge results
         """
@@ -370,7 +378,7 @@ class KnowledgePluginManager:
             return []
 
         # Remove duplicates based on content similarity
-        unique_results: Dict[str, Any] = {}
+        unique_results: dict[str, Any] = {}
         for result in results:
             # Create a key based on first 100 chars and domain
             key = f"{result.content[:100].strip()}_{result.domain}"
@@ -380,28 +388,24 @@ class KnowledgePluginManager:
                 unique_results[key] = result
 
         # Sort by confidence score (descending) and return top results
-        sorted_results = sorted(
-            unique_results.values(),
-            key=lambda x: x.confidence,
-            reverse=True
-        )
+        sorted_results = sorted(unique_results.values(), key=lambda x: x.confidence, reverse=True)
 
         return sorted_results[:limit]
 
-    def get_available_domains(self) -> List[str]:
+    def get_available_domains(self) -> list[str]:
         """Get all available knowledge domains across all plugins.
-        
+
         Returns:
             Sorted list of unique domains
         """
         domains = set()
         for provider in self.loaded_plugins.values():
             domains.update(provider.domains)
-        return sorted(list(domains))
+        return sorted(domains)
 
-    def get_plugin_info(self) -> Dict[str, Dict]:
+    def get_plugin_info(self) -> dict[str, dict]:
         """Get information about all loaded plugins.
-        
+
         Returns:
             Dictionary mapping plugin names to their info
         """
@@ -434,22 +438,23 @@ class KnowledgePluginManager:
                 "description": config["description"],
                 "version": config["version"],
                 "databases": database_keys,
-                "priority": priority
+                "priority": priority,
             }
 
         return plugin_info
 
-    def get_domain_plugins(self, domain: str) -> List[str]:
+    def get_domain_plugins(self, domain: str) -> list[str]:
         """Get names of plugins that support a specific domain.
-        
+
         Args:
             domain: Domain to check
-            
+
         Returns:
             List of plugin names that support the domain
         """
         return [
-            name for name, provider in self.loaded_plugins.items()
+            name
+            for name, provider in self.loaded_plugins.items()
             if provider.supports_domain(domain)
         ]
 
@@ -473,7 +478,7 @@ class KnowledgePluginManager:
 
     async def _shutdown_plugin_safely(self, plugin_name: str, provider: KnowledgeProvider) -> None:
         """Shutdown a single plugin with error handling.
-        
+
         Args:
             plugin_name: Name of the plugin
             provider: Provider instance
@@ -484,12 +489,12 @@ class KnowledgePluginManager:
         except Exception as e:
             logger.error(f"Error shutting down plugin {plugin_name}: {e}")
 
-    async def load_plugin_by_path(self, plugin_path: Path) -> Tuple[bool, str]:
+    async def load_plugin_by_path(self, plugin_path: Path) -> tuple[bool, str]:
         """Load a single plugin by path.
-        
+
         Args:
             plugin_path: Path to the plugin directory
-            
+
         Returns:
             Tuple of (success, message)
         """
@@ -503,12 +508,12 @@ class KnowledgePluginManager:
             logger.error(f"Error loading plugin from {plugin_path}: {e}")
             return False, f"Error loading plugin: {str(e)}"
 
-    async def unload_plugin(self, plugin_name: str) -> Tuple[bool, str]:
+    async def unload_plugin(self, plugin_name: str) -> tuple[bool, str]:
         """Unload a plugin by name.
-        
+
         Args:
             plugin_name: Name of the plugin to unload
-            
+
         Returns:
             Tuple of (success, message)
         """
@@ -534,12 +539,12 @@ class KnowledgePluginManager:
             logger.error(f"Error unloading plugin {plugin_name}: {e}")
             return False, f"Error unloading plugin: {str(e)}"
 
-    async def test_plugin(self, plugin_name: str) -> Tuple[bool, str, Dict[str, Any]]:
+    async def test_plugin(self, plugin_name: str) -> tuple[bool, str, dict[str, Any]]:
         """Test a plugin by running basic operations.
-        
+
         Args:
             plugin_name: Name of the plugin to test
-            
+
         Returns:
             Tuple of (success, message, test_results)
         """
@@ -548,18 +553,20 @@ class KnowledgePluginManager:
                 return False, f"Plugin '{plugin_name}' is not loaded", {}
 
             provider = self.loaded_plugins[plugin_name]
-            test_results: Dict[str, Any] = {}
+            test_results: dict[str, Any] = {}
 
             # Test 1: Check domains
             domains = provider.domains
             test_results["domains"] = {
                 "status": "PASS" if domains else "FAIL",
                 "value": domains,
-                "message": f"Plugin supports {len(domains)} domains" if domains else "No domains supported"
+                "message": f"Plugin supports {len(domains)} domains"
+                if domains
+                else "No domains supported",
             }
 
             # Test 2: Check if provider responds to domain queries
-            domain_tests: Dict[str, Dict[str, str]] = {}
+            domain_tests: dict[str, dict[str, str]] = {}
             if domains:
                 for domain in domains[:3]:  # Test first 3 domains
                     try:
@@ -568,12 +575,12 @@ class KnowledgePluginManager:
                         results = await provider.query(domain, test_query, 1)
                         domain_tests[domain] = {
                             "status": "PASS",
-                            "message": f"Query returned {len(results)} results"
+                            "message": f"Query returned {len(results)} results",
                         }
                     except Exception as e:
                         domain_tests[domain] = {
                             "status": "FAIL",
-                            "message": f"Query failed: {str(e)}"
+                            "message": f"Query failed: {str(e)}",
                         }
 
             test_results["domain_queries"] = domain_tests
@@ -591,14 +598,14 @@ class KnowledgePluginManager:
             test_results["configuration"] = {
                 "status": "PASS" if config else "FAIL",
                 "message": "Configuration loaded" if config else "No configuration found",
-                "databases": databases_list
+                "databases": databases_list,
             }
 
             # Overall test result
             all_tests_passed = (
-                test_results["domains"]["status"] == "PASS" and
-                all(t["status"] == "PASS" for t in domain_tests.values()) and
-                test_results["configuration"]["status"] == "PASS"
+                test_results["domains"]["status"] == "PASS"
+                and all(t["status"] == "PASS" for t in domain_tests.values())
+                and test_results["configuration"]["status"] == "PASS"
             )
 
             overall_message = "All tests passed" if all_tests_passed else "Some tests failed"
@@ -609,9 +616,9 @@ class KnowledgePluginManager:
             logger.error(f"Error testing plugin {plugin_name}: {e}")
             return False, f"Error testing plugin: {str(e)}", {}
 
-    def get_available_plugins(self) -> List[Dict[str, Any]]:
+    def get_available_plugins(self) -> list[dict[str, Any]]:
         """Get list of available but not loaded plugins.
-        
+
         Returns:
             List of available plugin information
         """
@@ -641,38 +648,42 @@ class KnowledgePluginManager:
                     if manifest.name in loaded_names:
                         continue
 
-                    available_plugins.append({
-                        "name": manifest.name,
-                        "description": manifest.description,
-                        "version": manifest.version,
-                        "domains": manifest.domains,
-                        "path": str(plugin_path),
-                        "auto_load": manifest.auto_load,
-                        "priority": manifest.priority
-                    })
+                    available_plugins.append(
+                        {
+                            "name": manifest.name,
+                            "description": manifest.description,
+                            "version": manifest.version,
+                            "domains": manifest.domains,
+                            "path": str(plugin_path),
+                            "auto_load": manifest.auto_load,
+                            "priority": manifest.priority,
+                        }
+                    )
 
                 except Exception as e:
                     logger.warning(f"Could not read manifest from {plugin_path}: {e}")
                     # Add as unknown plugin
-                    available_plugins.append({
-                        "name": plugin_path.name,
-                        "description": "Unknown plugin (manifest error)",
-                        "version": "Unknown",
-                        "domains": [],
-                        "path": str(plugin_path),
-                        "auto_load": False,
-                        "priority": 100,
-                        "error": str(e)
-                    })
+                    available_plugins.append(
+                        {
+                            "name": plugin_path.name,
+                            "description": "Unknown plugin (manifest error)",
+                            "version": "Unknown",
+                            "domains": [],
+                            "path": str(plugin_path),
+                            "auto_load": False,
+                            "priority": 100,
+                            "error": str(e),
+                        }
+                    )
 
         return available_plugins
 
     def is_plugin_loaded(self, plugin_name: str) -> bool:
         """Check if a plugin is currently loaded.
-        
+
         Args:
             plugin_name: Name of the plugin
-            
+
         Returns:
             True if plugin is loaded, False otherwise
         """

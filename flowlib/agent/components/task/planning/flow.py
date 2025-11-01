@@ -7,7 +7,7 @@ that generates a complete structured plan.
 import logging
 import time
 import uuid
-from typing import List, cast
+from typing import cast
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 @flow(  # type: ignore[arg-type]
-    name="structured-planning",
+    name="execution-planning",
     description="Generate complete structured execution plans in a single LLM call",
-    is_infrastructure=False
+    is_infrastructure=False,
 )
-class StructuredPlanningFlow:
+class ExecutionPlanningFlow:
     """Generates structured execution plans following Plan-and-Execute pattern."""
 
     @pipeline(input_model=PlanningInput, output_model=PlanningOutput)
@@ -55,20 +55,24 @@ class StructuredPlanningFlow:
         tools_text = self._format_available_tools(input_data.available_tools)
 
         # Debug logging
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"PLANNING DEBUG: {len(input_data.available_tools)} tools available")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Tool names: {input_data.available_tools[:10]}...")  # First 10
         print(f"\nFormatted tools (first 500 chars):\n{tools_text[:500]}...")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         logger.info(f"Planning with {len(input_data.available_tools)} tools")
 
         # Format conversation history
         history_text = self._format_conversation_history(input_data.conversation_history)
 
-        # FIX: Format domain state for prompt
-        domain_state_text = self._format_domain_state(input_data.domain_state) if input_data.domain_state else "No domain state available"
+        # Format domain state for prompt
+        domain_state_text = (
+            self._format_domain_state(input_data.domain_state)
+            if input_data.domain_state
+            else "No domain state available"
+        )
 
         # Prepare prompt variables
         prompt_vars = {
@@ -76,7 +80,7 @@ class StructuredPlanningFlow:
             "available_tools": tools_text,
             "working_directory": input_data.working_directory,
             "conversation_history": history_text,
-            "domain_state": domain_state_text
+            "domain_state": domain_state_text,
         }
 
         # Generate complete plan in ONE LLM call - LLM only generates semantic content
@@ -85,22 +89,85 @@ class StructuredPlanningFlow:
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=LLMStructuredPlan,
             model_name="default-model",
-            prompt_variables=cast(dict[str, object], prompt_vars)
+            prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
         # Convert LLM plan to full plan with programmatic metadata
+        # Generate proper parameters for each step using generate_structured
+        from flowlib.agent.components.task.execution.registry import tool_registry
+
         plan_id = f"plan_{uuid.uuid4().hex[:8]}"
         steps = []
 
         for idx, llm_step in enumerate(llm_result.steps):
+            # Get tool metadata to access parameter_type
+            metadata = tool_registry.get_metadata(llm_step.tool_name)
+
+            generated_parameters = None
+            if metadata and metadata.parameter_type:
+                # Use generate_structured to extract parameters from step context
+                try:
+                    # Get extraction prompt
+                    extraction_prompt = resource_registry.get("parameter-extraction-prompt")
+
+                    # Format conversation history and domain state
+                    history_text = self._format_conversation_history(input_data.conversation_history)
+                    domain_state_text = (
+                        self._format_domain_state(input_data.domain_state)
+                        if input_data.domain_state
+                        else "No domain state available"
+                    )
+
+                    # Prepare prompt variables
+                    prompt_vars = {
+                        "tool_name": llm_step.tool_name,
+                        "tool_description": metadata.description,
+                        "user_request": input_data.user_message,
+                        "plan_reasoning": llm_result.reasoning,
+                        "step_number": f"#{idx + 1}",
+                        "step_description": llm_step.step_description,
+                        "expected_outcome": llm_result.expected_outcome,
+                        "suggested_params": str(llm_step.parameters or {}),
+                        "working_directory": input_data.working_directory,
+                        "conversation_history": history_text,
+                        "domain_state": domain_state_text,
+                    }
+
+                    # Use LLM to extract parameters with proper schema
+                    param_instance = await llm.generate_structured(
+                        prompt=cast(PromptTemplate, extraction_prompt),
+                        output_type=metadata.parameter_type,
+                        model_name="default-model",
+                        prompt_variables=prompt_vars,
+                    )
+
+                    # Convert Pydantic instance to dict for storage in plan
+                    generated_parameters = (
+                        param_instance.model_dump()
+                        if hasattr(param_instance, "model_dump")
+                        else dict(param_instance)
+                    )
+
+                    logger.info(
+                        f"Generated parameters for {llm_step.tool_name}: {generated_parameters}"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to generate parameters for {llm_step.tool_name}: {e}, using LLM suggestion"
+                    )
+                    generated_parameters = llm_step.parameters
+            else:
+                # No parameter type defined, use what LLM provided
+                generated_parameters = llm_step.parameters
+
             step = PlanStep(
                 step_id=f"{plan_id}_step_{idx}",
                 tool_name=llm_step.tool_name,
                 step_description=llm_step.step_description,
-                parameters=llm_step.parameters,
+                parameters=generated_parameters,
                 depends_on_step=llm_step.depends_on_step,
                 executed=False,  # Programmatic field
-                result=None  # Programmatic field
+                result=None,  # Programmatic field
             )
             steps.append(step)
 
@@ -112,7 +179,7 @@ class StructuredPlanningFlow:
             plan_id=plan_id,  # Programmatic field
             created_at=time.time(),  # Programmatic field
             execution_started=False,  # Programmatic field
-            execution_complete=False  # Programmatic field
+            execution_complete=False,  # Programmatic field
         )
 
         processing_time = (time.time() - start_time) * 1000
@@ -121,10 +188,10 @@ class StructuredPlanningFlow:
             plan=full_plan,
             success=True,  # Programmatic field
             processing_time_ms=processing_time,  # Programmatic field
-            llm_calls_made=1  # Programmatic field
+            llm_calls_made=1,  # Programmatic field
         )
 
-    def _format_available_tools(self, tools: List[str]) -> str:
+    def _format_available_tools(self, tools: list[str]) -> str:
         """Format available tools list for the prompt."""
         if not tools:
             return "No tools available"
@@ -144,7 +211,7 @@ class StructuredPlanningFlow:
 
         return "\n".join(formatted_tools)
 
-    def _format_conversation_history(self, history: List[dict]) -> str:
+    def _format_conversation_history(self, history: list[dict]) -> str:
         """Format conversation history for the prompt."""
         if not history:
             return "No previous conversation"
@@ -172,7 +239,9 @@ class StructuredPlanningFlow:
 
         formatted_parts.append("=== End Current State ===")
         formatted_parts.append("")
-        formatted_parts.append("IMPORTANT: Use this state to make decisions. Don't create what already exists.")
+        formatted_parts.append(
+            "IMPORTANT: Use this state to make decisions. Don't create what already exists."
+        )
 
         return "\n".join(formatted_parts)
 

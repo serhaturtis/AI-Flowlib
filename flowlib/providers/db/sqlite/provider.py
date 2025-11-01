@@ -8,7 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
@@ -31,12 +31,14 @@ if TYPE_CHECKING:
     import sqlite3
 
     import aiosqlite
+
     AIOSQLITE_AVAILABLE = True
 else:
     try:
         import sqlite3
 
         import aiosqlite
+
         AIOSQLITE_AVAILABLE = True
     except ImportError:
         AIOSQLITE_AVAILABLE = False
@@ -54,38 +56,52 @@ else:
 
 class SQLiteProviderSettings(DBProviderSettings):
     """SQLite provider settings - direct inheritance, only SQLite-specific fields.
-    
+
     SQLite requires:
     1. Database file path
     2. SQLite-specific configuration (journal mode, isolation)
     3. File creation and timeout settings
-    
+
     Note: SQLite is file-based, no host/port/authentication needed.
     """
 
     # SQLite file settings
-    database_path: str = Field(default="./database.db", description="Path to SQLite database file (e.g., './app.db', '/data/database.sqlite')")
-    create_if_missing: bool = Field(default=True, description="Create database file if it doesn't exist")
+    database_path: str = Field(
+        default="./database.db",
+        description="Path to SQLite database file (e.g., './app.db', '/data/database.sqlite')",
+    )
+    create_if_missing: bool = Field(
+        default=True, description="Create database file if it doesn't exist"
+    )
 
     # SQLite performance settings
-    journal_mode: str = Field(default="WAL", description="SQLite journal mode (WAL for better concurrency)")
-    isolation_level: Optional[str] = Field(default=None, description="SQLite isolation level (None = autocommit mode)")
+    journal_mode: str = Field(
+        default="WAL", description="SQLite journal mode (WAL for better concurrency)"
+    )
+    isolation_level: str | None = Field(
+        default=None, description="SQLite isolation level (None = autocommit mode)"
+    )
     timeout: float = Field(default=5.0, description="Connection timeout in seconds")
-    detect_types: int = Field(default=0, description="SQLite type detection (can use sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)")
+    detect_types: int = Field(
+        default=0,
+        description="SQLite type detection (can use sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)",
+    )
 
     # Additional connection arguments
-    connect_args: Dict[str, Any] = Field(default_factory=dict, description="Additional connection arguments")
+    connect_args: dict[str, Any] = Field(
+        default_factory=dict, description="Additional connection arguments"
+    )
 
 
 @provider(provider_type="db", name="sqlite", settings_class=SQLiteProviderSettings)
 class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
     """SQLite implementation of the DBProvider.
-    
+
     This provider implements database operations using aiosqlite,
     an efficient asynchronous SQLite driver.
     """
 
-    def __init__(self, name: str = "sqlite", settings: Optional[SQLiteProviderSettings] = None):
+    def __init__(self, name: str = "sqlite", settings: SQLiteProviderSettings | None = None):
         """Initialize SQLite provider.
 
         Args:
@@ -93,8 +109,10 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
             settings: Optional provider settings
         """
         super().__init__(name=name, settings=settings)
-        self._settings: SQLiteProviderSettings = settings or SQLiteProviderSettings(database_path=":memory:")
-        self._connection: Optional[aiosqlite.Connection] = None
+        self._settings: SQLiteProviderSettings = settings or SQLiteProviderSettings(
+            database_path=":memory:"
+        )
+        self._connection: aiosqlite.Connection | None = None
 
     async def initialize(self) -> None:
         """Initialize the SQLite provider."""
@@ -117,7 +135,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
 
     async def _initialize(self) -> None:
         """Initialize SQLite connection.
-        
+
         Raises:
             ProviderError: If initialization fails
         """
@@ -131,14 +149,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                         error_type="DependencyError",
                         error_location="_initialize",
                         component=self.name,
-                        operation="check_aiosqlite_dependency"
+                        operation="check_aiosqlite_dependency",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="db",
                         operation="initialize",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
 
             # Check if database file exists
@@ -147,7 +165,9 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 if self._settings.create_if_missing:
                     # Create directory if it doesn't exist
                     os.makedirs(os.path.dirname(self._settings.database_path), exist_ok=True)
-                    logger.info(f"Created directory for SQLite database: {os.path.dirname(self._settings.database_path)}")
+                    logger.info(
+                        f"Created directory for SQLite database: {os.path.dirname(self._settings.database_path)}"
+                    )
                 else:
                     raise ProviderError(
                         message=f"SQLite database file does not exist: {self._settings.database_path}",
@@ -156,14 +176,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                             error_type="FileNotFoundError",
                             error_location="_initialize",
                             component=self.name,
-                            operation="check_database_file"
+                            operation="check_database_file",
                         ),
                         provider_context=ProviderErrorContext(
                             provider_name=self.name,
                             provider_type="db",
                             operation="initialize",
-                            retry_count=0
-                        )
+                            retry_count=0,
+                        ),
                     )
 
             # Connect to database
@@ -172,7 +192,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 timeout=self._settings.timeout,
                 isolation_level=self._settings.isolation_level,
                 detect_types=self._settings.detect_types,
-                **self._settings.connect_args
+                **self._settings.connect_args,
             )
 
             # Enable foreign keys
@@ -197,16 +217,16 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="_initialize",
                     component=self.name,
-                    operation="connect_to_database"
+                    operation="connect_to_database",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="initialize",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def _shutdown(self) -> None:
         """Close SQLite connection."""
@@ -221,7 +241,9 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
             finally:
                 self._connection = None
 
-    async def execute_query(self, query: str, params: Optional[Union[tuple, dict]] = None) -> List[Dict[str, Any]]:
+    async def execute_query(
+        self, query: str, params: tuple | dict | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a SQL query.
 
         Args:
@@ -245,14 +267,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="execute_query",
                     component=self.name,
-                    operation="execute_query"
+                    operation="execute_query",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_query",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -274,7 +296,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     # Handle SQLite-specific types
                     if isinstance(value, bytes):
                         try:
-                            value = value.decode('utf-8')
+                            value = value.decode("utf-8")
                         except UnicodeDecodeError:
                             pass  # Keep as bytes if not valid UTF-8
                     result[column] = value
@@ -290,27 +312,27 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="QueryExecutionError",
                     error_location="execute_query",
                     component=self.name,
-                    operation="execute_sql_query"
+                    operation="execute_sql_query",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_query",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def execute_update(self, query: str, params: Optional[Union[tuple, dict]] = None) -> int:
+    async def execute_update(self, query: str, params: tuple | dict | None = None) -> int:
         """Execute a SQL update.
-        
+
         Args:
             query: SQL query (INSERT, UPDATE, DELETE)
             params: Query parameters
-            
+
         Returns:
             Number of rows affected
-            
+
         Raises:
             ProviderError: If update execution fails
         """
@@ -325,14 +347,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="execute_update",
                     component=self.name,
-                    operation="execute_update"
+                    operation="execute_update",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_update",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -357,23 +379,23 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="UpdateExecutionError",
                     error_location="execute_update",
                     component=self.name,
-                    operation="execute_sql_update"
+                    operation="execute_sql_update",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_update",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def execute_script(self, script: str) -> None:
         """Execute a SQL script.
-        
+
         Args:
             script: SQL script
-            
+
         Raises:
             ProviderError: If script execution fails
         """
@@ -388,14 +410,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="execute_script",
                     component=self.name,
-                    operation="check_connection"
+                    operation="check_connection",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_script",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -416,26 +438,28 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ScriptExecutionError",
                     error_location="execute_script",
                     component=self.name,
-                    operation="execute_sql_script"
+                    operation="execute_sql_script",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_script",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def execute_transaction(self, queries: List[Tuple[str, Optional[Union[tuple, dict]]]]) -> List[Any]:
+    async def execute_transaction(
+        self, queries: list[tuple[str, tuple | dict | None]]
+    ) -> list[Any]:
         """Execute queries in a transaction.
-        
+
         Args:
             queries: List of (query, params) tuples
-            
+
         Returns:
             List of results
-            
+
         Raises:
             ProviderError: If transaction fails
         """
@@ -450,21 +474,21 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="execute_transaction",
                     component=self.name,
-                    operation="check_connection"
+                    operation="check_connection",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_transaction",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
             # Start transaction
             await self._connection.execute("BEGIN TRANSACTION")
 
-            results: List[Any] = []
+            results: list[Any] = []
             for query, params in queries:
                 # Execute query
                 cursor = await self._connection.execute(query, params or ())
@@ -506,26 +530,26 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="TransactionExecutionError",
                     error_location="execute_transaction",
                     component=self.name,
-                    operation="execute_sql_transaction"
+                    operation="execute_sql_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_transaction",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def get_table_schema(self, table_name: str) -> List[Dict[str, Any]]:
+    async def get_table_schema(self, table_name: str) -> list[dict[str, Any]]:
         """Get schema for a table.
-        
+
         Args:
             table_name: Table name
-            
+
         Returns:
             List of column definitions
-            
+
         Raises:
             ProviderError: If schema retrieval fails
         """
@@ -545,26 +569,26 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="SchemaRetrievalError",
                     error_location="get_table_schema",
                     component=self.name,
-                    operation="get_table_schema"
+                    operation="get_table_schema",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="get_table_schema",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def table_exists(self, table_name: str) -> bool:
         """Check if a table exists.
-        
+
         Args:
             table_name: Table name
-            
+
         Returns:
             True if table exists
-            
+
         Raises:
             ProviderError: If check fails
         """
@@ -586,27 +610,27 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="TableExistenceCheckError",
                     error_location="table_exists",
                     component=self.name,
-                    operation="check_table_existence"
+                    operation="check_table_existence",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="table_exists",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    async def execute(self, query: str, params: dict[str, Any] | None = None) -> Any:
         """Execute a database query.
-        
+
         Args:
             query: SQL query to execute
             params: Query parameters
-            
+
         Returns:
             Query results (list for SELECT, row count for UPDATE/INSERT/DELETE)
-            
+
         Raises:
             ProviderError: If query execution fails
         """
@@ -618,22 +642,19 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="execute",
                     component=self.name,
-                    operation="execute"
+                    operation="execute",
                 ),
                 provider_context=ProviderErrorContext(
-                    provider_name=self.name,
-                    provider_type="db",
-                    operation="execute",
-                    retry_count=0
-                )
+                    provider_name=self.name, provider_type="db", operation="execute", retry_count=0
+                ),
             )
 
         try:
             # Handle parameter conversion based on query style
-            param_values: Optional[Union[Dict[str, Any], Tuple[Any, ...]]] = None
+            param_values: dict[str, Any] | tuple[Any, ...] | None = None
             if params:
                 # Check if query uses named parameters (:name) or positional (?)
-                if ':' in query:
+                if ":" in query:
                     # Query uses named parameters, keep as dict
                     param_values = params
                 else:
@@ -643,7 +664,7 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
 
             # Determine if this is a SELECT query or not
             query_lower = query.strip().lower()
-            if query_lower.startswith('select') or query_lower.startswith('with'):
+            if query_lower.startswith("select") or query_lower.startswith("with"):
                 # For SELECT queries, return all rows as dicts
                 return await self.execute_query(query, param_values)
             else:
@@ -659,23 +680,20 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="QueryExecutionError",
                     error_location="execute",
                     component=self.name,
-                    operation="execute"
+                    operation="execute",
                 ),
                 provider_context=ProviderErrorContext(
-                    provider_name=self.name,
-                    provider_type="db",
-                    operation="execute",
-                    retry_count=0
+                    provider_name=self.name, provider_type="db", operation="execute", retry_count=0
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def check_connection(self) -> bool:
         """Check if the database connection is healthy.
-        
+
         Returns:
             True if connection is healthy
-            
+
         Raises:
             ProviderError: If connection check fails
         """
@@ -693,16 +711,16 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
             logger.warning(f"SQLite connection check failed: {e}")
             return False
 
-    async def execute_many(self, query: str, params_list: List[Dict[str, Any]]) -> List[Any]:
+    async def execute_many(self, query: str, params_list: list[dict[str, Any]]) -> list[Any]:
         """Execute a batch of database queries.
-        
+
         Args:
             query: SQL query to execute
             params_list: List of query parameters
-            
+
         Returns:
             List with single result containing total affected rows
-            
+
         Raises:
             ProviderError: If query execution fails
         """
@@ -714,14 +732,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="execute_many",
                     component=self.name,
-                    operation="execute_many"
+                    operation="execute_many",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_many",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -745,23 +763,23 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="BatchQueryExecutionError",
                     error_location="execute_many",
                     component=self.name,
-                    operation="execute_many"
+                    operation="execute_many",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="execute_many",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def begin_transaction(self) -> Any:
         """Begin a database transaction.
-        
+
         Returns:
             Transaction object (connection for SQLite)
-            
+
         Raises:
             ProviderError: If transaction start fails
         """
@@ -773,14 +791,14 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="ConnectionError",
                     error_location="begin_transaction",
                     component=self.name,
-                    operation="begin_transaction"
+                    operation="begin_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="begin_transaction",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
@@ -795,26 +813,26 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="TransactionError",
                     error_location="begin_transaction",
                     component=self.name,
-                    operation="begin_transaction"
+                    operation="begin_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="begin_transaction",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def commit_transaction(self, transaction: Any) -> bool:
         """Commit a database transaction.
-        
+
         Args:
             transaction: Transaction object (SQLite connection)
-            
+
         Returns:
             True if transaction was committed successfully
-            
+
         Raises:
             ProviderError: If transaction commit fails
         """
@@ -829,26 +847,26 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="TransactionCommitError",
                     error_location="commit_transaction",
                     component=self.name,
-                    operation="commit_transaction"
+                    operation="commit_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="commit_transaction",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def rollback_transaction(self, transaction: Any) -> bool:
         """Rollback a database transaction.
-        
+
         Args:
             transaction: Transaction object (SQLite connection)
-            
+
         Returns:
             True if transaction was rolled back successfully
-            
+
         Raises:
             ProviderError: If transaction rollback fails
         """
@@ -863,23 +881,23 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="TransactionRollbackError",
                     error_location="rollback_transaction",
                     component=self.name,
-                    operation="rollback_transaction"
+                    operation="rollback_transaction",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="rollback_transaction",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def get_health(self) -> DatabaseHealthInfo:
         """Get database health information.
-        
+
         Returns:
             Structured health information
-            
+
         Raises:
             ProviderError: If health check fails
         """
@@ -887,8 +905,8 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
             is_connected = await self.check_connection()
 
             # Get database version if connected
-            version: Optional[str] = None
-            additional_info: Dict[str, Any] = {}
+            version: str | None = None
+            additional_info: dict[str, Any] = {}
 
             if is_connected and self._connection is not None:
                 try:
@@ -914,16 +932,13 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                 status="healthy" if is_connected else "unhealthy",
                 connected=is_connected,
                 connection_active=is_connected,
-                database=DatabaseInfo(
-                    path=str(self._settings.database_path),
-                    name="SQLite"
-                ),
+                database=DatabaseInfo(path=str(self._settings.database_path), name="SQLite"),
                 pool=PoolInfo(
                     active_connections=1 if self._connection else 0,
-                    pool_size=1  # SQLite uses single connection
+                    pool_size=1,  # SQLite uses single connection
                 ),
                 version=version,
-                additional_info=additional_info
+                additional_info=additional_info,
             )
 
         except Exception as e:
@@ -934,13 +949,13 @@ class SQLiteDBProvider(DBProvider[SQLiteProviderSettings]):
                     error_type="HealthCheckError",
                     error_location="get_health",
                     component=self.name,
-                    operation="get_health"
+                    operation="get_health",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="db",
                     operation="get_health",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e

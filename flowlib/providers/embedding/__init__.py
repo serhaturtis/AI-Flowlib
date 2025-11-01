@@ -9,10 +9,7 @@ import logging
 from .base import EmbeddingProvider
 from .llama_cpp.provider import LlamaCppEmbeddingProvider
 
-__all__ = [
-    "EmbeddingProvider",
-    "LlamaCppEmbeddingProvider"
-]
+__all__ = ["EmbeddingProvider", "LlamaCppEmbeddingProvider"]
 
 logger = logging.getLogger(__name__)
 

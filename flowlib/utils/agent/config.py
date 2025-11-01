@@ -18,6 +18,7 @@ from flowlib.resources.registry.registry import resource_registry
 
 logger = logging.getLogger(__name__)
 
+
 def initialize_resources_from_config(config: AgentConfig) -> None:
     """
     Initialize resources (e.g., model resources) from the agent configuration.
@@ -44,27 +45,29 @@ def initialize_resources_from_config(config: AgentConfig) -> None:
             if not isinstance(resource_info, dict):
                 raise ConfigurationError(
                     message=f"Resource '{resource_name}' of type '{resource_type}' must be a dict.",
-                    config_key=f"resource_config.{resource_type}.{resource_name}"
+                    config_key=f"resource_config.{resource_type}.{resource_name}",
                 )
             if "provider" not in resource_info:
                 raise ConfigurationError(
                     message=f"Resource '{resource_name}' of type '{resource_type}' missing required 'provider' field.",
-                    config_key=f"resource_config.{resource_type}.{resource_name}"
+                    config_key=f"resource_config.{resource_type}.{resource_name}",
                 )
             if "config" not in resource_info:
                 raise ConfigurationError(
                     message=f"Resource '{resource_name}' of type '{resource_type}' missing required 'config' field.",
-                    config_key=f"resource_config.{resource_type}.{resource_name}"
+                    config_key=f"resource_config.{resource_type}.{resource_name}",
                 )
             provider = resource_info["provider"]
             config_section = resource_info["config"]
             if not provider or not config_section:
                 raise ConfigurationError(
                     message=f"Resource '{resource_name}' of type '{resource_type}' missing required 'provider' or 'config' field.",
-                    config_key=f"resource_config.{resource_type}.{resource_name}"
+                    config_key=f"resource_config.{resource_type}.{resource_name}",
                 )
             if resource_registry.contains(resource_name):
-                logger.warning(f"Resource '{resource_name}' of type '{resource_type}' already exists. Skipping initialization.")
+                logger.warning(
+                    f"Resource '{resource_name}' of type '{resource_type}' already exists. Skipping initialization."
+                )
                 continue
             resource_registry.register(
                 name=resource_name,
@@ -75,12 +78,12 @@ def initialize_resources_from_config(config: AgentConfig) -> None:
                     config=config_section,
                     model_path=None,
                     model_name=resource_name,
-                    model_type=None
                 ),
-                resource_type=resource_type
+                resource_type=resource_type,
             )
             logger.info(f"Initialized resource '{resource_name}' of type '{resource_type}'")
     logger.info("Resource initialization from configuration complete")
+
 
 def load_agent_config(filepath: str) -> AgentConfig:
     """Loads agent configuration from a YAML file.
@@ -105,7 +108,7 @@ def load_agent_config(filepath: str) -> AgentConfig:
         raise FileNotFoundError(f"Configuration file not found at: {filepath}")
 
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath) as f:
             config_dict = yaml.safe_load(f)
 
         if not isinstance(config_dict, dict):
@@ -120,16 +123,15 @@ def load_agent_config(filepath: str) -> AgentConfig:
     except yaml.YAMLError as e:
         logger.error(f"Error parsing YAML file '{filepath}': {e}", exc_info=True)
         raise ConfigurationError(
-            message=f"Error parsing YAML configuration file: {filepath}",
-            cause=e
-        )
+            message=f"Error parsing YAML configuration file: {filepath}", cause=e
+) from e
     except Exception as e:
         # Catch Pydantic ValidationErrors and other potential issues
         logger.error(f"Error validating configuration from '{filepath}': {e}", exc_info=True)
         raise ConfigurationError(
-            message=f"Error validating configuration loaded from file: {filepath}",
-            cause=e
-        )
+            message=f"Error validating configuration loaded from file: {filepath}", cause=e
+) from e
+
 
 async def initialize_providers_from_config(config: AgentConfig) -> None:
     """
@@ -153,19 +155,19 @@ async def initialize_providers_from_config(config: AgentConfig) -> None:
             if "implementation" not in provider_info:
                 raise ConfigurationError(
                     message=f"Provider '{provider_name}' of type '{provider_type}' missing required 'implementation' field.",
-                    config_key=f"provider_config.{provider_type}.{provider_name}"
+                    config_key=f"provider_config.{provider_type}.{provider_name}",
                 )
             if "settings" not in provider_info:
                 raise ConfigurationError(
                     message=f"Provider '{provider_name}' of type '{provider_type}' missing required 'settings' field.",
-                    config_key=f"provider_config.{provider_type}.{provider_name}"
+                    config_key=f"provider_config.{provider_type}.{provider_name}",
                 )
             implementation = provider_info["implementation"]
             settings_dict = provider_info["settings"]
             if not implementation or not settings_dict:
                 raise ConfigurationError(
                     message=f"Provider '{provider_name}' of type '{provider_type}' missing required 'implementation' or 'settings' field.",
-                    config_key=f"provider_config.{provider_type}.{provider_name}"
+                    config_key=f"provider_config.{provider_type}.{provider_name}",
                 )
             # Lookup settings class from provider registry metadata
             meta_key = (provider_type, implementation)
@@ -178,12 +180,12 @@ async def initialize_providers_from_config(config: AgentConfig) -> None:
             if not settings_class:
                 raise ConfigurationError(
                     message=f"No registered settings class for provider '{provider_name}' of type '{provider_type}' (implementation '{implementation}').",
-                    config_key=f"provider_config.{provider_type}.{provider_name}.settings"
+                    config_key=f"provider_config.{provider_type}.{provider_name}.settings",
                 )
             if not callable(settings_class):
                 raise ConfigurationError(
                     message=f"Settings class for provider '{provider_name}' is not callable: {type(settings_class)}",
-                    config_key=f"provider_config.{provider_type}.{provider_name}.settings"
+                    config_key=f"provider_config.{provider_type}.{provider_name}.settings",
                 )
             try:
                 settings_obj = settings_class(**settings_dict)
@@ -191,8 +193,8 @@ async def initialize_providers_from_config(config: AgentConfig) -> None:
                 raise ConfigurationError(
                     message=f"Failed to instantiate settings for provider '{provider_name}' of type '{provider_type}': {e}",
                     config_key=f"provider_config.{provider_type}.{provider_name}.settings",
-                    cause=e
-                )
+                    cause=e,
+) from e
             # Create and initialize the provider
             try:
                 await create_and_initialize_provider(
@@ -202,11 +204,13 @@ async def initialize_providers_from_config(config: AgentConfig) -> None:
                     register=True,
                     settings=settings_obj,
                 )
-                logger.info(f"Initialized provider '{provider_name}' of type '{provider_type}' with implementation '{implementation}'")
+                logger.info(
+                    f"Initialized provider '{provider_name}' of type '{provider_type}' with implementation '{implementation}'"
+                )
             except Exception as e:
                 raise ConfigurationError(
                     message=f"Failed to initialize provider '{provider_name}' of type '{provider_type}': {e}",
                     config_key=f"provider_config.{provider_type}.{provider_name}",
-                    cause=e
-                )
+                    cause=e,
+) from e
     logger.info("Provider initialization from configuration complete")

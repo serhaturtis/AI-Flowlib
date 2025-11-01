@@ -6,10 +6,10 @@ from text responses, particularly useful for handling LLM outputs.
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 
-def extract_json(text: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
+def extract_json(text: str) -> dict[str, Any] | list[Any] | None:
     """Extract JSON data from text.
 
     This function attempts to find and parse a JSON object or array
@@ -26,7 +26,7 @@ def extract_json(text: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
         return None
 
     # Try to find a JSON object using regex
-    json_pattern = r'(\{[\s\S]*\}|\[[\s\S]*\])'
+    json_pattern = r"(\{[\s\S]*\}|\[[\s\S]*\])"
     match = re.search(json_pattern, text)
 
     if match:
@@ -53,13 +53,13 @@ def extract_json(text: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
 
 def extract_json_str(text: str) -> str:
     """Extract JSON string from text.
-    
+
     Similar to extract_json but returns the raw JSON string instead
     of parsing it into Python objects.
-    
+
     Args:
         text: Text that may contain JSON
-        
+
     Returns:
         Extracted JSON string or empty string if none found
     """
@@ -67,7 +67,7 @@ def extract_json_str(text: str) -> str:
         return ""
 
     # Try to find a JSON object using regex
-    json_pattern = r'(\{[\s\S]*\}|\[[\s\S]*\])'
+    json_pattern = r"(\{[\s\S]*\}|\[[\s\S]*\])"
     match = re.search(json_pattern, text)
 
     if match:
@@ -89,13 +89,13 @@ def extract_json_str(text: str) -> str:
     return ""
 
 
-def format_json(data: Union[Dict[str, Any], List[Any]], indent: int = 2) -> str:
+def format_json(data: dict[str, Any] | list[Any], indent: int = 2) -> str:
     """Format Python data as pretty-printed JSON.
-    
+
     Args:
         data: Data to format as JSON
         indent: Number of spaces for indentation
-        
+
     Returns:
         Formatted JSON string
     """

@@ -3,7 +3,6 @@ Utility functions related to agent state persistence.
 """
 
 import logging
-from typing import Dict, List, Optional
 
 from .base import BaseStatePersister
 
@@ -13,10 +12,7 @@ from .factory import create_state_persister
 logger = logging.getLogger(__name__)
 
 
-async def list_saved_states_metadata(
-    persister_type: str,
-    **kwargs: str
-) -> List[Dict[str, str]]:
+async def list_saved_states_metadata(persister_type: str, **kwargs: str) -> list[dict[str, str]]:
     """Lists metadata for available saved agent states using the specified persister.
 
     Creates a temporary persister instance based on the type and config,
@@ -31,7 +27,7 @@ async def list_saved_states_metadata(
         A list of dictionaries, where each dictionary contains metadata for a saved state.
         Returns an empty list if the persister fails to initialize or list states.
     """
-    persister: Optional[BaseStatePersister] = None
+    persister: BaseStatePersister | None = None
     try:
         # Create and initialize the persister
         persister = create_state_persister(persister_type=persister_type, **kwargs)
@@ -44,7 +40,9 @@ async def list_saved_states_metadata(
         return states_metadata
 
     except Exception as e:
-        logger.error(f"Failed to list saved states using {persister_type} persister: {e}", exc_info=True)
+        logger.error(
+            f"Failed to list saved states using {persister_type} persister: {e}", exc_info=True
+        )
         # Return empty list on error to allow calling code to handle gracefully
         return []
     finally:
@@ -53,4 +51,6 @@ async def list_saved_states_metadata(
             try:
                 await persister.shutdown()
             except Exception as shutdown_err:
-                logger.error(f"Error shutting down temporary persister: {shutdown_err}", exc_info=True)
+                logger.error(
+                    f"Error shutting down temporary persister: {shutdown_err}", exc_info=True
+                )

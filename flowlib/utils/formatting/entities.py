@@ -4,7 +4,6 @@ This module provides utilities for formatting entity data for display
 and for use in prompts or other contexts.
 """
 
-from typing import Dict, List
 
 # Importing Entity type for type hints
 from flowlib.providers.graph.models import Entity, EntityRelationship
@@ -12,11 +11,11 @@ from flowlib.providers.graph.models import Entity, EntityRelationship
 
 def format_entity_for_display(entity: Entity, detailed: bool = False) -> str:
     """Format an entity for human-readable display.
-    
+
     Args:
         entity: The entity to format
         detailed: Whether to include all details
-        
+
     Returns:
         Formatted string representation
     """
@@ -35,7 +34,7 @@ def format_entity_for_display(entity: Entity, detailed: bool = False) -> str:
     if entity.relationships:
         lines.append("Relationships:")
         # Group by relation type for cleaner display
-        rel_by_type: Dict[str, List[EntityRelationship]] = {}
+        rel_by_type: dict[str, list[EntityRelationship]] = {}
         for rel in entity.relationships:
             if rel.relation_type not in rel_by_type:
                 rel_by_type[rel.relation_type] = []
@@ -54,7 +53,7 @@ def format_entity_for_display(entity: Entity, detailed: bool = False) -> str:
         if entity.importance is not None:
             lines.append(f"Importance: {entity.importance:.2f}")
 
-        if hasattr(entity, 'source') and entity.source:
+        if hasattr(entity, "source") and entity.source:
             lines.append(f"Source: {entity.source}")
 
         if entity.last_updated:
@@ -63,13 +62,13 @@ def format_entity_for_display(entity: Entity, detailed: bool = False) -> str:
     return "\n".join(lines)
 
 
-def format_entities_as_context(entities: List['Entity'], include_relationships: bool = True) -> str:
+def format_entities_as_context(entities: list["Entity"], include_relationships: bool = True) -> str:
     """Format multiple entities as context for prompt injection.
-    
+
     Args:
         entities: List of entities to format
         include_relationships: Whether to include relationship information
-        
+
     Returns:
         Formatted context string
     """
@@ -81,20 +80,20 @@ def format_entities_as_context(entities: List['Entity'], include_relationships: 
     for entity in entities:
         entity_part = format_entity_for_display(
             entity,
-            detailed=False  # Less verbose for context
+            detailed=False,  # Less verbose for context
         )
         parts.append(entity_part)
 
     return "\n\n".join(parts)
 
 
-def format_entity_list(entities: List['Entity'], compact: bool = False) -> str:
+def format_entity_list(entities: list["Entity"], compact: bool = False) -> str:
     """Format a list of entities in a compact or detailed format.
-    
+
     Args:
         entities: List of entities to format
         compact: Whether to use a compact single-line format
-        
+
     Returns:
         Formatted entity list
     """

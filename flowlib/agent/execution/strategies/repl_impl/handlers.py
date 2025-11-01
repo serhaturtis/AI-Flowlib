@@ -1,6 +1,6 @@
 """Command handlers for agent REPL."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import ConfigDict, Field
 
@@ -16,17 +16,19 @@ from flowlib.core.models import StrictBaseModel
 
 class MemoryStats(StrictBaseModel):
     """Memory statistics model."""
+
     model_config = ConfigDict(extra="forbid")
 
     count: int = Field(default=0, description="Count of items")
     collections: int = Field(default=0, description="Number of collections")
     nodes: int = Field(default=0, description="Number of nodes")
     edges: int = Field(default=0, description="Number of edges")
-    node_types: List[str] = Field(default_factory=list, description="Node type names")
+    node_types: list[str] = Field(default_factory=list, description="Node type names")
 
 
 class FlowInfo(StrictBaseModel):
     """Flow information model."""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="Flow name")
@@ -35,6 +37,7 @@ class FlowInfo(StrictBaseModel):
 
 class MemoryItem(StrictBaseModel):
     """Memory item model."""
+
     model_config = ConfigDict(extra="forbid")
 
     content: str = Field(default="Unknown", description="Item content")
@@ -42,6 +45,7 @@ class MemoryItem(StrictBaseModel):
 
 class MCPServerInfo(StrictBaseModel):
     """MCP server information model."""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="Server name")
@@ -50,6 +54,7 @@ class MCPServerInfo(StrictBaseModel):
 
 class MCPStatus(StrictBaseModel):
     """MCP status model."""
+
     model_config = ConfigDict(extra="forbid")
 
     connected: bool = Field(default=False, description="Connection status")
@@ -61,20 +66,22 @@ class MCPStatus(StrictBaseModel):
 
 class MCPTool(StrictBaseModel):
     """MCP tool model."""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="Tool name")
     description: str = Field(default="No description", description="Tool description")
-    parameters: Optional[Dict[str, Any]] = Field(default=None, description="Tool parameters")
+    parameters: dict[str, Any] | None = Field(default=None, description="Tool parameters")
 
 
 class MCPResource(StrictBaseModel):
     """MCP resource model."""
+
     model_config = ConfigDict(extra="forbid")
 
     uri: str = Field(description="Resource URI")
     description: str = Field(default="No description", description="Resource description")
-    mimeType: Optional[str] = Field(default=None, description="MIME type")
+    mimeType: str | None = Field(default=None, description="MIME type")
 
 
 class DefaultCommandHandler(CommandHandler):
@@ -84,7 +91,7 @@ class DefaultCommandHandler(CommandHandler):
         """Check if this handler can handle the command."""
         return command.type in [CommandType.USER, CommandType.SYSTEM]
 
-    async def handle(self, command: Command, context: Dict[str, Any]) -> None:
+    async def handle(self, command: Command, context: dict[str, Any]) -> None:
         """Handle the command."""
         if command.type == CommandType.SYSTEM:
             # System commands are handled by the registry
@@ -108,7 +115,7 @@ class AgentCommandHandler(CommandHandler):
                 return True
         return False
 
-    async def handle(self, command: Command, context: Dict[str, Any]) -> Optional[str]:
+    async def handle(self, command: Command, context: dict[str, Any]) -> str | None:
         """Handle agent-specific commands."""
         if "agent" not in context:
             return "No agent available."
@@ -126,7 +133,9 @@ class AgentCommandHandler(CommandHandler):
 
         return None
 
-    async def _execute_flow(self, flow_command: str, agent: BaseAgent, context: Dict[str, Any]) -> str:
+    async def _execute_flow(
+        self, flow_command: str, agent: BaseAgent, context: dict[str, Any]
+    ) -> str:
         """Execute a flow directly."""
         parts = flow_command.split(maxsplit=1)
         if not parts:
@@ -138,6 +147,7 @@ class AgentCommandHandler(CommandHandler):
         try:
             # Parse arguments as JSON if possible
             import json
+
             try:
                 flow_args = json.loads(args) if args else {}
             except json.JSONDecodeError:
@@ -155,7 +165,7 @@ class AgentCommandHandler(CommandHandler):
         except Exception as e:
             return f"Error executing flow '{flow_name}': {str(e)}"
 
-    async def _introspect(self, query: str, agent: BaseAgent, context: Dict[str, Any]) -> str:
+    async def _introspect(self, query: str, agent: BaseAgent, context: dict[str, Any]) -> str:
         """Introspect agent state."""
         if not query:
             return "Usage: ?[state|memory|context|flows|tools]"
@@ -181,10 +191,10 @@ class AgentCommandHandler(CommandHandler):
             return "Agent has no state."
 
         state = agent.state
-        status = state.status if hasattr(state, 'status') else 'Unknown'
-        mode = state.mode if hasattr(state, 'mode') else 'Unknown'
-        active_flows = state.active_flows if hasattr(state, 'active_flows') else []
-        context_items = state.context if hasattr(state, 'context') else {}
+        status = state.status if hasattr(state, "status") else "Unknown"
+        mode = state.mode if hasattr(state, "mode") else "Unknown"
+        active_flows = state.active_flows if hasattr(state, "active_flows") else []
+        context_items = state.context if hasattr(state, "context") else {}
         return f"""**Agent State:**
   Status: {status}
   Mode: {mode}
@@ -206,14 +216,22 @@ class AgentCommandHandler(CommandHandler):
             recent = await wm.get_recent(5)
             details.append(f"**Working Memory** ({len(recent)} recent items):")
             for item in recent:
-                memory_item = MemoryItem.model_validate(item) if isinstance(item, dict) else MemoryItem(content=str(item))
+                memory_item = (
+                    MemoryItem.model_validate(item)
+                    if isinstance(item, dict)
+                    else MemoryItem(content=str(item))
+                )
                 details.append(f"  • {memory_item.content[:50]}...")
 
         # Vector memory
         if hasattr(memory, "vector_memory"):
             vm = memory.vector_memory
             stats_raw = await vm.get_stats()
-            stats = MemoryStats.model_validate(stats_raw) if isinstance(stats_raw, dict) else MemoryStats()
+            stats = (
+                MemoryStats.model_validate(stats_raw)
+                if isinstance(stats_raw, dict)
+                else MemoryStats()
+            )
             details.append("\n**Vector Memory**:")
             details.append(f"  Embeddings: {stats.count}")
             details.append(f"  Collections: {stats.collections}")
@@ -222,7 +240,11 @@ class AgentCommandHandler(CommandHandler):
         if hasattr(memory, "knowledge_graph"):
             kg = memory.knowledge_graph
             stats_raw = await kg.get_stats()
-            stats = MemoryStats.model_validate(stats_raw) if isinstance(stats_raw, dict) else MemoryStats()
+            stats = (
+                MemoryStats.model_validate(stats_raw)
+                if isinstance(stats_raw, dict)
+                else MemoryStats()
+            )
             details.append("\n**Knowledge Graph**:")
             details.append(f"  Nodes: {stats.nodes}")
             details.append(f"  Edges: {stats.edges}")
@@ -230,16 +252,18 @@ class AgentCommandHandler(CommandHandler):
 
         return "\n".join(details)
 
-    def _show_context(self, context: Dict[str, Any]) -> str:
+    def _show_context(self, context: dict[str, Any]) -> str:
         """Show current context."""
         # Filter sensitive items
         safe_context = {
-            k: v for k, v in context.items()
-            if k not in ["agent", "config", "command_history"]
+            k: v for k, v in context.items() if k not in ["agent", "config", "command_history"]
         }
 
         import json
-        return f"**Current Context:**\n```json\n{json.dumps(safe_context, indent=2, default=str)}\n```"
+
+        return (
+            f"**Current Context:**\n```json\n{json.dumps(safe_context, indent=2, default=str)}\n```"
+        )
 
     async def _show_available_flows(self, agent: BaseAgent) -> str:
         """Show flows available to the agent."""
@@ -248,7 +272,11 @@ class AgentCommandHandler(CommandHandler):
             if flows:
                 flow_list = "**Available Flows:**\n"
                 for flow_data in flows:
-                    flow = FlowInfo.model_validate(flow_data) if isinstance(flow_data, dict) else FlowInfo(name=str(flow_data))
+                    flow = (
+                        FlowInfo.model_validate(flow_data)
+                        if isinstance(flow_data, dict)
+                        else FlowInfo(name=str(flow_data))
+                    )
                     flow_list += f"  • {flow.name}: {flow.description}\n"
                 return flow_list
 
@@ -269,8 +297,8 @@ class AgentCommandHandler(CommandHandler):
                             tool_list += f"  • {tool_name}: Available\n"
                             continue
 
-                        description = getattr(metadata, 'description', 'No description available')
-                        category = getattr(metadata, 'category', 'general')
+                        description = getattr(metadata, "description", "No description available")
+                        category = getattr(metadata, "category", "general")
                         tool_list += f"  • {tool_name} ({category}): {description}\n"
                     except Exception:
                         tool_list += f"  • {tool_name}: Available\n"
@@ -291,7 +319,7 @@ class MCPCommandHandler(CommandHandler):
             return command.name in ["mcp", "tools", "resources"]
         return False
 
-    async def handle(self, command: Command, context: Dict[str, Any]) -> Optional[str]:
+    async def handle(self, command: Command, context: dict[str, Any]) -> str | None:
         """Handle MCP-related commands."""
         if "agent" not in context:
             return "No agent available."
@@ -306,7 +334,9 @@ class MCPCommandHandler(CommandHandler):
 
         return None
 
-    async def _handle_mcp_command(self, args: List[str], agent: BaseAgent, context: Dict[str, Any]) -> str:
+    async def _handle_mcp_command(
+        self, args: list[str], agent: BaseAgent, context: dict[str, Any]
+    ) -> str:
         """Handle MCP subcommands."""
         if not args:
             return """**MCP Commands:**
@@ -365,7 +395,9 @@ class MCPCommandHandler(CommandHandler):
 
         client = agent.mcp_client
         status_raw = await client.get_status()
-        status = MCPStatus.model_validate(status_raw) if isinstance(status_raw, dict) else MCPStatus()
+        status = (
+            MCPStatus.model_validate(status_raw) if isinstance(status_raw, dict) else MCPStatus()
+        )
 
         return f"""**MCP Status:**
   Connected: {status.connected}
@@ -386,12 +418,16 @@ class MCPCommandHandler(CommandHandler):
 
         server_list = "**Available MCP Servers:**\n"
         for server_data in servers:
-            server = MCPServerInfo.model_validate(server_data) if isinstance(server_data, dict) else MCPServerInfo(name=str(server_data))
+            server = (
+                MCPServerInfo.model_validate(server_data)
+                if isinstance(server_data, dict)
+                else MCPServerInfo(name=str(server_data))
+            )
             server_list += f"  • {server.name}: {server.description}\n"
 
         return server_list
 
-    async def _list_mcp_tools(self, agent: BaseAgent, context: Dict[str, Any]) -> str:
+    async def _list_mcp_tools(self, agent: BaseAgent, context: dict[str, Any]) -> str:
         """List MCP tools."""
         if not hasattr(agent, "mcp_client") or not agent.mcp_client.connected:
             return "No MCP connection. Use /mcp connect <server> first."
@@ -402,14 +438,18 @@ class MCPCommandHandler(CommandHandler):
 
         tool_list = "**MCP Tools:**\n"
         for tool_data in tools:
-            tool = MCPTool.model_validate(tool_data) if isinstance(tool_data, dict) else MCPTool(name=str(tool_data))
+            tool = (
+                MCPTool.model_validate(tool_data)
+                if isinstance(tool_data, dict)
+                else MCPTool(name=str(tool_data))
+            )
             tool_list += f"  • {tool.name}: {tool.description}\n"
-            if context.get('verbose') and tool.parameters:
+            if context.get("verbose") and tool.parameters:
                 tool_list += f"    Parameters: {tool.parameters}\n"
 
         return tool_list
 
-    async def _list_mcp_resources(self, agent: BaseAgent, context: Dict[str, Any]) -> str:
+    async def _list_mcp_resources(self, agent: BaseAgent, context: dict[str, Any]) -> str:
         """List MCP resources."""
         if not hasattr(agent, "mcp_client") or not agent.mcp_client.connected:
             return "No MCP connection. Use /mcp connect <server> first."
@@ -420,9 +460,13 @@ class MCPCommandHandler(CommandHandler):
 
         resource_list = "**MCP Resources:**\n"
         for resource_data in resources:
-            resource = MCPResource.model_validate(resource_data) if isinstance(resource_data, dict) else MCPResource(uri=str(resource_data))
+            resource = (
+                MCPResource.model_validate(resource_data)
+                if isinstance(resource_data, dict)
+                else MCPResource(uri=str(resource_data))
+            )
             resource_list += f"  • {resource.uri}: {resource.description}\n"
-            if context.get('verbose') and resource.mimeType:
+            if context.get("verbose") and resource.mimeType:
                 resource_list += f"    Type: {resource.mimeType}\n"
 
         return resource_list
@@ -444,12 +488,13 @@ class ToolCommandHandler(CommandHandler):
                     from flowlib.agent.components.task.execution.registry import (
                         tool_registry,
                     )
+
                     return tool_registry.contains(tool_name)
                 except Exception:
                     return False
         return False
 
-    async def handle(self, command: Command, context: Dict[str, Any]) -> Any:
+    async def handle(self, command: Command, context: dict[str, Any]) -> Any:
         """Handle tool-related commands."""
         if command.type == CommandType.SLASH and command.name == "tool":
             return await self._handle_tool_command(command.args, context)
@@ -458,17 +503,17 @@ class ToolCommandHandler(CommandHandler):
 
         return None
 
-    async def _handle_tool_command(self, args: List[str], context: Dict[str, Any]) -> str:
+    async def _handle_tool_command(self, args: list[str], context: dict[str, Any]) -> str:
         """Handle /tool subcommands."""
         if not args:
             return """**Tool Commands:**
   /tool list                    - List available tools
   /tool describe <tool_name>    - Describe a specific tool
   /tool execute <tool_name> <args> - Execute a tool with arguments
-  
+
 **Direct Tool Execution:**
   @<tool_name> <args>          - Execute tool directly
-  
+
 **Example:**
   @read file_path=/path/to/file.py
   @bash command="ls -la"
@@ -509,8 +554,8 @@ class ToolCommandHandler(CommandHandler):
                         tool_list += f"  • {tool_name}: Available\n"
                         continue
 
-                    description = getattr(metadata, 'description', 'No description available')
-                    category = getattr(metadata, 'category', 'general')
+                    description = getattr(metadata, "description", "No description available")
+                    category = getattr(metadata, "category", "general")
                     tool_list += f"  • {tool_name} ({category}): {description}\n"
                 except Exception:
                     tool_list += f"  • {tool_name}: Available\n"
@@ -539,9 +584,9 @@ class ToolCommandHandler(CommandHandler):
             # Note: category and version may not be available in current ToolMetadata
 
             # Check for additional metadata attributes if they exist
-            if hasattr(metadata, 'category') and metadata.category:
+            if hasattr(metadata, "category") and metadata.category:
                 description += f"Category: {metadata.category}\n"
-            if hasattr(metadata, 'version') and metadata.version:
+            if hasattr(metadata, "version") and metadata.version:
                 description += f"Version: {metadata.version}\n"
             description += "\n"
 
@@ -557,7 +602,7 @@ class ToolCommandHandler(CommandHandler):
         except Exception as e:
             return f"Error describing tool '{tool_name}': {str(e)}"
 
-    async def _execute_tool_directly(self, command_text: str, context: Dict[str, Any]) -> str:
+    async def _execute_tool_directly(self, command_text: str, context: dict[str, Any]) -> str:
         """Execute a tool directly from @tool_name syntax."""
         # Parse @tool_name param1=value1 param2=value2
         parts = command_text[1:].split(maxsplit=1)  # Remove @ and split
@@ -569,7 +614,7 @@ class ToolCommandHandler(CommandHandler):
 
         return await self._execute_tool(tool_name, args_text, context)
 
-    async def _execute_tool(self, tool_name: str, args_text: str, context: Dict[str, Any]) -> str:
+    async def _execute_tool(self, tool_name: str, args_text: str, context: dict[str, Any]) -> str:
         """Execute a tool with given arguments."""
         try:
             from flowlib.agent.components.task.execution.orchestration import (
@@ -594,14 +639,12 @@ class ToolCommandHandler(CommandHandler):
                 agent_id="repl-agent",
                 agent_persona="Interactive REPL Agent",
                 working_directory=".",
-                session_id="repl-session"
+                session_id="repl-session",
             )
 
             # Create and execute request
             request = ToolExecutionRequest(
-                tool_name=tool_name,
-                raw_parameters=args,
-                context=exec_context
+                tool_name=tool_name, raw_parameters=args, context=exec_context
             )
 
             response = await tool_orchestrator.execute_tool(request)
@@ -622,7 +665,7 @@ class ToolCommandHandler(CommandHandler):
         except Exception as e:
             return f"❌ Error executing tool '{tool_name}': {str(e)}"
 
-    def _parse_tool_args(self, args_text: str) -> Dict[str, Any]:
+    def _parse_tool_args(self, args_text: str) -> dict[str, Any]:
         """Parse tool arguments from string."""
         if not args_text.strip():
             return {}
@@ -688,7 +731,7 @@ class TodoCommandHandler(CommandHandler):
             return command.raw_input.startswith("#todo")
         return False
 
-    async def handle(self, command: Command, context: Dict[str, Any]) -> Any:
+    async def handle(self, command: Command, context: dict[str, Any]) -> Any:
         """Handle TODO-related commands."""
         if command.type == CommandType.SLASH:
             return await self._handle_todo_command(command.args, context)
@@ -697,7 +740,7 @@ class TodoCommandHandler(CommandHandler):
 
         return None
 
-    async def _handle_todo_command(self, args: List[str], context: Dict[str, Any]) -> str:
+    async def _handle_todo_command(self, args: list[str], context: dict[str, Any]) -> str:
         """Handle /todo subcommands."""
         agent = context["agent"] if "agent" in context else None
         if not agent or not hasattr(agent, "_engine"):
@@ -715,10 +758,10 @@ class TodoCommandHandler(CommandHandler):
   /todo progress                - Show progress summary
   /todo export [format]         - Export TODOs (json/markdown)
   /todo clear                   - Clear all TODOs
-  
+
 **Quick TODO Creation:**
   #todo <content>               - Quick add TODO
-  
+
 **Examples:**
   /todo add "Fix the music generation bug"
   #todo Review the generated album
@@ -758,7 +801,7 @@ class TodoCommandHandler(CommandHandler):
         else:
             return f"Unknown TODO subcommand: {subcommand}"
 
-    async def _quick_todo(self, command_text: str, context: Dict[str, Any]) -> str:
+    async def _quick_todo(self, command_text: str, context: dict[str, Any]) -> str:
         """Handle quick TODO creation with #todo."""
         agent = context["agent"] if "agent" in context else None
         if not agent or not hasattr(agent, "_engine"):
@@ -772,7 +815,7 @@ class TodoCommandHandler(CommandHandler):
         todo_manager = agent._engine.get_todo_manager()
         return await self._add_todo(todo_manager, content)
 
-    async def _list_todos(self, todo_manager: Optional[TodoManager]) -> str:
+    async def _list_todos(self, todo_manager: TodoManager | None) -> str:
         """List current TODOs."""
         if not todo_manager:
             return "TODO manager not available."
@@ -797,21 +840,20 @@ class TodoCommandHandler(CommandHandler):
                 TodoStatus.COMPLETED: "✅",
                 TodoStatus.FAILED: "❌",
                 TodoStatus.CANCELLED: "🚫",
-                TodoStatus.BLOCKED: "⛔"
+                TodoStatus.BLOCKED: "⛔",
             }
 
-            emoji = status_emoji[status] if status in status_emoji else '📋'
+            emoji = status_emoji[status] if status in status_emoji else "📋"
             result.append(f"## {emoji} {status.value.title().replace('_', ' ')}")
 
             for todo in sorted(todos, key=lambda t: t.created_at):
-                priority_emoji = {
-                    "urgent": "🚨",
-                    "high": "⚠️",
-                    "medium": "📋",
-                    "low": "📝"
-                }
+                priority_emoji = {"urgent": "🚨", "high": "⚠️", "medium": "📋", "low": "📝"}
 
-                emoji = priority_emoji[todo.priority.value] if todo.priority.value in priority_emoji else "📋"
+                emoji = (
+                    priority_emoji[todo.priority.value]
+                    if todo.priority.value in priority_emoji
+                    else "📋"
+                )
                 result.append(f"  {emoji} `{todo.id[:8]}` {todo.content}")
 
                 if todo.error_message:
@@ -819,7 +861,7 @@ class TodoCommandHandler(CommandHandler):
 
         return "\n".join(result)
 
-    async def _add_todo(self, todo_manager: Optional[TodoManager], content: str) -> str:
+    async def _add_todo(self, todo_manager: TodoManager | None, content: str) -> str:
         """Add a new TODO."""
         if not todo_manager:
             return "TODO manager not available."
@@ -841,7 +883,7 @@ class TodoCommandHandler(CommandHandler):
         else:
             return "❌ Failed to add TODO"
 
-    async def _complete_todo(self, todo_manager: Optional[TodoManager], todo_id: str) -> str:
+    async def _complete_todo(self, todo_manager: TodoManager | None, todo_id: str) -> str:
         """Mark TODO as completed."""
         if not todo_manager:
             return "TODO manager not available."
@@ -865,7 +907,9 @@ class TodoCommandHandler(CommandHandler):
         else:
             return f"❌ Failed to complete TODO: {todo_id}"
 
-    async def _fail_todo(self, todo_manager: Optional[TodoManager], todo_id: str, reason: str) -> str:
+    async def _fail_todo(
+        self, todo_manager: TodoManager | None, todo_id: str, reason: str
+    ) -> str:
         """Mark TODO as failed."""
         if not todo_manager:
             return "TODO manager not available."
@@ -889,7 +933,7 @@ class TodoCommandHandler(CommandHandler):
         else:
             return f"❌ Failed to mark TODO as failed: {todo_id}"
 
-    async def _delete_todo(self, todo_manager: Optional[TodoManager], todo_id: str) -> str:
+    async def _delete_todo(self, todo_manager: TodoManager | None, todo_id: str) -> str:
         """Delete a TODO."""
         if todo_manager is None:
             raise RuntimeError("TODO manager not available")
@@ -913,7 +957,7 @@ class TodoCommandHandler(CommandHandler):
         else:
             return f"❌ Failed to delete TODO: {todo_id}"
 
-    async def _show_progress(self, todo_manager: Optional[TodoManager]) -> str:
+    async def _show_progress(self, todo_manager: TodoManager | None) -> str:
         """Show progress summary."""
         if todo_manager is None:
             raise RuntimeError("TODO manager not available")
@@ -925,13 +969,13 @@ class TodoCommandHandler(CommandHandler):
         summary_obj = current_list.get_status_summary()
         # Convert to dict-like format for compatibility
         summary = {
-            'total': summary_obj.total,
-            'progress': summary_obj.completed / summary_obj.total if summary_obj.total > 0 else 0,
-            'completed': summary_obj.completed,
-            'pending': summary_obj.pending,
-            'in_progress': summary_obj.in_progress,
-            'failed': summary_obj.failed,
-            'blocked': summary_obj.blocked
+            "total": summary_obj.total,
+            "progress": summary_obj.completed / summary_obj.total if summary_obj.total > 0 else 0,
+            "completed": summary_obj.completed,
+            "pending": summary_obj.pending,
+            "in_progress": summary_obj.in_progress,
+            "failed": summary_obj.failed,
+            "blocked": summary_obj.blocked,
         }
 
         progress_bar = ""
@@ -942,18 +986,18 @@ class TodoCommandHandler(CommandHandler):
 
         return f"""**TODO Progress Summary:**
 
-📊 Progress: {progress_bar} {int((summary['progress'] if 'progress' in summary else 0) * 100)}%
+📊 Progress: {progress_bar} {int((summary["progress"] if "progress" in summary else 0) * 100)}%
 
 📈 **Statistics:**
-  • Total: {summary['total'] if 'total' in summary else 0}
-  • Completed: {summary['completed'] if 'completed' in summary else 0}
-  • In Progress: {summary['in_progress'] if 'in_progress' in summary else 0}
-  • Pending: {summary['pending'] if 'pending' in summary else 0}
-  • Failed: {summary['failed'] if 'failed' in summary else 0}
-  • Blocked: {summary['blocked'] if 'blocked' in summary else 0}
+  • Total: {summary["total"] if "total" in summary else 0}
+  • Completed: {summary["completed"] if "completed" in summary else 0}
+  • In Progress: {summary["in_progress"] if "in_progress" in summary else 0}
+  • Pending: {summary["pending"] if "pending" in summary else 0}
+  • Failed: {summary["failed"] if "failed" in summary else 0}
+  • Blocked: {summary["blocked"] if "blocked" in summary else 0}
 """
 
-    async def _export_todos(self, todo_manager: Optional[TodoManager], format_type: str) -> str:
+    async def _export_todos(self, todo_manager: TodoManager | None, format_type: str) -> str:
         """Export TODOs."""
         if todo_manager is None:
             raise RuntimeError("TODO manager not available")
@@ -968,7 +1012,7 @@ class TodoCommandHandler(CommandHandler):
         except ValueError as e:
             return f"❌ Export failed: {str(e)}"
 
-    async def _clear_todos(self, todo_manager: Optional[TodoManager]) -> str:
+    async def _clear_todos(self, todo_manager: TodoManager | None) -> str:
         """Clear all TODOs."""
         if todo_manager is None:
             raise RuntimeError("TODO manager not available")

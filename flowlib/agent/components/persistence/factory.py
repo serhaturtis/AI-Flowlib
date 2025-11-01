@@ -6,7 +6,7 @@ based on the specified type.
 """
 
 import logging
-from typing import Any, Optional, Union
+from typing import Any
 
 from flowlib.agent.core.errors import StatePersistenceError
 from flowlib.agent.models.config import StatePersistenceConfig
@@ -18,32 +18,33 @@ logger = logging.getLogger(__name__)
 
 
 def create_state_persister(
-    persister_type: str = "file",
-    **kwargs: Any
-) -> Optional[Union[FileStatePersister, ProviderStatePersister]]:
+    persister_type: str = "file", **kwargs: Any
+) -> FileStatePersister | ProviderStatePersister | None:
     """Create a state persister based on the specified type.
-    
+
     Args:
         persister_type: Type of persister to create ("file" or "provider")
         **kwargs: Additional arguments for the persister. Common parameters include:
             - base_path/directory: Path for file storage (for 'file' persister)
             - provider_name/provider_id: Provider name (for 'provider' persister)
-        
+
     Returns:
         Created state persister or None if type is invalid
-        
+
     Raises:
         StatePersistenceError: If there is an error creating the persister
     """
     try:
         # Handle the case where a StatePersistenceConfig is provided
-        if 'config' in kwargs and isinstance(kwargs['config'], StatePersistenceConfig):
-            config = kwargs['config']
+        if "config" in kwargs and isinstance(kwargs["config"], StatePersistenceConfig):
+            config = kwargs["config"]
             persister_type = config.persistence_type
 
             if persister_type == "file":
                 if not config.base_path:
-                    raise StatePersistenceError(message="Missing base_path for file state persister", operation="create")
+                    raise StatePersistenceError(
+                        message="Missing base_path for file state persister", operation="create"
+                    )
                 settings = FileStatePersisterSettings(directory=config.base_path)
                 return FileStatePersister(settings=settings)
             elif persister_type == "provider":
@@ -59,7 +60,9 @@ def create_state_persister(
             else:
                 directory = "./states"
             if not directory:
-                raise StatePersistenceError(message="Missing directory for file state persister", operation="create")
+                raise StatePersistenceError(
+                    message="Missing directory for file state persister", operation="create"
+                )
             settings = FileStatePersisterSettings(directory=directory)
             return FileStatePersister(settings=settings)
 
@@ -72,8 +75,7 @@ def create_state_persister(
                 provider_name = kwargs["provider_name"]
             if not provider_name:
                 raise StatePersistenceError(
-                    message="Provider name is required for provider persister",
-                    operation="create"
+                    message="Provider name is required for provider persister", operation="create"
                 )
             return ProviderStatePersister(provider_name=provider_name)
 
@@ -84,8 +86,4 @@ def create_state_persister(
     except Exception as e:
         error_msg = f"Error creating state persister: {str(e)}"
         logger.error(error_msg)
-        raise StatePersistenceError(
-            message=error_msg,
-            operation="create",
-            cause=e
-        )
+        raise StatePersistenceError(message=error_msg, operation="create", cause=e) from e

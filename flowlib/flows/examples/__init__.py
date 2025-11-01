@@ -15,5 +15,5 @@ __all__ = [
     "ATypedFlow",
     "AnotherTypedFlow",
     "CombinedFlow",
-    "run_examples"
+    "run_examples",
 ]

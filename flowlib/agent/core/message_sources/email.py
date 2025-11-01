@@ -4,7 +4,7 @@ import asyncio
 import logging
 import queue
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -46,7 +46,7 @@ class EmailMessageSource(MessageSource):
     def __init__(self, config: EmailMessageSourceConfig):
         super().__init__(config)
         self.config: EmailMessageSourceConfig = config
-        self._email_provider: Optional[Any] = None
+        self._email_provider: Any | None = None
 
     async def start(self, input_queue: queue.Queue[AgentMessage]) -> None:
         """Start monitoring email.
@@ -69,7 +69,7 @@ class EmailMessageSource(MessageSource):
         except Exception as e:
             raise ValueError(
                 f"Failed to load email provider '{self.config.email_provider_name}': {e}"
-            )
+) from e
 
         logger.info(
             f"Starting email source '{self.config.name}' "
@@ -87,9 +87,7 @@ class EmailMessageSource(MessageSource):
                 logger.debug(f"Email source '{self.config.name}' cancelled")
                 break
             except Exception as e:
-                logger.error(
-                    f"Error in email source '{self.config.name}': {e}", exc_info=True
-                )
+                logger.error(f"Error in email source '{self.config.name}': {e}", exc_info=True)
 
         logger.info(f"Email source '{self.config.name}' stopped")
 
@@ -126,9 +124,7 @@ class EmailMessageSource(MessageSource):
                 )
 
                 self._input_queue.put(message)
-                logger.info(
-                    f"Email source '{self.config.name}' sent message for: {email.subject}"
-                )
+                logger.info(f"Email source '{self.config.name}' sent message for: {email.subject}")
 
                 if self.config.mark_as_read:
                     await self._email_provider.mark_as_read(email.id, folder=self.config.folder)
@@ -151,6 +147,4 @@ class EmailMessageSource(MessageSource):
             try:
                 await self._email_provider.shutdown()
             except Exception as e:
-                logger.warning(
-                    f"Error shutting down email provider: {e}", exc_info=True
-                )
+                logger.warning(f"Error shutting down email provider: {e}", exc_info=True)

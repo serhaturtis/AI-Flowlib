@@ -1,42 +1,42 @@
 """
 User display interface for flow outputs.
 
-This module provides a standardized way for flows to specify how their 
+This module provides a standardized way for flows to specify how their
 outputs should be displayed to end users.
 """
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
 class UserDisplayable(Protocol):
     """Protocol for objects that can provide user-friendly display text.
-    
+
     Any flow output model that implements this protocol can control
     how its results are presented to the user.
-    
+
     Note: This is a Protocol, so classes just need to implement the
     get_user_display() method - no inheritance required.
     """
 
     def get_user_display(self) -> str:
         """Get user-friendly display text for this result.
-        
+
         Returns:
             Human-readable string describing the result
         """
         ...
 
 
-def extract_user_display(result_data: object) -> Optional[str]:
+def extract_user_display(result_data: object) -> str | None:
     """Extract user display text from any result object.
-    
+
     This function provides a standardized way to get user-friendly
     text from any flow result, regardless of its specific type.
-    
+
     Args:
         result_data: Result object from a flow execution
-        
+
     Returns:
         User-friendly display text, or None if not available
     """
@@ -58,8 +58,13 @@ def extract_user_display(result_data: object) -> Optional[str]:
 
     # Look for common display fields in order of preference
     display_fields = [
-        'user_display', 'display_text', 'summary',
-        'message', 'response', 'output', 'result'
+        "user_display",
+        "display_text",
+        "summary",
+        "message",
+        "response",
+        "output",
+        "result",
     ]
 
     for field in display_fields:
@@ -73,15 +78,15 @@ def extract_user_display(result_data: object) -> Optional[str]:
 
 def format_flow_output_for_user(flow_name: str, result_data: object, success: bool = True) -> str:
     """Format any flow output for user display with fallback formatting.
-    
+
     This is the main function used by the agent engine to format
     flow outputs in a standardized way.
-    
+
     Args:
         flow_name: Name of the flow that produced the result
         result_data: Result data from the flow
         success: Whether the flow execution was successful
-        
+
     Returns:
         User-friendly formatted output
     """
@@ -101,14 +106,14 @@ def format_flow_output_for_user(flow_name: str, result_data: object, success: bo
         return f"✅ {flow_name} completed successfully"
     else:
         # Extract error message from dict or object - strict access
-        error_msg = 'Unknown error'
+        error_msg = "Unknown error"
         if isinstance(result_data, dict):
-            if 'error' in result_data:
-                error_msg = str(result_data['error'])
+            if "error" in result_data:
+                error_msg = str(result_data["error"])
         else:
             # Try to extract error from object with error attribute
             try:
-                error_attr = getattr(result_data, 'error', None)
+                error_attr = getattr(result_data, "error", None)
                 if error_attr is not None:
                     error_msg = str(error_attr)
             except (AttributeError, TypeError):
@@ -123,9 +128,9 @@ def _format_shell_command_output(result_data: object, success: bool) -> str:
     else:
         return "Shell command executed"
 
-    command = data['command'] if 'command' in data else None
-    stdout = data['stdout'] if 'stdout' in data else ''
-    stderr = data['stderr'] if 'stderr' in data else ''
+    command = data["command"] if "command" in data else None
+    stdout = data["stdout"] if "stdout" in data else ""
+    stderr = data["stderr"] if "stderr" in data else ""
 
     if not command:
         return "Shell command executed"
@@ -145,11 +150,11 @@ def _format_conversation_output(result_data: object, success: bool) -> str:
     else:
         return "Conversation completed"
 
-    response = ''
-    if 'response' in data:
-        response = data['response']
-    elif 'message' in data:
-        response = data['message']
+    response = ""
+    if "response" in data:
+        response = data["response"]
+    elif "message" in data:
+        response = data["message"]
     if response:
         return response
 

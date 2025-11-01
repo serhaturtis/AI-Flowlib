@@ -9,7 +9,7 @@ import logging
 import os
 import tempfile
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ExecutionError
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 class AgentContextManager(AgentComponent):
     """Central context management system - THE context authority.
-    
+
     This component is the single source of truth for all agent context.
     All components receive unified ExecutionContext from this manager.
     No manual context assembly allowed anywhere else.
@@ -43,8 +43,8 @@ class AgentContextManager(AgentComponent):
         self._config = config
 
         # Core context state
-        self._session_context: Optional[SessionContext] = None
-        self._task_context: Optional[TaskContext] = None
+        self._session_context: SessionContext | None = None
+        self._task_context: TaskContext | None = None
         self._learning_context: LearningContext = LearningContext()
 
         # Auto-compaction tracking
@@ -62,13 +62,15 @@ class AgentContextManager(AgentComponent):
             await self._persist_session_context()
         logger.info("AgentContextManager shutdown")
 
-    async def initialize_session(self,
-                                session_id: str,
-                                agent_name: str,
-                                agent_persona: str,
-                                agent_role: str,
-                                working_directory: str,
-                                user_id: Optional[str] = None) -> None:
+    async def initialize_session(
+        self,
+        session_id: str,
+        agent_name: str,
+        agent_persona: str,
+        agent_role: str,
+        working_directory: str,
+        user_id: str | None = None,
+    ) -> None:
         """Initialize a new session context."""
 
         # Scan workspace if enabled
@@ -86,7 +88,7 @@ class AgentContextManager(AgentComponent):
             current_message="",
             conversation_history=[],
             user_profile=UserProfile(),
-            workspace_knowledge=workspace_knowledge
+            workspace_knowledge=workspace_knowledge,
         )
 
         logger.info(f"Session context initialized: {session_id}")
@@ -98,10 +100,7 @@ class AgentContextManager(AgentComponent):
 
         self._session_context.current_message = task_description
         self._task_context = TaskContext(
-            description=task_description,
-            cycle=1,
-            todos=[],
-            execution_results=[]
+            description=task_description, cycle=1, todos=[], execution_results=[]
         )
 
         # Add to conversation history
@@ -114,11 +113,20 @@ class AgentContextManager(AgentComponent):
 
         logger.info(f"Task context started: {task_description[:50]}...")
 
-    async def create_execution_context(self,
-                                     component_type: Literal["task_generation", "task_decomposition", "task_execution", "task_debriefing", "task_planning", "task_evaluation"],
-                                     **component_config: Any) -> ExecutionContext:
+    async def create_execution_context(
+        self,
+        component_type: Literal[
+            "task_generation",
+            "task_decomposition",
+            "task_execution",
+            "task_debriefing",
+            "task_planning",
+            "task_evaluation",
+        ],
+        **component_config: Any,
+    ) -> ExecutionContext:
         """Create execution context for component - THE context creation method.
-        
+
         This is the ONLY way components get context. No manual assembly allowed.
         """
 
@@ -145,19 +153,20 @@ class AgentContextManager(AgentComponent):
             session=self._session_context,
             task=self._task_context,
             component=component_context,
-            learning=self._learning_context
+            learning=self._learning_context,
         )
 
         # Update token usage for auto-compaction
         self._token_usage = execution_context.token_count
 
-        logger.debug(f"Created execution context for {component_type} (tokens: {self._token_usage})")
+        logger.debug(
+            f"Created execution context for {component_type} (tokens: {self._token_usage})"
+        )
         return execution_context
 
-    async def update_from_execution(self,
-                                   component_type: str,
-                                   execution_result: Any,
-                                   success: bool) -> None:
+    async def update_from_execution(
+        self, component_type: str, execution_result: Any, success: bool
+    ) -> None:
         """Learn from execution results to improve future context."""
 
         # Update learning metrics
@@ -171,7 +180,7 @@ class AgentContextManager(AgentComponent):
                 "component": component_type,
                 "result": str(execution_result)[:500],  # Truncate for storage
                 "success": success,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
             self._task_context.execution_results.append(result_summary)
 
@@ -202,7 +211,9 @@ class AgentContextManager(AgentComponent):
     async def _auto_compact_if_needed(self) -> None:
         """Auto-compact context when approaching token limits."""
         if self._token_usage > self._config.auto_compaction_threshold:
-            logger.info(f"Auto-compacting context (tokens: {self._token_usage} > {self._config.auto_compaction_threshold})")
+            logger.info(
+                f"Auto-compacting context (tokens: {self._token_usage} > {self._config.auto_compaction_threshold})"
+            )
 
             if self._session_context and len(self._session_context.conversation_history) > 10:
                 # Keep recent messages, summarize older ones
@@ -214,7 +225,10 @@ class AgentContextManager(AgentComponent):
                 for msg in old_messages:
                     summary_parts.append(f"{msg.role}: {msg.content[:100]}...")
 
-                summary = f"Previous conversation summary ({len(old_messages)} messages):\n" + "\n".join(summary_parts)
+                summary = (
+                    f"Previous conversation summary ({len(old_messages)} messages):\n"
+                    + "\n".join(summary_parts)
+                )
 
                 # Update session context
                 self._session_context.conversation_summary = summary
@@ -231,7 +245,9 @@ class AgentContextManager(AgentComponent):
         if len(self._session_context.conversation_history) > max_history:
             # Keep most recent messages
             trimmed_count = len(self._session_context.conversation_history) - max_history
-            self._session_context.conversation_history = self._session_context.conversation_history[-max_history:]
+            self._session_context.conversation_history = self._session_context.conversation_history[
+                -max_history:
+            ]
 
             logger.debug(f"Trimmed {trimmed_count} messages from conversation history")
 
@@ -242,7 +258,10 @@ class AgentContextManager(AgentComponent):
         # Find existing pattern or create new one
         existing_pattern = None
         for pattern in self._learning_context.successful_patterns:
-            if pattern.pattern_type == component_type and pattern.description == pattern_description:
+            if (
+                pattern.pattern_type == component_type
+                and pattern.description == pattern_description
+            ):
                 existing_pattern = pattern
                 break
 
@@ -254,12 +273,15 @@ class AgentContextManager(AgentComponent):
                 pattern_type=component_type,
                 description=pattern_description,
                 success_count=1,
-                last_used=datetime.now()
+                last_used=datetime.now(),
             )
             self._learning_context.successful_patterns.append(new_pattern)
 
         # Update user preferences based on patterns
-        if existing_pattern and existing_pattern.success_count >= self._config.pattern_learning_threshold:
+        if (
+            existing_pattern
+            and existing_pattern.success_count >= self._config.pattern_learning_threshold
+        ):
             preference_key = f"preferred_{component_type}_pattern"
             self._learning_context.user_preferences[preference_key] = pattern_description
 
@@ -274,39 +296,52 @@ class AgentContextManager(AgentComponent):
             files = []
             directories = []
 
-            for root, dirs, filenames in os.walk(working_directory):
+            for _root, dirs, filenames in os.walk(working_directory):
                 # Skip hidden directories and common build/cache directories
-                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in [
-                    'node_modules', '__pycache__', 'target', 'build', 'dist', '.git'
-                ]]
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if not d.startswith(".")
+                    and d not in ["node_modules", "__pycache__", "target", "build", "dist", ".git"]
+                ]
 
                 directories.extend(dirs)
-                files.extend([f for f in filenames if not f.startswith('.')])
+                files.extend([f for f in filenames if not f.startswith(".")])
 
             # Detect languages by file extensions
-            extensions = {os.path.splitext(f)[1].lower() for f in files if '.' in f}
+            extensions = {os.path.splitext(f)[1].lower() for f in files if "." in f}
 
             language_map = {
-                '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
-                '.java': 'java', '.cpp': 'cpp', '.c': 'c', '.rs': 'rust',
-                '.go': 'go', '.rb': 'ruby', '.php': 'php', '.swift': 'swift',
-                '.kt': 'kotlin', '.scala': 'scala', '.sh': 'shell'
+                ".py": "python",
+                ".js": "javascript",
+                ".ts": "typescript",
+                ".java": "java",
+                ".cpp": "cpp",
+                ".c": "c",
+                ".rs": "rust",
+                ".go": "go",
+                ".rb": "ruby",
+                ".php": "php",
+                ".swift": "swift",
+                ".kt": "kotlin",
+                ".scala": "scala",
+                ".sh": "shell",
             }
 
             detected_languages = [language_map[ext] for ext in extensions if ext in language_map]
 
             # Detect project type based on key files
             project_indicators = {
-                'package.json': 'nodejs',
-                'requirements.txt': 'python',
-                'pyproject.toml': 'python',
-                'setup.py': 'python',
-                'pom.xml': 'java',
-                'build.gradle': 'java',
-                'Cargo.toml': 'rust',
-                'go.mod': 'go',
-                'Gemfile': 'ruby',
-                'composer.json': 'php'
+                "package.json": "nodejs",
+                "requirements.txt": "python",
+                "pyproject.toml": "python",
+                "setup.py": "python",
+                "pom.xml": "java",
+                "build.gradle": "java",
+                "Cargo.toml": "rust",
+                "go.mod": "go",
+                "Gemfile": "ruby",
+                "composer.json": "php",
             }
 
             detected_project_type = None
@@ -323,10 +358,10 @@ class AgentContextManager(AgentComponent):
 
             # Create file structure overview
             file_structure = {
-                'total_files': len(files),
-                'directories': len(set(directories)),
-                'languages_detected': len(detected_languages),
-                'project_type': detected_project_type
+                "total_files": len(files),
+                "directories": len(set(directories)),
+                "languages_detected": len(detected_languages),
+                "project_type": detected_project_type,
             }
 
             # Create WorkspaceKnowledge with all data at once (required for frozen models)
@@ -335,10 +370,12 @@ class AgentContextManager(AgentComponent):
                 languages=detected_languages,
                 dependencies=detected_dependencies,
                 common_patterns=detected_patterns,
-                file_structure=file_structure
+                file_structure=file_structure,
             )
 
-            logger.debug(f"Workspace scan complete: {detected_project_type}, {len(detected_languages)} languages")
+            logger.debug(
+                f"Workspace scan complete: {detected_project_type}, {len(detected_languages)} languages"
+            )
 
             return knowledge
 
@@ -346,66 +383,67 @@ class AgentContextManager(AgentComponent):
             logger.warning(f"Workspace scan failed: {e}")
             return WorkspaceKnowledge()
 
-    async def _extract_dependencies(self, working_directory: str, files: List[str]) -> List[str]:
+    async def _extract_dependencies(self, working_directory: str, files: list[str]) -> list[str]:
         """Extract project dependencies from common files."""
         dependencies = []
 
         try:
             # Python dependencies
-            if 'requirements.txt' in files:
-                req_path = os.path.join(working_directory, 'requirements.txt')
-                with open(req_path, 'r') as f:
+            if "requirements.txt" in files:
+                req_path = os.path.join(working_directory, "requirements.txt")
+                with open(req_path) as f:
                     for line in f:
                         line = line.strip()
-                        if line and not line.startswith('#'):
+                        if line and not line.startswith("#"):
                             # Extract package name (before version specifiers)
-                            pkg_name = line.split('==')[0].split('>=')[0].split('<=')[0].split('~=')[0]
+                            pkg_name = (
+                                line.split("==")[0].split(">=")[0].split("<=")[0].split("~=")[0]
+                            )
                             dependencies.append(pkg_name.strip())
 
             # Node.js dependencies
-            if 'package.json' in files:
-                pkg_path = os.path.join(working_directory, 'package.json')
-                with open(pkg_path, 'r') as f:
+            if "package.json" in files:
+                pkg_path = os.path.join(working_directory, "package.json")
+                with open(pkg_path) as f:
                     pkg_data = json.load(f)
-                    if 'dependencies' in pkg_data:
-                        dependencies.extend(pkg_data['dependencies'].keys())
-                    if 'devDependencies' in pkg_data:
-                        dependencies.extend(pkg_data['devDependencies'].keys())
+                    if "dependencies" in pkg_data:
+                        dependencies.extend(pkg_data["dependencies"].keys())
+                    if "devDependencies" in pkg_data:
+                        dependencies.extend(pkg_data["devDependencies"].keys())
 
         except Exception as e:
             logger.debug(f"Could not extract dependencies: {e}")
 
         return dependencies[:20]  # Limit to first 20 for context size
 
-    def _identify_code_patterns(self, files: List[str], languages: List[str]) -> List[str]:
+    def _identify_code_patterns(self, files: list[str], languages: list[str]) -> list[str]:
         """Identify common code patterns based on file names and languages."""
         patterns = []
 
         # Framework patterns
-        if 'python' in languages:
-            if any(f.startswith('test_') or f.endswith('_test.py') for f in files):
-                patterns.append('pytest_testing')
-            if 'manage.py' in files:
-                patterns.append('django_project')
-            if 'app.py' in files or 'main.py' in files:
-                patterns.append('python_application')
+        if "python" in languages:
+            if any(f.startswith("test_") or f.endswith("_test.py") for f in files):
+                patterns.append("pytest_testing")
+            if "manage.py" in files:
+                patterns.append("django_project")
+            if "app.py" in files or "main.py" in files:
+                patterns.append("python_application")
 
-        if 'javascript' in languages or 'typescript' in languages:
-            if 'package.json' in files:
-                patterns.append('npm_project')
-            if any(f.endswith('.test.js') or f.endswith('.spec.js') for f in files):
-                patterns.append('javascript_testing')
+        if "javascript" in languages or "typescript" in languages:
+            if "package.json" in files:
+                patterns.append("npm_project")
+            if any(f.endswith(".test.js") or f.endswith(".spec.js") for f in files):
+                patterns.append("javascript_testing")
 
         # Common file organization patterns
-        if any('src' in f for f in files):
-            patterns.append('src_directory_structure')
-        if any('test' in f.lower() for f in files):
-            patterns.append('testing_included')
-        if 'README.md' in files or 'readme.md' in files:
-            patterns.append('documented_project')
+        if any("src" in f for f in files):
+            patterns.append("src_directory_structure")
+        if any("test" in f.lower() for f in files):
+            patterns.append("testing_included")
+        if "README.md" in files or "readme.md" in files:
+            patterns.append("documented_project")
 
         return patterns
-
 
     async def _persist_session_context(self) -> None:
         """Persist session context to storage."""
@@ -415,14 +453,13 @@ class AgentContextManager(AgentComponent):
         try:
             # Simple file-based persistence (can be enhanced with database later)
             session_file = os.path.join(
-                tempfile.gettempdir(),
-                f"flowlib_session_{self._session_context.session_id}.json"
+                tempfile.gettempdir(), f"flowlib_session_{self._session_context.session_id}.json"
             )
 
             # Serialize session context
-            session_data = self._session_context.model_dump(mode='json')
+            session_data = self._session_context.model_dump(mode="json")
 
-            with open(session_file, 'w') as f:
+            with open(session_file, "w") as f:
                 json.dump(session_data, f, indent=2, default=str)
 
             logger.debug(f"Session context persisted to {session_file}")
@@ -436,15 +473,12 @@ class AgentContextManager(AgentComponent):
             return False
 
         try:
-            session_file = os.path.join(
-                tempfile.gettempdir(),
-                f"flowlib_session_{session_id}.json"
-            )
+            session_file = os.path.join(tempfile.gettempdir(), f"flowlib_session_{session_id}.json")
 
             if not os.path.exists(session_file):
                 return False
 
-            with open(session_file, 'r') as f:
+            with open(session_file) as f:
                 session_data = json.load(f)
 
             # Reconstruct session context
@@ -458,22 +492,23 @@ class AgentContextManager(AgentComponent):
             return False
 
     @property
-    def current_session(self) -> Optional[SessionContext]:
+    def current_session(self) -> SessionContext | None:
         """Get current session context."""
         return self._session_context
 
     @property
-    def current_task(self) -> Optional[TaskContext]:
+    def current_task(self) -> TaskContext | None:
         """Get current task context."""
         return self._task_context
 
     @property
-    def learning_stats(self) -> Dict[str, Any]:
+    def learning_stats(self) -> dict[str, Any]:
         """Get learning statistics."""
         return {
             "total_executions": self._learning_context.total_executions,
             "successful_executions": self._learning_context.successful_executions,
-            "success_rate": self._learning_context.successful_executions / max(self._learning_context.total_executions, 1),
+            "success_rate": self._learning_context.successful_executions
+            / max(self._learning_context.total_executions, 1),
             "patterns_learned": len(self._learning_context.successful_patterns),
-            "preferences_learned": len(self._learning_context.user_preferences)
+            "preferences_learned": len(self._learning_context.user_preferences),
         }

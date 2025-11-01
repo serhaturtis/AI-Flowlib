@@ -7,7 +7,7 @@ for Pinecone, a managed vector database service.
 import asyncio
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from pydantic import Field
 
@@ -43,36 +43,50 @@ else:
         pinecone = None  # type: ignore
         PineconeClient = None  # type: ignore
         Index = None  # type: ignore
-        logger.warning("pinecone-client package not found. Install with 'pip install pinecone-client'")
+        logger.warning(
+            "pinecone-client package not found. Install with 'pip install pinecone-client'"
+        )
 
 
 class PineconeProviderSettings(VectorDBProviderSettings):
     """Settings for Pinecone provider - direct inheritance, only Pinecone-specific fields.
-    
+
     Pinecone is a cloud-managed vector database that requires:
     1. API key for authentication
-    2. Environment specification 
+    2. Environment specification
     3. Index name for the vector index
     4. Optional namespace for partitioning
-    
+
     No host/port needed - it's cloud-managed.
     """
 
     # Override parent fields with Pinecone-specific defaults
-    api_key: Optional[str] = Field(default="", description="Pinecone API key (e.g., 'pc-ABC123...', get from Pinecone console)")
-    index_name: str = Field(default="my-index", description="Name of the Pinecone index (e.g., 'embeddings', 'knowledge-base')")
-    metric: str = Field(default="cosine", description="Distance metric: 'cosine', 'dotproduct', 'euclidean'")
+    api_key: str | None = Field(
+        default="", description="Pinecone API key (e.g., 'pc-ABC123...', get from Pinecone console)"
+    )
+    index_name: str = Field(
+        default="my-index",
+        description="Name of the Pinecone index (e.g., 'embeddings', 'knowledge-base')",
+    )
+    metric: str = Field(
+        default="cosine", description="Distance metric: 'cosine', 'dotproduct', 'euclidean'"
+    )
 
     # Pinecone-specific fields
-    environment: str = Field(default="us-east1-gcp", description="Pinecone environment (e.g., 'us-east1-gcp', 'eu-west1-gcp')")
-    namespace: Optional[str] = Field(default="", description="Optional namespace for partitioning")
+    environment: str = Field(
+        default="us-east1-gcp",
+        description="Pinecone environment (e.g., 'us-east1-gcp', 'eu-west1-gcp')",
+    )
+    namespace: str | None = Field(default="", description="Optional namespace for partitioning")
     pod_type: str = Field(default="p1.x1", description="Pinecone pod type")
 
     # Provider integration settings
-    embedding_provider_name: Optional[str] = Field(default=None, description="Name of the embedding provider to use")
+    embedding_provider_name: str | None = Field(
+        default=None, description="Name of the embedding provider to use"
+    )
 
 
-SettingsType = TypeVar('SettingsType', bound=PineconeProviderSettings)
+SettingsType = TypeVar("SettingsType", bound=PineconeProviderSettings)
 
 
 @provider(provider_type="vector_db", name="pinecone", settings_class=PineconeProviderSettings)
@@ -82,7 +96,13 @@ class PineconeProvider(VectorDBProvider):
     Manages vector storage and retrieval using Pinecone.
     """
 
-    def __init__(self, name: str, provider_type: str, settings: Optional[PineconeProviderSettings] = None, **kwargs: Any):
+    def __init__(
+        self,
+        name: str,
+        provider_type: str,
+        settings: PineconeProviderSettings | None = None,
+        **kwargs: Any,
+    ):
         """Initialize Pinecone provider.
 
         Args:
@@ -93,15 +113,19 @@ class PineconeProvider(VectorDBProvider):
         """
         super().__init__(name=name, provider_type=provider_type, settings=settings, **kwargs)
         if not isinstance(self._settings, PineconeProviderSettings):
-            raise TypeError(f"settings must be a PineconeProviderSettings instance, got {type(self._settings)}")
-        self._settings: PineconeProviderSettings = self._settings  # Override type annotation for proper type checking
+            raise TypeError(
+                f"settings must be a PineconeProviderSettings instance, got {type(self._settings)}"
+            )
+        self._settings: PineconeProviderSettings = (
+            self._settings
+        )  # Override type annotation for proper type checking
         self._client = None
-        self._indexes: Dict[str, Any] = {}  # Cache for index objects
-        self._embedding_provider: Optional[EmbeddingProvider[Any]] = None
+        self._indexes: dict[str, Any] = {}  # Cache for index objects
+        self._embedding_provider: EmbeddingProvider[Any] | None = None
 
     async def initialize(self) -> None:
         """Initialize Pinecone client, index, and embedding provider.
-        
+
         Raises:
             ProviderError: If initialization fails
         """
@@ -114,21 +138,21 @@ class PineconeProvider(VectorDBProvider):
                     error_type="ImportError",
                     error_location="initialize",
                     component=self.name,
-                    operation="package_check"
+                    operation="package_check",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="package_check",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         try:
             # Initialize Pinecone client
             # For the modern Pinecone client, environment is usually not needed
             # as it's determined from the API key. For local development, use host parameter.
-            client_kwargs: Dict[str, Any] = {"api_key": self._settings.api_key or ""}
+            client_kwargs: dict[str, Any] = {"api_key": self._settings.api_key or ""}
             if self._settings.host:
                 client_kwargs["host"] = self._settings.host
             self._client = PineconeClient(**client_kwargs)
@@ -138,7 +162,7 @@ class PineconeProvider(VectorDBProvider):
             try:
                 existing_indexes = self._client.list_indexes()
                 # Handle both real Pinecone response and mock objects
-                if hasattr(existing_indexes, 'names') and callable(existing_indexes.names):
+                if hasattr(existing_indexes, "names") and callable(existing_indexes.names):
                     index_names = existing_indexes.names()
                     # Safely handle the length calculation for mocks
                     try:
@@ -158,16 +182,16 @@ class PineconeProvider(VectorDBProvider):
                         error_type="ConnectionError",
                         error_location="initialize",
                         component=self.name,
-                        operation="client_connection"
+                        operation="client_connection",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="vector",
                         operation="client_connection",
-                        retry_count=0
+                        retry_count=0,
                     ),
-                    cause=e
-                )
+                    cause=e,
+) from e
 
             # Get and initialize the embedding provider if specified
             if self._settings.embedding_provider_name:
@@ -181,14 +205,14 @@ class PineconeProvider(VectorDBProvider):
                             error_type="ProviderNotFoundError",
                             error_location="initialize",
                             component=self.name,
-                            operation="embedding_provider_lookup"
+                            operation="embedding_provider_lookup",
                         ),
                         provider_context=ProviderErrorContext(
                             provider_name=self.name,
                             provider_type="vector",
                             operation="embedding_provider_lookup",
-                            retry_count=0
-                        )
+                            retry_count=0,
+                        ),
                     )
                 # Ensure it's initialized
                 if not self._embedding_provider.initialized:
@@ -209,16 +233,16 @@ class PineconeProvider(VectorDBProvider):
                     error_type="InitializationError",
                     error_location="initialize",
                     component=self.name,
-                    operation="provider_initialization"
+                    operation="provider_initialization",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="provider_initialization",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def shutdown(self) -> None:
         """Close Pinecone connection."""
@@ -228,21 +252,23 @@ class PineconeProvider(VectorDBProvider):
         self._initialized = False
         logger.info("Closed Pinecone connection")
 
-    async def create_collection(self,
-                              collection_name: Optional[str] = None,
-                              dimension: Optional[int] = None,
-                              metric: Optional[str] = None) -> None:
+    async def create_collection(
+        self,
+        collection_name: str | None = None,
+        dimension: int | None = None,
+        metric: str | None = None,
+    ) -> None:
         """Create a collection (namespace) in Pinecone.
-        
+
         Note: In Pinecone, collections are implemented as namespaces
         within an index. This method doesn't actually create a new
         collection since Pinecone namespaces are created implicitly.
-        
+
         Args:
             collection_name: Collection name (namespace)
             dimension: Vector dimension (ignored, set at index level)
             metric: Distance metric (ignored, set at index level)
-            
+
         Raises:
             ProviderError: If creation fails
         """
@@ -251,14 +277,16 @@ class PineconeProvider(VectorDBProvider):
 
         # Pinecone namespaces are created implicitly when inserting vectors
         # Nothing to do here, but we'll log the intended namespace
-        logger.info(f"Pinecone namespace '{collection_name}' will be created when vectors are inserted")
+        logger.info(
+            f"Pinecone namespace '{collection_name}' will be created when vectors are inserted"
+        )
 
     async def delete_collection(self, collection_name: str) -> None:
         """Delete a collection (namespace) from Pinecone.
-        
+
         Args:
             collection_name: Collection name (namespace)
-            
+
         Raises:
             ProviderError: If deletion fails
         """
@@ -270,10 +298,7 @@ class PineconeProvider(VectorDBProvider):
             index = await self._get_index(self._settings.index_name)
 
             # Delete all vectors in the namespace
-            index.delete(
-                delete_all=True,
-                namespace=collection_name
-            )
+            index.delete(delete_all=True, namespace=collection_name)
 
             logger.info(f"Deleted all vectors in Pinecone namespace: {collection_name}")
 
@@ -285,30 +310,29 @@ class PineconeProvider(VectorDBProvider):
                     error_type="DeletionError",
                     error_location="delete_collection",
                     component=self.name,
-                    operation="namespace_deletion"
+                    operation="namespace_deletion",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="namespace_deletion",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-
-    async def get_vectors(self,
-                         ids: List[str],
-                         collection_name: Optional[str] = None) -> List[Tuple[List[float], VectorMetadata]]:
+    async def get_vectors(
+        self, ids: list[str], collection_name: str | None = None
+    ) -> list[tuple[list[float], VectorMetadata]]:
         """Get vectors by ID from Pinecone.
-        
+
         Args:
             ids: List of vector IDs
             collection_name: Optional collection name (namespace)
-            
+
         Returns:
             List of (vector, metadata) tuples
-            
+
         Raises:
             ProviderError: If retrieval fails
         """
@@ -352,34 +376,35 @@ class PineconeProvider(VectorDBProvider):
                     error_type="RetrievalError",
                     error_location="get_vectors",
                     component=self.name,
-                    operation="vector_retrieval"
+                    operation="vector_retrieval",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="vector_retrieval",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-
-    async def search_by_vector(self,
-                             vector: List[float],
-                             k: int = 10,
-                             collection_name: Optional[str] = None,
-                             filter: Optional[Dict[str, Any]] = None) -> List[SimilaritySearchResult]:
+    async def search_by_vector(
+        self,
+        vector: list[float],
+        k: int = 10,
+        collection_name: str | None = None,
+        filter: dict[str, Any] | None = None,
+    ) -> list[SimilaritySearchResult]:
         """Search for similar vectors by vector.
-        
+
         Args:
             vector: Query vector
             k: Number of results to return
             collection_name: Optional collection name (namespace)
             filter: Optional metadata filter
-            
+
         Returns:
             List of search results
-            
+
         Raises:
             ProviderError: If search fails
         """
@@ -400,7 +425,7 @@ class PineconeProvider(VectorDBProvider):
                 namespace=namespace,
                 filter=filter,
                 include_metadata=True,
-                include_values=False  # Don't include vectors in results by default
+                include_values=False,  # Don't include vectors in results by default
             )
 
             # Parse results
@@ -412,10 +437,7 @@ class PineconeProvider(VectorDBProvider):
 
                 # Create search result
                 search_result = SimilaritySearchResult(
-                    id=match.id,
-                    vector=match.values,
-                    metadata=metadata_dict,
-                    score=match.score
+                    id=match.id, vector=match.values, metadata=metadata_dict, score=match.score
                 )
 
                 search_results.append(search_result)
@@ -430,23 +452,25 @@ class PineconeProvider(VectorDBProvider):
                     error_type="SearchError",
                     error_location="search_by_vector",
                     component=self.name,
-                    operation="vector_search"
+                    operation="vector_search",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="vector_search",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def search_by_id(self,
-                          id: str,
-                          top_k: int = 10,
-                          filter: Optional[Dict[str, Any]] = None,
-                          include_vectors: bool = False,
-                          index_name: Optional[str] = None) -> List[VectorSearchResult]:
+    async def search_by_id(
+        self,
+        id: str,
+        top_k: int = 10,
+        filter: dict[str, Any] | None = None,
+        include_vectors: bool = False,
+        index_name: str | None = None,
+    ) -> list[VectorSearchResult]:
         """Search for similar vectors by ID.
 
         Args:
@@ -479,7 +503,7 @@ class PineconeProvider(VectorDBProvider):
                 top_k=top_k,
                 include_values=include_vectors,
                 include_metadata=True,
-                filter=filter
+                filter=filter,
             )
 
             # Parse results
@@ -494,7 +518,7 @@ class PineconeProvider(VectorDBProvider):
                     id=match.id,
                     score=match.score,
                     metadata=metadata_dict,
-                    vector=match.values if include_vectors else None
+                    vector=match.values if include_vectors else None,
                 )
 
                 search_results.append(search_result)
@@ -509,31 +533,30 @@ class PineconeProvider(VectorDBProvider):
                     error_type="SearchError",
                     error_location="search_by_id",
                     component=self.name,
-                    operation="vector_search_by_id"
+                    operation="vector_search_by_id",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="vector_search_by_id",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def search_by_metadata(self,
-                               filter: Dict[str, Any],
-                               k: int = 10,
-                               collection_name: Optional[str] = None) -> List[SimilaritySearchResult]:
+    async def search_by_metadata(
+        self, filter: dict[str, Any], k: int = 10, collection_name: str | None = None
+    ) -> list[SimilaritySearchResult]:
         """Search for vectors by metadata.
-        
+
         Args:
             filter: Metadata filter
             k: Number of results to return
             collection_name: Optional collection name (namespace)
-            
+
         Returns:
             List of search results
-            
+
         Raises:
             ProviderError: If search fails
         """
@@ -562,7 +585,7 @@ class PineconeProvider(VectorDBProvider):
                 top_k=k,
                 include_values=True,
                 include_metadata=True,
-                filter=filter
+                filter=filter,
             )
 
             # Parse results
@@ -574,10 +597,7 @@ class PineconeProvider(VectorDBProvider):
 
                 # Create search result - distance is not meaningful here
                 search_result = SimilaritySearchResult(
-                    id=match.id,
-                    vector=match.values,
-                    metadata=metadata_dict,
-                    score=0.0
+                    id=match.id, vector=match.values, metadata=metadata_dict, score=0.0
                 )
 
                 search_results.append(search_result)
@@ -592,26 +612,26 @@ class PineconeProvider(VectorDBProvider):
                     error_type="SearchError",
                     error_location="search_by_metadata",
                     component=self.name,
-                    operation="metadata_search"
+                    operation="metadata_search",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="metadata_search",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def count_vectors(self, collection_name: Optional[str] = None) -> int:
+    async def count_vectors(self, collection_name: str | None = None) -> int:
         """Count vectors in a collection.
-        
+
         Args:
             collection_name: Optional collection name (namespace)
-            
+
         Returns:
             Number of vectors
-            
+
         Raises:
             ProviderError: If count fails
         """
@@ -645,33 +665,35 @@ class PineconeProvider(VectorDBProvider):
                     error_type="CountError",
                     error_location="count_vectors",
                     component=self.name,
-                    operation="vector_count"
+                    operation="vector_count",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="vector_count",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def embed_and_search(self,
-                               query_text: str,
-                               k: int = 10,
-                               collection_name: Optional[str] = None,
-                               filter: Optional[Dict[str, Any]] = None) -> List[SimilaritySearchResult]:
+    async def embed_and_search(
+        self,
+        query_text: str,
+        k: int = 10,
+        collection_name: str | None = None,
+        filter: dict[str, Any] | None = None,
+    ) -> list[SimilaritySearchResult]:
         """Generate embedding for query text and search Pinecone.
-        
+
         Args:
             query_text: Text to search for
             k: Number of results to return
             collection_name: Optional collection name (namespace)
             filter: Metadata filter
-            
+
         Returns:
             List of search results
-            
+
         Raises:
             ProviderError: If embedding or search fails
         """
@@ -683,14 +705,14 @@ class PineconeProvider(VectorDBProvider):
                     error_type="ProviderNotAvailableError",
                     error_location="embed_and_search",
                     component=self.name,
-                    operation="embedding_provider_check"
+                    operation="embedding_provider_check",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="embedding_provider_check",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         # Generate embedding for the query text
@@ -704,16 +726,16 @@ class PineconeProvider(VectorDBProvider):
                         error_type="EmbeddingError",
                         error_location="embed_and_search",
                         component=self.name,
-                        operation="embedding_generation"
+                        operation="embedding_generation",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="vector",
                         operation="embedding_generation",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
-            query_vector = embedding_list[0] # Use the first (only) embedding
+            query_vector = embedding_list[0]  # Use the first (only) embedding
         except Exception as e:
             raise ProviderError(
                 message=f"Failed to generate query embedding: {e}",
@@ -722,34 +744,31 @@ class PineconeProvider(VectorDBProvider):
                     error_type="EmbeddingError",
                     error_location="embed_and_search",
                     component=self.name,
-                    operation="query_embedding"
+                    operation="query_embedding",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="query_embedding",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
         # Perform search using the generated vector
         return await self.search_by_vector(
-            vector=query_vector,
-            k=k,
-            collection_name=collection_name,
-            filter=filter
+            vector=query_vector, k=k, collection_name=collection_name, filter=filter
         )
 
     async def _get_index(self, index_name: str) -> Index:
         """Get a Pinecone index instance, creating it if needed in cache.
-        
+
         Args:
             index_name: Name of the index
-            
+
         Returns:
             Pinecone index instance
-            
+
         Raises:
             ProviderError: If provider not initialized
         """
@@ -761,14 +780,14 @@ class PineconeProvider(VectorDBProvider):
                     error_type="NotInitializedError",
                     error_location="_get_index",
                     component=self.name,
-                    operation="index_access"
+                    operation="index_access",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="index_access",
-                    retry_count=0
-                )
+                    retry_count=0,
+                ),
             )
 
         if index_name not in self._indexes:
@@ -780,25 +799,27 @@ class PineconeProvider(VectorDBProvider):
                         error_type="ClientNotInitializedError",
                         error_location="_get_index",
                         component="pinecone_provider",
-                        operation="get_index"
+                        operation="get_index",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="vector_db",
                         operation="get_index",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
             self._indexes[index_name] = self._client.Index(index_name)
 
         return self._indexes[index_name]
 
-    def _convert_filter_conditions(self, filter_conditions: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _convert_filter_conditions(
+        self, filter_conditions: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
         """Convert filter conditions to Pinecone format.
-        
+
         Args:
             filter_conditions: Filter conditions in various formats
-            
+
         Returns:
             Filter conditions in Pinecone format
         """
@@ -819,14 +840,16 @@ class PineconeProvider(VectorDBProvider):
 
         return converted
 
-    def _format_vectors_for_upsert(self, vectors: List[List[float]], metadata: List[Dict[str, Any]], ids: List[str]) -> List[Dict[str, Any]]:
+    def _format_vectors_for_upsert(
+        self, vectors: list[list[float]], metadata: list[dict[str, Any]], ids: list[str]
+    ) -> list[dict[str, Any]]:
         """Format vectors for Pinecone upsert operation.
-        
+
         Args:
             vectors: List of vector embeddings
             metadata: List of metadata dicts
             ids: List of vector IDs
-            
+
         Returns:
             List of formatted vector items for upsert
         """
@@ -834,39 +857,37 @@ class PineconeProvider(VectorDBProvider):
         for i, vec in enumerate(vectors):
             meta_dict = metadata[i] if metadata and i < len(metadata) else {}
 
-            vector_items.append({
-                "id": ids[i],
-                "values": vec,
-                "metadata": meta_dict
-            })
+            vector_items.append({"id": ids[i], "values": vec, "metadata": meta_dict})
 
         return vector_items
 
-    def _split_into_batches(self, items: List[Any], batch_size: int = 100) -> List[List[Any]]:
+    def _split_into_batches(self, items: list[Any], batch_size: int = 100) -> list[list[Any]]:
         """Split items into batches.
-        
+
         Args:
             items: List of items to batch
             batch_size: Size of each batch
-            
+
         Returns:
             List of batches
         """
-        return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
+        return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
     # Unified API methods for test compatibility
-    async def create_index(self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs: Any) -> bool:
+    async def create_index(
+        self, index_name: str, vector_dimension: int, metric: str = "cosine", **kwargs: Any
+    ) -> bool:
         """Create a new vector index.
-        
+
         Args:
             index_name: Index name
             vector_dimension: Vector dimension
             metric: Distance metric (cosine, euclidean, dot)
             **kwargs: Additional provider-specific arguments
-            
+
         Returns:
             True if index was created successfully
-            
+
         Raises:
             ProviderError: If index creation fails
         """
@@ -883,19 +904,19 @@ class PineconeProvider(VectorDBProvider):
                         error_type="ClientNotInitializedError",
                         error_location="create_index",
                         component="pinecone_provider",
-                        operation="list_indexes"
+                        operation="list_indexes",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="vector_db",
                         operation="create_index",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
             existing_indexes = self._client.list_indexes()
 
             # Handle both real Pinecone response and mock objects
-            if hasattr(existing_indexes, 'names') and callable(existing_indexes.names):
+            if hasattr(existing_indexes, "names") and callable(existing_indexes.names):
                 index_names = existing_indexes.names()
             else:
                 # Assume it's a mock returning a list directly
@@ -910,10 +931,7 @@ class PineconeProvider(VectorDBProvider):
 
             if not index_exists:
                 # Create index with positional name argument for test compatibility
-                create_kwargs = {
-                    "dimension": vector_dimension,
-                    "metric": metric
-                }
+                create_kwargs = {"dimension": vector_dimension, "metric": metric}
 
                 # Add kwargs for pod configuration
                 if "pod_type" in kwargs:
@@ -930,7 +948,7 @@ class PineconeProvider(VectorDBProvider):
                 # Wait for index to be ready
                 while True:
                     updated_indexes = self._client.list_indexes()
-                    if hasattr(updated_indexes, 'names') and callable(updated_indexes.names):
+                    if hasattr(updated_indexes, "names") and callable(updated_indexes.names):
                         index_names = updated_indexes.names()
                     else:
                         index_names = updated_indexes
@@ -957,26 +975,26 @@ class PineconeProvider(VectorDBProvider):
                     error_type="IndexCreationError",
                     error_location="create_index",
                     component=self.name,
-                    operation="index_creation"
+                    operation="index_creation",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="index_creation",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def delete_index(self, index_name: str) -> bool:
         """Delete a vector index.
-        
+
         Args:
             index_name: Index name
-            
+
         Returns:
             True if index was deleted successfully
-            
+
         Raises:
             ProviderError: If index deletion fails
         """
@@ -993,14 +1011,14 @@ class PineconeProvider(VectorDBProvider):
                         error_type="StateError",
                         error_location="delete_index",
                         component=self.name,
-                        operation="delete_index"
+                        operation="delete_index",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="vector",
                         operation="delete_index",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
             self._client.delete_index(index_name)
 
@@ -1020,26 +1038,26 @@ class PineconeProvider(VectorDBProvider):
                     error_type="IndexDeletionError",
                     error_location="delete_index",
                     component=self.name,
-                    operation="index_deletion"
+                    operation="index_deletion",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="index_deletion",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def index_exists(self, index_name: str) -> bool:
         """Check if index exists.
-        
+
         Args:
             index_name: Index name
-            
+
         Returns:
             True if index exists, False otherwise
-            
+
         Raises:
             ProviderError: If check fails
         """
@@ -1055,18 +1073,18 @@ class PineconeProvider(VectorDBProvider):
                         error_type="StateError",
                         error_location="index_exists",
                         component=self.name,
-                        operation="index_exists"
+                        operation="index_exists",
                     ),
                     provider_context=ProviderErrorContext(
                         provider_name=self.name,
                         provider_type="vector",
                         operation="index_exists",
-                        retry_count=0
-                    )
+                        retry_count=0,
+                    ),
                 )
             existing_indexes = self._client.list_indexes()
             # Handle both real Pinecone response and mock objects
-            if hasattr(existing_indexes, 'names') and callable(existing_indexes.names):
+            if hasattr(existing_indexes, "names") and callable(existing_indexes.names):
                 index_names = existing_indexes.names()
             else:
                 # Assume it's a mock returning a list directly
@@ -1087,29 +1105,35 @@ class PineconeProvider(VectorDBProvider):
                     error_type="IndexCheckError",
                     error_location="index_exists",
                     component=self.name,
-                    operation="index_existence_check"
+                    operation="index_existence_check",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="index_existence_check",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def insert_vectors(self, index_name: str, vectors: List[List[float]], metadata: Optional[List[Dict[str, Any]]] = None, ids: Optional[List[str]] = None) -> bool:
+    async def insert_vectors(
+        self,
+        index_name: str,
+        vectors: list[list[float]],
+        metadata: list[dict[str, Any]] | None = None,
+        ids: list[str] | None = None,
+    ) -> bool:
         """Insert multiple vectors with metadata.
-        
+
         Args:
             index_name: Index name
             vectors: List of vector data
             metadata: Optional list of vector metadata
             ids: Optional list of vector IDs (generated if None)
-            
+
         Returns:
             True if insertion was successful
-            
+
         Raises:
             ProviderError: If insertion fails
         """
@@ -1126,7 +1150,7 @@ class PineconeProvider(VectorDBProvider):
                 for _ in range(len(vectors)):
                     gen_uuid = uuid.uuid4()
                     # Use hex attribute if available (for tests), otherwise use string representation
-                    if hasattr(gen_uuid, 'hex'):
+                    if hasattr(gen_uuid, "hex"):
                         ids.append(gen_uuid.hex)
                     else:
                         ids.append(str(gen_uuid))
@@ -1136,15 +1160,13 @@ class PineconeProvider(VectorDBProvider):
             for i, vec in enumerate(vectors):
                 meta_dict = metadata[i] if metadata and i < len(metadata) else {}
 
-                vector_items.append({
-                    "id": ids[i],
-                    "values": vec,
-                    "metadata": meta_dict
-                })
+                vector_items.append({"id": ids[i], "values": vec, "metadata": meta_dict})
 
             # Split into batches of 100 (Pinecone limit)
             batch_size = 100
-            batches = [vector_items[i:i + batch_size] for i in range(0, len(vector_items), batch_size)]
+            batches = [
+                vector_items[i : i + batch_size] for i in range(0, len(vector_items), batch_size)
+            ]
 
             # Insert batches with namespace from settings
             namespace = self._settings.namespace
@@ -1162,29 +1184,35 @@ class PineconeProvider(VectorDBProvider):
                     error_type="VectorInsertionError",
                     error_location="insert_vectors",
                     component=self.name,
-                    operation="bulk_vector_insertion"
+                    operation="bulk_vector_insertion",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="bulk_vector_insertion",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def search_vectors(self, index_name: str, query_vector: List[float], top_k: int = 10, filter_conditions: Optional[Dict[str, Any]] = None) -> List[VectorSearchResult]:
+    async def search_vectors(
+        self,
+        index_name: str,
+        query_vector: list[float],
+        top_k: int = 10,
+        filter_conditions: dict[str, Any] | None = None,
+    ) -> list[VectorSearchResult]:
         """Search for similar vectors.
-        
+
         Args:
             index_name: Index name
             query_vector: Query vector data
             top_k: Number of results to return
             filter_conditions: Optional metadata filter
-            
+
         Returns:
             List of search results with id, score, and metadata
-            
+
         Raises:
             ProviderError: If search fails
         """
@@ -1203,27 +1231,29 @@ class PineconeProvider(VectorDBProvider):
                 filter=filter_conditions,
                 include_metadata=True,
                 include_values=False,
-                namespace=namespace
+                namespace=namespace,
             )
 
             # Parse results
             search_results = []
             # Handle both real Pinecone response objects and test mock dictionaries
-            matches = results.matches if hasattr(results, 'matches') else (results['matches'] if 'matches' in results else [])
+            matches = (
+                results.matches
+                if hasattr(results, "matches")
+                else (results["matches"] if "matches" in results else [])
+            )
             for match in matches:
-                if hasattr(match, 'id'):
+                if hasattr(match, "id"):
                     # Real Pinecone match object
                     result = VectorSearchResult(
-                        id=match.id,
-                        score=match.score,
-                        metadata=match.metadata or {}
+                        id=match.id, score=match.score, metadata=match.metadata or {}
                     )
                 else:
                     # Mock dictionary from tests
                     result = VectorSearchResult(
                         id=match.get("id", ""),
                         score=match.get("score", 0.0),
-                        metadata=match.get("metadata", {})
+                        metadata=match.get("metadata", {}),
                     )
                 search_results.append(result)
 
@@ -1237,27 +1267,27 @@ class PineconeProvider(VectorDBProvider):
                     error_type="VectorSearchError",
                     error_location="search_vectors",
                     component=self.name,
-                    operation="bulk_vector_search"
+                    operation="bulk_vector_search",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="bulk_vector_search",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def delete_vectors(self, index_name: str, ids: List[str]) -> bool:
+    async def delete_vectors(self, index_name: str, ids: list[str]) -> bool:
         """Delete vectors by IDs.
-        
+
         Args:
             index_name: Index name
             ids: List of vector IDs to delete
-            
+
         Returns:
             True if deletion was successful
-            
+
         Raises:
             ProviderError: If deletion fails
         """
@@ -1283,26 +1313,26 @@ class PineconeProvider(VectorDBProvider):
                     error_type="VectorDeletionError",
                     error_location="delete_vectors",
                     component=self.name,
-                    operation="bulk_vector_deletion"
+                    operation="bulk_vector_deletion",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="bulk_vector_deletion",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def get_index_stats(self, index_name: str) -> VectorIndexStats:
         """Get index statistics.
-        
+
         Args:
             index_name: Index name
-            
+
         Returns:
             Dictionary with index statistics
-            
+
         Raises:
             ProviderError: If getting stats fails
         """
@@ -1317,7 +1347,7 @@ class PineconeProvider(VectorDBProvider):
             stats = index.describe_index_stats()
 
             # Handle both real Pinecone stats objects and test mock dictionaries
-            if hasattr(stats, 'total_vector_count'):
+            if hasattr(stats, "total_vector_count"):
                 # Real Pinecone stats object
                 return VectorIndexStats(
                     name=index_name,
@@ -1325,8 +1355,8 @@ class PineconeProvider(VectorDBProvider):
                     vector_dimension=stats.dimension or 0,
                     metadata={
                         "index_fullness": stats.index_fullness,
-                        "namespace_stats": stats.namespaces
-                    }
+                        "namespace_stats": stats.namespaces,
+                    },
                 )
             else:
                 # Mock dictionary from tests
@@ -1336,8 +1366,8 @@ class PineconeProvider(VectorDBProvider):
                     vector_dimension=stats.get("dimension", 0),
                     metadata={
                         "index_fullness": stats.get("index_fullness"),
-                        "namespace_stats": stats.get("namespaces", {})
-                    }
+                        "namespace_stats": stats.get("namespaces", {}),
+                    },
                 )
 
         except Exception as e:
@@ -1348,19 +1378,24 @@ class PineconeProvider(VectorDBProvider):
                     error_type="IndexStatsError",
                     error_location="get_index_stats",
                     component=self.name,
-                    operation="index_statistics"
+                    operation="index_statistics",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="index_statistics",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
-    async def get_by_filter(self, filter: Dict[str, Any], top_k: int = 10,
-                           include_vectors: bool = False, index_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_by_filter(
+        self,
+        filter: dict[str, Any],
+        top_k: int = 10,
+        include_vectors: bool = False,
+        index_name: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Get vectors by metadata filter without vector similarity search."""
         try:
             # Pinecone doesn't support metadata-only queries directly
@@ -1379,16 +1414,16 @@ class PineconeProvider(VectorDBProvider):
                     error_type="FilterQueryError",
                     error_location="get_by_filter",
                     component=self.name,
-                    operation="metadata_query"
+                    operation="metadata_query",
                 ),
                 provider_context=ProviderErrorContext(
                     provider_name=self.name,
                     provider_type="vector",
                     operation="metadata_query",
-                    retry_count=0
+                    retry_count=0,
                 ),
-                cause=e
-            )
+                cause=e,
+) from e
 
     async def check_connection(self) -> bool:
         """Check if vector database connection is active."""

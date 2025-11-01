@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional
 
 from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.models.state import AgentState
@@ -32,7 +31,7 @@ class ExecutionStrategy(ABC):
     """
 
     @abstractmethod
-    async def execute(self, agent: BaseAgent) -> Optional[AgentState]:
+    async def execute(self, agent: BaseAgent) -> AgentState | None:
         """Execute the agent according to this strategy.
 
         Args:

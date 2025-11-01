@@ -8,13 +8,14 @@ into structured ReadParameters.
 from pydantic import Field
 
 from flowlib.resources.decorators.decorators import prompt
-from flowlib.resources.models.base import ResourceBase
+
 
 @prompt("read_tool_parameter_generation")
-class ReadToolParameterGenerationPrompt(ResourceBase):
+class ReadToolParameterGenerationPrompt:
     """Prompt for generating ReadParameters from task description."""
 
-    template: str = Field(default="""Extract read parameters from this context.
+    template: str = Field(
+        default="""Extract read parameters from this context.
 
 # Full Context
 
@@ -35,4 +36,5 @@ Extract parameters from the ORIGINAL USER REQUEST when available, using conversa
 - File paths can be absolute or relative to the working directory
 - Default encoding is utf-8
 
-Extract the file path and any specific line reading requirements from the task description.""")
+Extract the file path and any specific line reading requirements from the task description."""
+    )

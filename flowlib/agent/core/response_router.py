@@ -7,7 +7,6 @@ This module handles routing of agent responses back to waiting clients.
 import asyncio
 import logging
 import queue
-from typing import Dict, Optional, Union
 
 from flowlib.agent.core.models.messages import AgentResponse
 
@@ -17,17 +16,21 @@ logger = logging.getLogger(__name__)
 class ResponseRouter:
     """Routes agent responses to waiting clients."""
 
-    def __init__(self, agent_id: str, agent_output_queue: Union[asyncio.Queue[AgentResponse], queue.Queue[AgentResponse]]):
+    def __init__(
+        self,
+        agent_id: str,
+        agent_output_queue: asyncio.Queue[AgentResponse] | queue.Queue[AgentResponse],
+    ):
         """Initialize response router.
-        
+
         Args:
             agent_id: ID of the agent this router serves
             agent_output_queue: Queue to read responses from (thread-safe or async)
         """
         self.agent_id = agent_id
         self.agent_output_queue = agent_output_queue
-        self.pending_responses: Dict[str, asyncio.Future[AgentResponse]] = {}
-        self.routing_task: Optional[asyncio.Task[None]] = None
+        self.pending_responses: dict[str, asyncio.Future[AgentResponse]] = {}
+        self.routing_task: asyncio.Task[None] | None = None
         self._running = False
 
     async def start(self) -> None:
@@ -72,22 +75,30 @@ class ResponseRouter:
                     # Thread-safe queue - poll with timeout
                     try:
                         response = self.agent_output_queue.get(timeout=0.1)
-                        logger.debug(f"[Router] Got response from output queue for message {response.message_id}")
+                        logger.debug(
+                            f"[Router] Got response from output queue for message {response.message_id}"
+                        )
                     except queue.Empty:
                         await asyncio.sleep(0.01)  # Small delay to prevent busy waiting
                         continue
                 else:
                     # Async queue
                     response = await self.agent_output_queue.get()
-                    logger.debug(f"[Router] Got response from output queue for message {response.message_id}")
+                    logger.debug(
+                        f"[Router] Got response from output queue for message {response.message_id}"
+                    )
 
                 # Find waiting future
                 future = self.pending_responses.get(response.message_id)
                 if future and not future.done():
-                    logger.debug(f"[Router] Setting result for waiting future {response.message_id}")
+                    logger.debug(
+                        f"[Router] Setting result for waiting future {response.message_id}"
+                    )
                     future.set_result(response)
                     del self.pending_responses[response.message_id]
-                    logger.info(f"[Router] Successfully routed response for message {response.message_id}")
+                    logger.info(
+                        f"[Router] Successfully routed response for message {response.message_id}"
+                    )
                 else:
                     logger.warning(f"[Router] No waiting client for message {response.message_id}")
 
@@ -97,16 +108,18 @@ class ResponseRouter:
             except Exception as e:
                 logger.error(f"[Router] Error routing response: {e}")
 
-    async def wait_for_response(self, message_id: str, timeout: Optional[float] = None) -> AgentResponse:
+    async def wait_for_response(
+        self, message_id: str, timeout: float | None = None
+    ) -> AgentResponse:
         """Wait for response for specific message ID.
-        
+
         Args:
             message_id: Message ID to wait for
             timeout: Timeout in seconds (None for no timeout)
-            
+
         Returns:
             Agent response
-            
+
         Raises:
             TimeoutError: If response times out
             RuntimeError: If router is not running
@@ -132,7 +145,7 @@ class ResponseRouter:
             logger.error(f"[Router] Response timeout for message {message_id} after {timeout}s")
             # Clean up pending response
             self.pending_responses.pop(message_id, None)
-            raise TimeoutError(f"Response timeout for message {message_id} after {timeout}s")
+            raise TimeoutError(f"Response timeout for message {message_id} after {timeout}s") from None
         except Exception as e:
             logger.error(f"[Router] Error waiting for response: {e}")
             # Clean up on any error

@@ -1,35 +1,44 @@
 """Neo4j graph database provider module."""
 
-from typing import Any, Type
+from typing import Any
 
 
 # Define default classes first (single source of truth)
 class _DefaultNeo4jProvider:
     """Default Neo4j provider stub."""
+
     pass
+
 
 class _DefaultNeo4jProviderSettings:
     """Default Neo4j provider settings stub."""
+
     pass
+
 
 class _DefaultGraphDatabase:
     """Default GraphDatabase stub."""
+
     pass
+
 
 class _DefaultEntity:
     """Default Entity stub."""
+
     pass
 
+
 # Type variables for components that can have multiple types
-Neo4jProvider: Type[Any]
-Neo4jProviderSettings: Type[Any]
-GraphDatabase: Type[Any]
-Entity: Type[Any]
+Neo4jProvider: type[Any]
+Neo4jProviderSettings: type[Any]
+GraphDatabase: type[Any]
+Entity: type[Any]
 
 # Import availability and components
 try:
     from .provider import Neo4jProvider as _Neo4jProvider
     from .provider import Neo4jProviderSettings as _Neo4jProviderSettings
+
     NEO4J_AVAILABLE = True
 
     # Use actual imports when available
@@ -39,6 +48,7 @@ try:
     # Re-export neo4j components for test compatibility
     try:
         from neo4j import GraphDatabase as _GraphDatabase
+
         GraphDatabase = _GraphDatabase
     except ImportError:
         GraphDatabase = _DefaultGraphDatabase
@@ -46,6 +56,7 @@ try:
     # Import Entity from core models for test compatibility
     try:
         from flowlib.providers.graph.base import Entity as _Entity
+
         Entity = _Entity
     except ImportError:
         Entity = _DefaultEntity

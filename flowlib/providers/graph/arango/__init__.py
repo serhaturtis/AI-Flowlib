@@ -1,14 +1,15 @@
 """ArangoDB graph database provider module."""
 
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 # Type variables for components that can be None or actual types
-ArangoProvider: Optional[Type[Any]]
-ArangoProviderSettings: Optional[Type[Any]]
+ArangoProvider: type[Any] | None
+ArangoProviderSettings: type[Any] | None
 
 # Import availability and components
 try:
     from .provider import ArangoProvider, ArangoProviderSettings
+
     ARANGO_AVAILABLE = True
 except ImportError:
     ArangoProvider = None

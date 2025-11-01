@@ -34,11 +34,7 @@ if JANUS_AVAILABLE:
     )
 
 # Build exports dynamically
-__all__ = [
-    "GraphDBProvider",
-    "GraphDBProviderSettings",
-    "MemoryGraphProvider"
-]
+__all__ = ["GraphDBProvider", "GraphDBProviderSettings", "MemoryGraphProvider"]
 
 # Add new providers to exports if available
 if NEO4J_AVAILABLE:
@@ -52,5 +48,3 @@ if JANUS_AVAILABLE:
 
 # Export availability flags
 __all__.extend(["NEO4J_AVAILABLE", "ARANGO_AVAILABLE", "JANUS_AVAILABLE"])
-
-

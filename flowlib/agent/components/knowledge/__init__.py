@@ -56,5 +56,5 @@ __all__ = [
     "AgentKnowledgeRetrievalInput",
     "AgentKnowledgeRetrievalOutput",
     # Prompt registration
-    "prompts"
+    "prompts",
 ]

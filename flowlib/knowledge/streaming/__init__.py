@@ -11,5 +11,5 @@ __all__ = [
     "KnowledgeExtractionFlow",
     "KnowledgeExtractionRequest",
     "KnowledgeExtractionResult",
-    "CheckpointManager"
+    "CheckpointManager",
 ]

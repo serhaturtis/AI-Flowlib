@@ -2,25 +2,28 @@
 
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 
 class CommandType(Enum):
     """Types of commands in the REPL."""
+
     SLASH = "slash"  # Commands starting with /
-    META = "meta"    # Commands starting with @
+    META = "meta"  # Commands starting with @
     SYSTEM = "system"  # System commands like exit, clear
-    USER = "user"    # Regular user input
+    USER = "user"  # Regular user input
 
 
 @dataclass
 class Command:
     """Represents a parsed command."""
+
     type: CommandType
     name: str
-    args: List[str]
+    args: list[str]
     raw_input: str
 
 
@@ -33,7 +36,7 @@ class CommandHandler(ABC):
         pass
 
     @abstractmethod
-    async def handle(self, command: Command, context: Dict[str, Any]) -> Any:
+    async def handle(self, command: Command, context: dict[str, Any]) -> Any:
         """Handle the command and return result."""
         pass
 
@@ -42,36 +45,40 @@ class CommandRegistry:
     """Registry for command handlers and parsing."""
 
     def __init__(self) -> None:
-        self.handlers: List[CommandHandler] = []
-        self.slash_commands: Dict[str, Callable] = {}
-        self.meta_commands: Dict[str, Callable] = {}
+        self.handlers: list[CommandHandler] = []
+        self.slash_commands: dict[str, Callable] = {}
+        self.meta_commands: dict[str, Callable] = {}
 
         # Register built-in commands
         self._register_builtin_commands()
 
     def _register_builtin_commands(self) -> None:
         """Register built-in slash commands."""
-        self.slash_commands.update({
-            "help": self._show_help,
-            "clear": self._clear_screen,
-            "history": self._show_history,
-            "save": self._save_conversation,
-            "load": self._load_conversation,
-            "mode": self._change_mode,
-            "model": self._change_model,
-            "flows": self._list_flows,
-            "memory": self._memory_status,
-            "tools": self._list_tools,
-            "exit": self._exit_repl,
-            "quit": self._exit_repl,
-        })
+        self.slash_commands.update(
+            {
+                "help": self._show_help,
+                "clear": self._clear_screen,
+                "history": self._show_history,
+                "save": self._save_conversation,
+                "load": self._load_conversation,
+                "mode": self._change_mode,
+                "model": self._change_model,
+                "flows": self._list_flows,
+                "memory": self._memory_status,
+                "tools": self._list_tools,
+                "exit": self._exit_repl,
+                "quit": self._exit_repl,
+            }
+        )
 
-        self.meta_commands.update({
-            "debug": self._toggle_debug,
-            "verbose": self._toggle_verbose,
-            "stream": self._toggle_streaming,
-            "stats": self._show_stats,
-        })
+        self.meta_commands.update(
+            {
+                "debug": self._toggle_debug,
+                "verbose": self._toggle_verbose,
+                "stream": self._toggle_streaming,
+                "stats": self._show_stats,
+            }
+        )
 
     def parse_command(self, user_input: str) -> Command:
         """Parse user input into a command."""
@@ -82,7 +89,7 @@ class CommandRegistry:
 
         # Check for slash commands
         if user_input.startswith("/"):
-            match = re.match(r'^/(\w+)(?:\s+(.*))?$', user_input)
+            match = re.match(r"^/(\w+)(?:\s+(.*))?$", user_input)
             if match:
                 cmd_name = match.group(1)
                 args = match.group(2).split() if match.group(2) else []
@@ -90,7 +97,7 @@ class CommandRegistry:
 
         # Check for meta commands
         elif user_input.startswith("@"):
-            match = re.match(r'^@(\w+)(?:\s+(.*))?$', user_input)
+            match = re.match(r"^@(\w+)(?:\s+(.*))?$", user_input)
             if match:
                 cmd_name = match.group(1)
                 args = match.group(2).split() if match.group(2) else []
@@ -115,7 +122,7 @@ class CommandRegistry:
         """Register a meta command."""
         self.meta_commands[name] = handler
 
-    async def execute_command(self, command: Command, context: Dict[str, Any]) -> Any:
+    async def execute_command(self, command: Command, context: dict[str, Any]) -> Any:
         """Execute a parsed command."""
         # Handle slash commands
         if command.type == CommandType.SLASH:
@@ -147,16 +154,19 @@ class CommandRegistry:
         # Default to user input (will be processed by agent)
         return None
 
-    async def _call_handler(self, handler: Callable, command: Command, context: Dict[str, Any]) -> Any:
+    async def _call_handler(
+        self, handler: Callable, command: Command, context: dict[str, Any]
+    ) -> Any:
         """Call a handler function."""
         import asyncio
+
         if asyncio.iscoroutinefunction(handler):
             return await handler(command, context)
         else:
             return handler(command, context)
 
     # Built-in command implementations
-    def _show_help(self, command: Command, context: Dict[str, Any]) -> str:
+    def _show_help(self, command: Command, context: dict[str, Any]) -> str:
         """Show available commands."""
         help_text = """
 📚 **Available Commands**
@@ -202,33 +212,36 @@ class CommandRegistry:
 """
         return help_text.strip()
 
-    def _clear_screen(self, command: Command, context: Dict[str, Any]) -> str:
+    def _clear_screen(self, command: Command, context: dict[str, Any]) -> str:
         """Clear the screen."""
         import os
-        os.system('clear' if os.name == 'posix' else 'cls')
+
+        os.system("clear" if os.name == "posix" else "cls")
         return ""
 
-    def _show_history(self, command: Command, context: Dict[str, Any]) -> str:
+    def _show_history(self, command: Command, context: dict[str, Any]) -> str:
         """Show command history."""
         history = context["command_history"] if "command_history" in context else []
         if not history:
             return "No command history yet."
 
-        return "**Command History:**\n" + "\n".join(f"{i+1}. {cmd}" for i, cmd in enumerate(history[-20:]))
+        return "**Command History:**\n" + "\n".join(
+            f"{i + 1}. {cmd}" for i, cmd in enumerate(history[-20:])
+        )
 
-    async def _save_conversation(self, command: Command, context: Dict[str, Any]) -> str:
+    async def _save_conversation(self, command: Command, context: dict[str, Any]) -> str:
         """Save conversation to file."""
         filename = command.args[0] if command.args else "conversation.json"
         # Implementation would save conversation
         return f"Conversation saved to {filename}"
 
-    async def _load_conversation(self, command: Command, context: Dict[str, Any]) -> str:
+    async def _load_conversation(self, command: Command, context: dict[str, Any]) -> str:
         """Load conversation from file."""
         filename = command.args[0] if command.args else "conversation.json"
         # Implementation would load conversation
         return f"Conversation loaded from {filename}"
 
-    def _change_mode(self, command: Command, context: Dict[str, Any]) -> str:
+    def _change_mode(self, command: Command, context: dict[str, Any]) -> str:
         """Change agent mode."""
         if not command.args:
             current_mode = context["mode"] if "mode" in context else "chat"
@@ -241,7 +254,7 @@ class CommandRegistry:
         else:
             return f"Invalid mode: {mode}. Available modes: chat, task, debug"
 
-    def _change_model(self, command: Command, context: Dict[str, Any]) -> str:
+    def _change_model(self, command: Command, context: dict[str, Any]) -> str:
         """Change the active model."""
         if not command.args:
             current_model = context["model"] if "model" in context else "default"
@@ -251,10 +264,11 @@ class CommandRegistry:
         context["model"] = model
         return f"Model changed to: {model}"
 
-    async def _list_flows(self, command: Command, context: Dict[str, Any]) -> str:
+    async def _list_flows(self, command: Command, context: dict[str, Any]) -> str:
         """List available flows."""
         # Get flows from registry
         from flowlib.flows.registry.registry import flow_registry
+
         flows = flow_registry.get_all_flow_metadata()
 
         if not flows:
@@ -262,12 +276,12 @@ class CommandRegistry:
 
         flow_list = "**Available Flows:**\n"
         for flow_name, flow_metadata in flows.items():
-            description = getattr(flow_metadata, 'description', 'No description')
+            description = getattr(flow_metadata, "description", "No description")
             flow_list += f"  • {flow_name}: {description}\n"
 
         return flow_list
 
-    async def _memory_status(self, command: Command, context: Dict[str, Any]) -> str:
+    async def _memory_status(self, command: Command, context: dict[str, Any]) -> str:
         """Show memory status."""
         if "agent" not in context:
             return "No agent available."
@@ -291,7 +305,7 @@ class CommandRegistry:
   Total Storage: {storage_mb:.2f} MB
 """
 
-    async def _list_tools(self, command: Command, context: Dict[str, Any]) -> str:
+    async def _list_tools(self, command: Command, context: dict[str, Any]) -> str:
         """List available tools."""
         if "agent" not in context:
             return "No agent available."
@@ -299,7 +313,7 @@ class CommandRegistry:
         agent = context["agent"]
 
         # Check if agent is initialized
-        if not getattr(agent, '_initialized', False):
+        if not getattr(agent, "_initialized", False):
             return "Agent is still initializing. Please wait a moment."
 
         # Single source of truth: use agent.get_available_tools()
@@ -317,33 +331,33 @@ class CommandRegistry:
 
         return tool_list
 
-    def _exit_repl(self, command: Command, context: Dict[str, Any]) -> str:
+    def _exit_repl(self, command: Command, context: dict[str, Any]) -> str:
         """Exit the REPL."""
         context["should_exit"] = True
         return "Goodbye!"
 
-    def _toggle_debug(self, command: Command, context: Dict[str, Any]) -> str:
+    def _toggle_debug(self, command: Command, context: dict[str, Any]) -> str:
         """Toggle debug mode."""
         current_debug = context["debug"] if "debug" in context else False
         debug = not current_debug
         context["debug"] = debug
         return f"Debug mode: {'ON' if debug else 'OFF'}"
 
-    def _toggle_verbose(self, command: Command, context: Dict[str, Any]) -> str:
+    def _toggle_verbose(self, command: Command, context: dict[str, Any]) -> str:
         """Toggle verbose output."""
         current_verbose = context["verbose"] if "verbose" in context else False
         verbose = not current_verbose
         context["verbose"] = verbose
         return f"Verbose mode: {'ON' if verbose else 'OFF'}"
 
-    def _toggle_streaming(self, command: Command, context: Dict[str, Any]) -> str:
+    def _toggle_streaming(self, command: Command, context: dict[str, Any]) -> str:
         """Toggle response streaming."""
         current_stream = context["stream"] if "stream" in context else True
         stream = not current_stream
         context["stream"] = stream
         return f"Response streaming: {'ON' if stream else 'OFF'}"
 
-    def _show_stats(self, command: Command, context: Dict[str, Any]) -> str:
+    def _show_stats(self, command: Command, context: dict[str, Any]) -> str:
         """Show session statistics."""
         stats = context["session_stats"] if "session_stats" in context else {}
 

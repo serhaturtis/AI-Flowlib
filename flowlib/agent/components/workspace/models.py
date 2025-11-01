@@ -4,9 +4,11 @@ Single source of truth for workspace manifest and discovery configuration.
 No fallbacks, no defaults that bypass validation.
 """
 
-from typing import Dict, List, Any
-from flowlib.core.models import StrictBaseModel
+from typing import Any
+
 from pydantic import Field, field_validator
+
+from flowlib.core.models import StrictBaseModel
 
 
 class DomainArtifact(StrictBaseModel):
@@ -18,13 +20,14 @@ class DomainArtifact(StrictBaseModel):
 
     name: str = Field(..., description="Artifact name (e.g., 'Hellstorm', 'MyProject')")
     path: str = Field(..., description="Absolute path to artifact")
-    artifact_type: str = Field(..., description="Type identifier (e.g., 'music_session', 'code_project')")
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Domain-specific metadata (optional)"
+    artifact_type: str = Field(
+        ..., description="Type identifier (e.g., 'music_session', 'code_project')"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Domain-specific metadata (optional)"
     )
 
-    @field_validator('name')
+    @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
         """Ensure name is not empty."""
@@ -32,7 +35,7 @@ class DomainArtifact(StrictBaseModel):
             raise ValueError("Artifact name cannot be empty")
         return v.strip()
 
-    @field_validator('path')
+    @field_validator("path")
     @classmethod
     def validate_path(cls, v: str) -> str:
         """Ensure path is not empty."""
@@ -40,7 +43,7 @@ class DomainArtifact(StrictBaseModel):
             raise ValueError("Artifact path cannot be empty")
         return v
 
-    @field_validator('artifact_type')
+    @field_validator("artifact_type")
     @classmethod
     def validate_type(cls, v: str) -> str:
         """Ensure artifact_type is not empty."""
@@ -57,15 +60,14 @@ class WorkspaceManifest(StrictBaseModel):
     """
 
     working_directory: str = Field(..., description="Root directory that was scanned")
-    domains: Dict[str, List[DomainArtifact]] = Field(
-        default_factory=dict,
-        description="Artifacts grouped by domain (e.g., 'music', 'projects')"
+    domains: dict[str, list[DomainArtifact]] = Field(
+        default_factory=dict, description="Artifacts grouped by domain (e.g., 'music', 'projects')"
     )
     scan_timestamp: float = Field(..., description="Unix timestamp of scan completion")
 
     model_config = {"frozen": True}  # Immutable after creation
 
-    @field_validator('working_directory')
+    @field_validator("working_directory")
     @classmethod
     def validate_directory(cls, v: str) -> str:
         """Ensure working_directory is not empty."""
@@ -73,7 +75,7 @@ class WorkspaceManifest(StrictBaseModel):
             raise ValueError("Working directory cannot be empty")
         return v
 
-    @field_validator('scan_timestamp')
+    @field_validator("scan_timestamp")
     @classmethod
     def validate_timestamp(cls, v: float) -> float:
         """Ensure timestamp is positive."""
@@ -89,28 +91,19 @@ class WorkspaceDiscoveryConfig(StrictBaseModel):
     All behavior explicitly configured.
     """
 
-    enabled: bool = Field(
-        default=True,
-        description="Enable workspace discovery"
-    )
+    enabled: bool = Field(default=True, description="Enable workspace discovery")
     cache_ttl_seconds: int = Field(
-        default=60,
-        ge=0,
-        description="Cache TTL in seconds (0 = no cache)"
+        default=60, ge=0, description="Cache TTL in seconds (0 = no cache)"
     )
-    excluded_domains: List[str] = Field(
-        default_factory=list,
-        description="Domains to exclude from scanning"
+    excluded_domains: list[str] = Field(
+        default_factory=list, description="Domains to exclude from scanning"
     )
     max_scan_depth: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum directory depth for recursive scanning"
+        default=3, ge=1, le=10, description="Maximum directory depth for recursive scanning"
     )
     fail_on_scanner_error: bool = Field(
         default=False,
-        description="If True, fail discovery on any scanner error. If False, log and continue."
+        description="If True, fail discovery on any scanner error. If False, log and continue.",
     )
 
     def should_scan_domain(self, domain: str) -> bool:

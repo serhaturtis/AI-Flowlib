@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Dict, Tuple, cast
+from typing import cast
 
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.knowledge.models import (
@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 class VectorStorageFlow:
     """Flow for creating vector embeddings and storing in ChromaDB."""
 
-    async def _get_providers(self, config: VectorStoreInput) -> Tuple[VectorDBProvider, EmbeddingProvider]:
+    async def _get_providers(
+        self, config: VectorStoreInput
+    ) -> tuple[VectorDBProvider, EmbeddingProvider]:
         """Get initialized vector and embedding providers."""
         # Get real vector provider using config-driven access
 
@@ -50,7 +52,7 @@ class VectorStorageFlow:
         # Cast to specific types for type safety
         return cast(VectorDBProvider, vector_provider), cast(EmbeddingProvider, embedding_provider)
 
-    def _prepare_chunk_metadata(self, chunk: TextChunk, doc: DocumentContent) -> Dict:
+    def _prepare_chunk_metadata(self, chunk: TextChunk, doc: DocumentContent) -> dict:
         """Prepare metadata for a chunk."""
         return {
             "document_id": doc.document_id,
@@ -61,7 +63,7 @@ class VectorStorageFlow:
             "section": chunk.section_title or "",
             "file_type": doc.metadata.file_type,
             "language": doc.language_detected,
-            "created_date": doc.metadata.created_date or ""
+            "created_date": doc.metadata.created_date or "",
         }
 
     async def stream_upsert(self, doc_content: DocumentContent, db_path: str) -> None:
@@ -70,8 +72,11 @@ class VectorStorageFlow:
         logger.info(f"Streaming upsert document: {doc_content.document_id}")
 
         # Get providers (reuse connection if available)
-        if not hasattr(self, '_streaming_vector_provider'):
-            self._streaming_vector_provider, self._streaming_embedding_provider = await self._get_streaming_providers(db_path)
+        if not hasattr(self, "_streaming_vector_provider"):
+            (
+                self._streaming_vector_provider,
+                self._streaming_embedding_provider,
+            ) = await self._get_streaming_providers(db_path)
 
         try:
             # Process chunks from the document
@@ -101,7 +106,7 @@ class VectorStorageFlow:
                 index_name="streaming_knowledge",
                 vectors=embeddings,
                 metadata=metadatas,
-                ids=chunk_ids
+                ids=chunk_ids,
             )
 
             logger.debug(f"Successfully streamed {len(texts)} chunks to vector DB")
@@ -117,10 +122,10 @@ class VectorStorageFlow:
 
         try:
             # Cleanup streaming providers
-            if hasattr(self, '_streaming_vector_provider'):
+            if hasattr(self, "_streaming_vector_provider"):
                 await self._streaming_vector_provider.shutdown()
-                delattr(self, '_streaming_vector_provider')
-                delattr(self, '_streaming_embedding_provider')
+                delattr(self, "_streaming_vector_provider")
+                delattr(self, "_streaming_embedding_provider")
 
             return {"status": "finalized", "db_path": db_path}
 
@@ -128,7 +133,9 @@ class VectorStorageFlow:
             logger.error(f"Failed to finalize streaming collection: {e}")
             raise
 
-    async def _get_streaming_providers(self, db_path: str) -> Tuple[VectorDBProvider, EmbeddingProvider]:
+    async def _get_streaming_providers(
+        self, db_path: str
+    ) -> tuple[VectorDBProvider, EmbeddingProvider]:
         """Get real providers configured for streaming operations."""
 
         logger.debug(f"Initializing streaming vector providers at: {db_path}")
@@ -147,7 +154,9 @@ class VectorStorageFlow:
 
     async def _index_documents(self, input_data: VectorStoreInput) -> VectorStoreOutput:
         """Create vector embeddings and store document chunks."""
-        logger.info(f"Indexing {len(input_data.documents)} documents into collection: {input_data.collection_name}")
+        logger.info(
+            f"Indexing {len(input_data.documents)} documents into collection: {input_data.collection_name}"
+        )
 
         # Get providers
         vector_provider, embedding_provider = await self._get_providers(input_data)
@@ -160,7 +169,7 @@ class VectorStorageFlow:
             batch_size = 10  # Process 10 documents at a time
 
             for i in range(0, len(input_data.documents), batch_size):
-                batch_docs = input_data.documents[i:i+batch_size]
+                batch_docs = input_data.documents[i : i + batch_size]
 
                 # Collect all chunks from batch
                 all_chunks = []
@@ -195,20 +204,24 @@ class VectorStorageFlow:
                     index_name=input_data.collection_name,
                     vectors=embeddings,
                     metadata=metadatas,
-                    ids=chunk_ids
+                    ids=chunk_ids,
                 )
 
                 # Track indexed documents
                 for doc in batch_docs:
-                    indexed_docs.append(VectorDocument(
-                        document_id=doc.document_id,
-                        chunk_count=len(doc.chunks),
-                        status="indexed",
-                        indexed_at=datetime.now()
-                    ))
+                    indexed_docs.append(
+                        VectorDocument(
+                            document_id=doc.document_id,
+                            chunk_count=len(doc.chunks),
+                            status="indexed",
+                            indexed_at=datetime.now(),
+                        )
+                    )
                     total_chunks += len(doc.chunks)
 
-            logger.info(f"Successfully indexed {total_chunks} chunks from {len(indexed_docs)} documents")
+            logger.info(
+                f"Successfully indexed {total_chunks} chunks from {len(indexed_docs)} documents"
+            )
 
             return VectorStoreOutput(
                 collection_name=input_data.collection_name,
@@ -216,30 +229,42 @@ class VectorStorageFlow:
                 embeddings_created=[],
                 documents_indexed=indexed_docs,
                 status="completed",
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
         finally:
             # Always shutdown providers
             await vector_provider.shutdown()
-            if hasattr(embedding_provider, 'shutdown'):
+            if hasattr(embedding_provider, "shutdown"):
                 await embedding_provider.shutdown()
 
     async def _search_documents(self, query: SearchQuery) -> VectorStoreOutput:
         """Search for similar documents using vector similarity."""
         logger.info(f"Searching for: {query.query_text[:100]}...")
 
+        # Get embedding provider first to retrieve model info
+        logger.info("Getting embedding provider from registry: default-embedding")
+        embedding_provider_temp = await provider_registry.get_by_config(
+            query.embedding_provider_config or "default-embedding"
+        )
+        await embedding_provider_temp.initialize()
+        embedding_provider_cast = cast(EmbeddingProvider, embedding_provider_temp)
+
+        # Get model config from provider settings
+        embedding_model = embedding_provider_cast.settings.model_name
+        vector_dimensions = embedding_provider_cast.settings.embedding_dim
+
         # Create minimal config for providers
         config = VectorStoreInput(
             collection_name=query.collection_name,
-            vector_provider_name=query.vector_provider_name or "chromadb",
-            embedding_provider_name=query.embedding_provider_name or "simple",
-            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-            vector_dimensions=query.vector_dimensions or 384,
-            documents=[]
+            vector_provider_config=query.vector_provider_config or "default-vector-db",
+            embedding_provider_config=query.embedding_provider_config or "default-embedding",
+            embedding_model=embedding_model,
+            vector_dimensions=vector_dimensions,
+            documents=[],
         )
 
-        # Get providers
+        # Get providers (reuse embedding provider)
         vector_provider, embedding_provider = await self._get_providers(config)
 
         try:
@@ -251,7 +276,7 @@ class VectorStorageFlow:
                 index_name=query.collection_name,
                 query_vector=query_embedding[0],
                 top_k=query.top_k,
-                filter_conditions=query.filter_metadata
+                filter_conditions=query.filter_metadata,
             )
 
             # Convert results to SearchResult objects
@@ -259,33 +284,39 @@ class VectorStorageFlow:
             for i, result in enumerate(results):
                 # Fail-fast approach - all required metadata must be present
                 if "document_id" not in result.metadata:
-                    raise ValueError(f"Search result {i} missing required 'document_id' in metadata")
+                    raise ValueError(
+                        f"Search result {i} missing required 'document_id' in metadata"
+                    )
                 if "chunk_index" not in result.metadata:
-                    raise ValueError(f"Search result {i} missing required 'chunk_index' in metadata")
+                    raise ValueError(
+                        f"Search result {i} missing required 'chunk_index' in metadata"
+                    )
                 if "text" not in result.metadata:
                     raise ValueError(f"Search result {i} missing required 'text' in metadata")
 
                 chunk_id = f"{result.metadata['document_id']}_{result.metadata['chunk_index']}"
-                search_results.append(VectorSearchResult(
-                    chunk_id=chunk_id,
-                    document_id=result.metadata["document_id"],
-                    similarity_score=result.score,
-                    text=result.metadata["text"],
-                    metadata=result.metadata
-                ))
+                search_results.append(
+                    VectorSearchResult(
+                        chunk_id=chunk_id,
+                        document_id=result.metadata["document_id"],
+                        similarity_score=result.score,
+                        text=result.metadata["text"],
+                        metadata=result.metadata,
+                    )
+                )
 
             return VectorStoreOutput(
                 collection_name=query.collection_name,
                 total_vectors=len(search_results),
                 embeddings_created=[],
                 search_results=search_results,
-                query_text=query.query_text
+                query_text=query.query_text,
             )
 
         finally:
             # Always shutdown providers
             await vector_provider.shutdown()
-            if hasattr(embedding_provider, 'shutdown'):
+            if hasattr(embedding_provider, "shutdown"):
                 await embedding_provider.shutdown()
 
     async def _update_collection(self, input_data: VectorStoreInput) -> VectorStoreOutput:
@@ -319,15 +350,17 @@ class VectorStorageFlow:
                         index_name=input_data.collection_name,
                         vectors=embeddings,
                         metadata=metadatas,
-                        ids=chunk_ids
+                        ids=chunk_ids,
                     )
 
-                    updated_docs.append(VectorDocument(
-                        document_id=doc.document_id,
-                        chunk_count=len(doc.chunks),
-                        status="updated",
-                        indexed_at=datetime.now()
-                    ))
+                    updated_docs.append(
+                        VectorDocument(
+                            document_id=doc.document_id,
+                            chunk_count=len(doc.chunks),
+                            status="updated",
+                            indexed_at=datetime.now(),
+                        )
+                    )
 
             return VectorStoreOutput(
                 collection_name=input_data.collection_name,
@@ -335,13 +368,13 @@ class VectorStorageFlow:
                 embeddings_created=[],
                 documents_indexed=updated_docs,
                 status="completed",
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
         finally:
             # Always shutdown providers
             await vector_provider.shutdown()
-            if hasattr(embedding_provider, 'shutdown'):
+            if hasattr(embedding_provider, "shutdown"):
                 await embedding_provider.shutdown()
 
     @pipeline(input_model=VectorStoreInput, output_model=VectorStoreOutput)

@@ -6,7 +6,6 @@ between semantic role names and canonical configuration names.
 """
 
 import logging
-from typing import Dict, List, Optional
 
 from flowlib.resources.registry.registry import resource_registry
 
@@ -15,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 class RoleManager:
     """Manages dynamic role assignments for configurations.
-    
+
     This class provides a high-level interface for:
     - Assigning roles to existing configurations
     - Reassigning roles to different configurations
     - Removing role assignments
     - Querying role assignments
-    
+
     All operations work through the resource registry's alias system.
     """
 
@@ -70,7 +69,9 @@ class RoleManager:
         # Create the role alias without validation (validation happens at access time)
         success = resource_registry.create_alias(role_name, canonical_name)
         if success:
-            logger.info(f"Assigned role '{role_name}' to configuration '{canonical_name}' (validation deferred)")
+            logger.info(
+                f"Assigned role '{role_name}' to configuration '{canonical_name}' (validation deferred)"
+            )
         else:
             logger.error(f"Failed to assign role '{role_name}' to '{canonical_name}'")
 
@@ -108,9 +109,13 @@ class RoleManager:
         success = resource_registry.create_alias(role_name, new_canonical_name)
         if success:
             if old_canonical_name:
-                logger.info(f"Reassigned role '{role_name}' from '{old_canonical_name}' to '{new_canonical_name}' (validation deferred)")
+                logger.info(
+                    f"Reassigned role '{role_name}' from '{old_canonical_name}' to '{new_canonical_name}' (validation deferred)"
+                )
             else:
-                logger.info(f"Assigned new role '{role_name}' to '{new_canonical_name}' (validation deferred)")
+                logger.info(
+                    f"Assigned new role '{role_name}' to '{new_canonical_name}' (validation deferred)"
+                )
         else:
             logger.error(f"Failed to reassign role '{role_name}' to '{new_canonical_name}'")
 
@@ -118,13 +123,13 @@ class RoleManager:
 
     def unassign_role(self, role_name: str) -> bool:
         """Remove a role assignment.
-        
+
         Args:
             role_name: Role name to remove
-            
+
         Returns:
             True if role was removed, False if it didn't exist
-            
+
         Example:
             role_manager.unassign_role("old-experiment-llm")
         """
@@ -136,12 +141,12 @@ class RoleManager:
 
         return success
 
-    def get_role_assignment(self, role_name: str) -> Optional[str]:
+    def get_role_assignment(self, role_name: str) -> str | None:
         """Get the canonical name assigned to a role.
-        
+
         Args:
             role_name: Role name to query
-            
+
         Returns:
             Canonical configuration name, or None if role is not assigned
         """
@@ -151,20 +156,20 @@ class RoleManager:
         except KeyError:
             return None
 
-    def get_canonical_roles(self, canonical_name: str) -> List[str]:
+    def get_canonical_roles(self, canonical_name: str) -> list[str]:
         """Get all roles assigned to a canonical configuration.
-        
+
         Args:
             canonical_name: Canonical configuration name
-            
+
         Returns:
             List of role names assigned to this configuration
         """
         return resource_registry.list_aliases(canonical_name)
 
-    def list_all_roles(self) -> Dict[str, str]:
+    def list_all_roles(self) -> dict[str, str]:
         """List all active role assignments.
-        
+
         Returns:
             Dictionary mapping role names to canonical names
         """
@@ -176,7 +181,7 @@ class RoleManager:
             # to find their aliases
             for resource_type in resource_registry.list_types():
                 configs_of_type = resource_registry.get_by_type(resource_type)
-                for config_name, config in configs_of_type.items():
+                for config_name, _config in configs_of_type.items():
                     aliases = resource_registry.list_aliases(config_name)
                     for alias in aliases:
                         roles[alias] = config_name
@@ -185,9 +190,9 @@ class RoleManager:
 
         return roles
 
-    def validate_role_assignments(self) -> List[str]:
+    def validate_role_assignments(self) -> list[str]:
         """Validate all role assignments and return any issues found.
-        
+
         Returns:
             List of validation error messages (empty if all valid)
         """
@@ -205,7 +210,9 @@ class RoleManager:
                 try:
                     resolved_config = resource_registry.get(role_name)
                     if resolved_config.name != canonical_name:
-                        issues.append(f"Role '{role_name}' resolves to '{resolved_config.name}' but should be '{canonical_name}'")
+                        issues.append(
+                            f"Role '{role_name}' resolves to '{resolved_config.name}' but should be '{canonical_name}'"
+                        )
                 except KeyError:
                     issues.append(f"Role '{role_name}' cannot be resolved")
 
@@ -214,9 +221,9 @@ class RoleManager:
 
         return issues
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """Get role assignment statistics.
-        
+
         Returns:
             Dictionary with role assignment statistics
         """
@@ -225,13 +232,13 @@ class RoleManager:
             canonical_configs = set(role_assignments.values())
 
             return {
-                'total_roles': len(role_assignments),
-                'unique_configs': len(canonical_configs),
-                'avg_roles_per_config': len(role_assignments) / max(len(canonical_configs), 1)
+                "total_roles": len(role_assignments),
+                "unique_configs": len(canonical_configs),
+                "avg_roles_per_config": len(role_assignments) / max(len(canonical_configs), 1),
             }
         except Exception as e:
             logger.warning(f"Error getting stats: {e}")
-            return {'total_roles': 0, 'unique_configs': 0, 'avg_roles_per_config': 0.0}
+            return {"total_roles": 0, "unique_configs": 0, "avg_roles_per_config": 0.0}
 
 
 # Global role manager instance

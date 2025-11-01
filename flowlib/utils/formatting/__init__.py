@@ -36,12 +36,10 @@ __all__ = [
     # Text formatting
     "process_escape_sequences",
     "format_key_value_pairs",
-
     # Entity formatting
     "format_entity_for_display",
     "format_entities_as_context",
     "format_entity_list",
-
     # Conversation formatting
     "format_conversation",
     "format_state",
@@ -49,16 +47,13 @@ __all__ = [
     "format_flows",
     "format_agent_execution_details",
     "format_execution_history",
-
     # JSON formatting
     "extract_json",
     "format_json",
-
     # Schema formatting
     "get_model_schema_text",
     "model_to_simple_json_schema",
-
     # Serialization
     "make_serializable",
-    "format_execution_details"
+    "format_execution_details",
 ]
