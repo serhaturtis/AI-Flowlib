@@ -7,22 +7,26 @@ from ...models import ToolParameters, ToolResult, ToolStatus
 
 
 class WriteParameters(ToolParameters):
-    """Parameters for write tool execution."""
+    """Parameters for write tool execution.
 
-    file_path: str = Field(..., description="Path to file to write")
+    This tool will overwrite existing files. If the file already exists,
+    you MUST use the Read tool first to read its contents.
+
+    NEVER proactively create documentation files (*.md, README*).
+    Only create documentation if explicitly requested by the user.
+
+    ALWAYS prefer editing existing files over creating new ones.
+    """
+
+    file_path: str = Field(..., description="Absolute path to file to write")
     content: str = Field(..., description="Content to write to file")
-    encoding: str = Field(default="utf-8", description="File encoding")
-    create_directories: bool = Field(
-        default=True, description="Create parent directories if they don't exist"
-    )
-    backup: bool = Field(default=False, description="Create backup if file exists")
 
     @field_validator("file_path")
     @classmethod
     def validate_file_path(cls, v: str) -> str:
-        """Validate file path."""
+        """Validate file path is not empty."""
         if not v or not v.strip():
-            raise ValueError("File path cannot be empty")
+            raise ValueError("file_path cannot be empty")
         return v.strip()
 
 
@@ -32,10 +36,6 @@ class WriteResult(ToolResult):
     file_path: str | None = Field(default=None, description="Path to written file")
     bytes_written: int | None = Field(default=None, description="Number of bytes written")
     lines_written: int | None = Field(default=None, description="Number of lines written")
-    backup_path: str | None = Field(default=None, description="Path to backup file if created")
-    created_directories: bool | None = Field(
-        default=None, description="Whether parent directories were created"
-    )
 
     def get_display_content(self) -> str:
         """Get user-friendly display text."""
@@ -45,10 +45,6 @@ class WriteResult(ToolResult):
                 lines.append(f"Bytes written: {self.bytes_written}")
             if self.lines_written is not None:
                 lines.append(f"Lines written: {self.lines_written}")
-            if self.backup_path:
-                lines.append(f"Backup created: {self.backup_path}")
-            if self.created_directories:
-                lines.append("Created parent directories")
             return "\n".join(lines)
         elif self.status == ToolStatus.ERROR:
             return f"Write error: {self.message}"

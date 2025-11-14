@@ -10,12 +10,10 @@ class ConversationResponseGenerationPrompt:
     """Prompt for generating conversation responses."""
 
     template: str = Field(
-        default="""{{persona}}
-
-History:
+        default="""Conversation History:
 {{conversation_history}}
 
 User: {{message}}
 
-Respond to what user said. Use only actual history. Be concise."""
+Respond to what the user said. Base your response only on the conversation shown above. Be concise and natural."""
     )

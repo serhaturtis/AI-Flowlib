@@ -65,8 +65,6 @@ def tool(
     tags: list[str] | None = None,
     version: str = "1.0.0",
     max_execution_time: int | None = None,
-    allowed_roles: list[str] | None = None,
-    denied_roles: list[str] | None = None,
     requires_confirmation: bool = False,
 ) -> Callable[[type], type]:
     """Register a class as a tool with strict parameter type enforcement.
@@ -84,8 +82,6 @@ def tool(
         tags: Tags for tool discovery
         version: Tool version
         max_execution_time: Maximum execution time in seconds
-        allowed_roles: Allowed agent roles
-        denied_roles: Denied agent roles
         requires_confirmation: Whether tool requires user confirmation
 
     Example:
@@ -160,8 +156,6 @@ def tool(
             tags=tags or [],
             version=version,
             max_execution_time=max_execution_time,
-            allowed_roles=allowed_roles or [],
-            denied_roles=denied_roles or [],
             requires_confirmation=requires_confirmation,
         )
 

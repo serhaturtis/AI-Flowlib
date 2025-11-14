@@ -13,7 +13,7 @@ from .models import EditParameters, EditResult
 @tool(
     parameter_type=EditParameters,
     name="edit",
-    tool_category="software",
+    tool_category="generic",
     description="Edit files by finding and replacing text with backup support",
 )
 class EditTool:

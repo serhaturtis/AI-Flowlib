@@ -15,7 +15,7 @@ class PreciseAgentConfig:
         "I double-check everything, prioritize correctness over speed, "
         "and always consider edge cases and potential issues."
     )
-    profile_name = "restricted-agent-profile"  # More restricted access for safety
+    allowed_tool_categories = ["generic"]
     model_name = "default-model"
     llm_name = "default-llm"
     temperature = 0.3  # Lower temperature for consistency

@@ -203,15 +203,16 @@ class BaseAgent:
             if current_state is None:
                 raise RuntimeError("Agent state not initialized - cannot get task_id for session")
 
-            # Get agent role from configuration chain
-            agent_role = self._get_agent_role()
+            allowed_categories = self._config_manager.config.allowed_tool_categories
+            if not allowed_categories:
+                raise ValueError(f"Agent '{self._name}' has no allowed_tool_categories configured")
 
             await self._context_manager.initialize_session(
                 session_id=current_state.task_id,
                 agent_name=self._config_manager.config.name,
                 agent_persona=self._config_manager.config.persona,
-                agent_role=agent_role,
-                working_directory=os.getcwd(),
+                allowed_tool_categories=allowed_categories,
+                working_directory=self._config_manager.config.working_directory or os.getcwd(),
                 user_id=None,
             )
 
@@ -766,50 +767,18 @@ class BaseAgent:
 
         return tools
 
-    def get_available_tools(self, agent_role: str | None = None) -> list[str]:
+    def get_available_tools(self) -> list[str]:
         """Get available tools from the task executor component.
 
         This is the single source of truth for tool discovery.
-
-        Args:
-            agent_role: Optional role filter for tools
-
-        Returns:
-            List of available tool names
         """
         self._check_initialized("get_available_tools")
 
-        # If no role specified, get the proper agent role from role manager
-        if not agent_role:
-            agent_role = self._get_agent_role()
+        from flowlib.agent.components.task.execution.tool_access_manager import tool_access_manager
 
-        # Get tools directly from registry
-        from flowlib.agent.components.task.execution.registry import tool_registry
+        allowed_categories = self._config_manager.config.allowed_tool_categories
 
-        return tool_registry.list_tools_for_role(agent_role)
-
-    def _get_agent_role(self) -> str:
-        """Get the agent's role from configuration chain: agent config → profile → role.
-
-        Returns:
-            The agent's assigned role
-        """
-        # Use agent's configured profile name directly
-        profile_name = self.config.profile_name
-
-        if not profile_name:
-            raise ValueError(f"Agent '{self._name}' has no profile_name configured")
-
-        # Get the profile config and extract the agent role
-        from flowlib.resources.registry.registry import resource_registry
-
-        try:
-            profile_config = resource_registry.get(profile_name)
-            if not hasattr(profile_config, "agent_role"):
-                raise ValueError(f"Profile '{profile_name}' has no agent_role configured")
-            return profile_config.agent_role
-        except KeyError:
-            raise ValueError(f"Agent profile '{profile_name}' not found in resource registry") from None
+        return tool_access_manager.get_allowed_tools(allowed_categories)
 
     def _check_initialized(self, operation: str) -> None:
         """Check if the agent is initialized before performing operation."""

@@ -5,9 +5,15 @@ from flowlib.providers.multimodal_llm.base import (
     MultimodalLLMProvider,
     MultimodalLLMProviderSettings,
 )
+from flowlib.providers.multimodal_llm.llama_cpp.provider import (
+    LlamaCppMultimodalProvider,
+    LlamaCppMultimodalSettings,
+)
 
 __all__ = [
     "MultimodalLLMProvider",
     "MultimodalLLMProviderSettings",
     "ImageInput",
+    "LlamaCppMultimodalProvider",
+    "LlamaCppMultimodalSettings",
 ]

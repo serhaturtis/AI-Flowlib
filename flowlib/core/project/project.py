@@ -45,7 +45,6 @@ class Project:
         self.tools_path = self.flowlib_path / "tools"
         self.agents_path = self.flowlib_path / "agents"
         self.flows_path = self.flowlib_path / "flows"
-        self.profiles_path = self.flowlib_path / "profiles"
         self.roles_path = self.flowlib_path / "roles"
         self.knowledge_plugins_path = self.flowlib_path / "knowledge_plugins"
         self.logs_path = self.flowlib_path / "logs"
@@ -85,10 +84,10 @@ class Project:
 
         This method loads configurations in the following order:
         1. Provider configs from configs/
-        2. Agent profiles from profiles/ or configs/ (for compatibility)
-        3. Agent configs from agents/ or configs/
-        4. Custom tools from tools/
-        5. Custom flows from flows/
+        2. Agent configs from agents/ or configs/
+        3. Custom tools from tools/
+        4. Custom flows from flows/
+        5. Role configs (if any legacy files remain)
         6. Role assignments from roles/assignments.py
         """
         if not self._initialized:
@@ -110,7 +109,6 @@ class Project:
                 self.tools_path,
                 self.agents_path,
                 self.flows_path,
-                self.profiles_path,
             ]:
                 if path.exists():
                     path_str = str(path)
@@ -121,9 +119,6 @@ class Project:
             try:
                 # Load configurations from configs/ (providers, models, etc.)
                 self._load_configs()
-
-                # Load agent profiles (from profiles/ or configs/ for backward compat)
-                self._load_profiles()
 
                 # Load agent configurations
                 self._load_agents()
@@ -160,7 +155,6 @@ class Project:
             self.tools_path,
             self.agents_path,
             self.flows_path,
-            self.profiles_path,
             self.roles_path,
             self.knowledge_plugins_path,
             self.logs_path,
@@ -195,8 +189,6 @@ class Project:
             # Handle special case for role assignments
             if target_file.startswith("../roles/"):
                 target_path = self.roles_path / target_file.replace("../roles/", "")
-            elif target_file.startswith("../profiles/"):
-                target_path = self.profiles_path / target_file.replace("../profiles/", "")
             elif target_file.startswith("../agents/"):
                 target_path = self.agents_path / target_file.replace("../agents/", "")
             else:
@@ -231,8 +223,6 @@ class Project:
                 # Handle special cases for different target directories
                 if target_file.startswith("../roles/"):
                     target_path = self.roles_path / target_file.replace("../roles/", "")
-                elif target_file.startswith("../profiles/"):
-                    target_path = self.profiles_path / target_file.replace("../profiles/", "")
                 elif target_file.startswith("../agents/"):
                     target_path = self.agents_path / target_file.replace("../agents/", "")
                 else:
@@ -281,20 +271,6 @@ class Project:
 
         for config_file in config_files:
             self._import_module(config_file, "config")
-
-    def _load_profiles(self) -> None:
-        """Load agent profiles from profiles/."""
-        if not self.profiles_path.exists():
-            logger.debug("No profiles directory found")
-            return
-
-        profile_files = self._find_python_files(self.profiles_path)
-        if not profile_files:
-            logger.debug("No profile files found")
-            return
-
-        for profile_file in profile_files:
-            self._import_module(profile_file, "profile")
 
     def _load_agents(self) -> None:
         """Load agent configurations from agents/."""

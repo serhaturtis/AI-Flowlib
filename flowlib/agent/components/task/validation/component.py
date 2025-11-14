@@ -65,7 +65,6 @@ class ContextValidatorComponent(AgentComponent):
         user_message: str,
         conversation_history: list[dict] | None = None,
         domain_state: dict[str, Any] | None = None,
-        agent_role: str = "assistant",
     ) -> ValidationOutput:
         """Validate whether there is sufficient context to proceed.
 
@@ -78,7 +77,6 @@ class ContextValidatorComponent(AgentComponent):
             user_message: The user's current message
             conversation_history: Recent conversation context
             domain_state: Current domain-specific state
-            agent_role: Agent's role
 
         Returns:
             ValidationOutput with sufficiency assessment
@@ -94,7 +92,7 @@ class ContextValidatorComponent(AgentComponent):
         if self._pending_clarification:
             logger.info("Pending clarification detected - parsing user response")
             return await self._handle_clarification_response(
-                user_message, conversation_history or [], domain_state or {}, agent_role
+                user_message, conversation_history or [], domain_state or {}
             )
 
         # ===================================================================
@@ -107,7 +105,6 @@ class ContextValidatorComponent(AgentComponent):
             user_message=user_message,
             conversation_history=conversation_history or [],
             domain_state=domain_state or {},
-            agent_role=agent_role,
         )
 
         # Run validation flow
@@ -142,7 +139,6 @@ class ContextValidatorComponent(AgentComponent):
         user_message: str,
         conversation_history: list[dict],
         domain_state: dict[str, Any],
-        agent_role: str,
     ) -> ValidationOutput:
         """Handle user response to clarification questions using LLM-based parsing.
 
@@ -155,7 +151,6 @@ class ContextValidatorComponent(AgentComponent):
             user_message: User's response to clarification
             conversation_history: Conversation context
             domain_state: Domain state
-            agent_role: Agent role
 
         Returns:
             ValidationOutput with "proceed" action and enriched context

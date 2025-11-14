@@ -15,7 +15,7 @@ from .models import BashParameters, BashResult
 @tool(
     parameter_type=BashParameters,
     name="bash",
-    tool_category="systems",
+    tool_category="generic",
     description="Execute shell commands with timeout and output capture",
 )
 class BashTool:

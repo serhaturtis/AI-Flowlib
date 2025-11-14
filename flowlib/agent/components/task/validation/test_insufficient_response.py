@@ -88,7 +88,6 @@ async def test_insufficient_response_handling():
             user_message="Fix the bug",
             conversation_history=[],
             domain_state={},
-            agent_role="assistant",
         )
 
         logger.info(f"Result 1 - Next Action: {result1.result.next_action}")
@@ -124,7 +123,6 @@ async def test_insufficient_response_handling():
                 },
             ],
             domain_state={},
-            agent_role="assistant",
         )
 
         logger.info(f"Result 2 - Next Action: {result2.result.next_action}")
@@ -168,7 +166,6 @@ async def test_insufficient_response_handling():
                 },
             ],
             domain_state={},
-            agent_role="assistant",
         )
 
         logger.info(f"Result 3 - Next Action: {result3.result.next_action}")
@@ -202,7 +199,6 @@ async def test_insufficient_response_handling():
             user_message="List files in current directory",
             conversation_history=[],
             domain_state={},
-            agent_role="assistant",
         )
 
         logger.info(f"Result 4 - Next Action: {result4.result.next_action}")
@@ -254,7 +250,6 @@ async def test_specific_answer_after_insufficient():
             user_message="Update the configuration",
             conversation_history=[],
             domain_state={},
-            agent_role="assistant",
         )
 
         assert result1.result.next_action == "clarify"
@@ -268,7 +263,6 @@ async def test_specific_answer_after_insufficient():
                 {"role": "assistant", "content": "What configuration?"},
             ],
             domain_state={},
-            agent_role="assistant",
         )
 
         assert result2.result.next_action == "clarify"
@@ -284,7 +278,6 @@ async def test_specific_answer_after_insufficient():
                 {"role": "assistant", "content": "Follow-up question"},
             ],
             domain_state={},
-            agent_role="assistant",
         )
 
         assert result3.result.next_action == "proceed"

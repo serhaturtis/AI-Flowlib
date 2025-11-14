@@ -85,7 +85,7 @@ class PlanningInput(StrictBaseModel):
         default_factory=list, description="Recent conversation context"
     )
     available_tools: list[str] = Field(..., description="List of available tool names")
-    agent_role: str = Field(default="assistant", description="Role of the agent")
+    agent_persona: str | None = Field(default=None, description="Agent's persona/personality")
     working_directory: str = Field(default=".", description="Current working directory")
 
     # FIX: Add domain state for context-aware planning

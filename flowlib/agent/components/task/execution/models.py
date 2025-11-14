@@ -257,8 +257,9 @@ class ToolExecutionContext(StrictBaseModel):
     # Agent context
     agent_id: str = Field(..., description="ID of the executing agent")
     agent_persona: str = Field(..., description="Agent's persona/personality")
-    agent_role: str | None = Field(
-        default=None, description="Agent's role for permission checking"
+    allowed_tool_categories: list[str] = Field(
+        default_factory=list,
+        description="Tool categories available to the current agent",
     )
     session_id: str | None = Field(default=None, description="Agent session ID")
     task_id: str | None = Field(default=None, description="Current task ID")
@@ -315,15 +316,6 @@ class ToolMetadata(StrictBaseModel):
     # Discovery
     aliases: list[str] = Field(default_factory=list, description="Alternative tool names")
     tags: list[str] = Field(default_factory=list, description="Tool tags for discovery")
-
-    # Simple access control
-    allowed_roles: list[str] = Field(
-        default_factory=list,
-        description="Agent roles allowed to use this tool (if empty, uses category-based access)",
-    )
-    denied_roles: list[str] = Field(
-        default_factory=list, description="Agent roles explicitly denied access"
-    )
 
     # Capabilities
     max_execution_time: int | None = Field(

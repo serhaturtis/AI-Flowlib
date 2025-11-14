@@ -17,7 +17,7 @@ class CodeReviewAgentConfig:
         "I focus on code quality, design patterns, security vulnerabilities, "
         "and provide constructive feedback with specific improvement suggestions."
     )
-    profile_name = "qa-automation-agent-profile"  # QA engineer role for testing tools
+    allowed_tool_categories = ["generic", "software"]
     model_name = "default-model"
     llm_name = "default-llm"
     temperature = 0.4  # Lower temperature for consistent analysis
@@ -31,7 +31,7 @@ class CodeReviewAgentConfig:
 @agent_config("my-gpt4-agent")
 class MyGPT4AgentConfig:
     persona = "Your custom persona here"
-    profile_name = "software-engineer-profile"
+    allowed_tool_categories = ["generic"]
     model_name = "gpt4-model"  # Reference your GPT-4 model config
     llm_name = "openai-llm"     # Reference your OpenAI provider config
     temperature = 0.7

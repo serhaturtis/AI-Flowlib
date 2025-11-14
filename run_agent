@@ -1,0 +1,4 @@
+#!/bin/bash
+# Unified agent runner - convenience wrapper for flowlib-agent CLI
+
+exec ./flowlib/apps/flowlib_agent.py "$@"

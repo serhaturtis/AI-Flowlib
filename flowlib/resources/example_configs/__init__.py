@@ -14,7 +14,7 @@ Usage:
 """
 
 # Mapping for copying example files to project structure
-# Configs go to configs/, agents to agents/, profiles to profiles/
+# Configs go to configs/, agents to agents/
 EXAMPLE_TO_TARGET = {
     # Provider configs to configs/
     "example_default_llm.py": "example_llamacpp_provider.py",
@@ -25,8 +25,6 @@ EXAMPLE_TO_TARGET = {
     "example_default_cache.py": "example_cache_provider.py",
     "example_model_config.py": "example_model_config.py",
     "example_embedding_model_config.py": "example_embedding_model_config.py",
-    # Agent profiles to profiles/
-    "example_agent_profiles.py": "../profiles/agent_profiles.py",
     # Agent configs to agents/
     "example_default_agent_config.py": "../agents/default_agent_config.py",
     "example_creative_agent.py": "../agents/creative_agent_config.py",

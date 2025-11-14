@@ -269,13 +269,16 @@ class ProviderRegistry(BaseRegistry[Provider]):
             GraphDBConfigResource,
             LLMConfigResource,
             MessageQueueConfigResource,
+            MultimodalLLMConfigResource,
             StorageConfigResource,
             VectorDBConfigResource,
         )
 
-        # Infer from config type first
+        # Infer from config resource type (when available)
         if isinstance(config, LLMConfigResource):
             return "llm"
+        elif isinstance(config, MultimodalLLMConfigResource):
+            return "multimodal_llm"
         elif isinstance(config, DatabaseConfigResource):
             return "database"
         elif isinstance(config, VectorDBConfigResource):
@@ -293,34 +296,12 @@ class ProviderRegistry(BaseRegistry[Provider]):
         elif isinstance(config, EmailConfigResource):
             return "email"
 
-        # Fallback to provider type mapping
-        provider_category_map = {
-            "llamacpp": "llm",
-            "google_ai": "llm",
-            "openai": "llm",
-            "postgres": "database",
-            "mongodb": "database",
-            "sqlite": "database",
-            "chroma": "vector_db",
-            "pinecone": "vector_db",
-            "qdrant": "vector_db",
-            "redis": "cache",
-            "s3": "storage",
-            "local": "storage",
-            "llamacpp_embedding": "embedding",
-            "openai_embedding": "embedding",
-            "neo4j": "graph_db",
-            "arango": "graph_db",
-            "rabbitmq": "message_queue",
-            "kafka": "message_queue",
-            "imap-smtp": "email",
-            "gmail-api": "email",
-        }
+        # Use centralized provider type mapping (single source of truth)
+        from flowlib.providers.core.constants import PROVIDER_TYPE_MAP
 
-        if provider_type not in provider_category_map:
-            # If not in map, raise error - no fallbacks
+        if provider_type not in PROVIDER_TYPE_MAP:
             raise ValueError(f"Unknown provider type: {provider_type}")
-        return provider_category_map[provider_type]
+        return PROVIDER_TYPE_MAP[provider_type]
 
     def _list_available_configs(self) -> list[str]:
         """List available provider configurations for debugging."""

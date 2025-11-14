@@ -15,7 +15,7 @@ class DevOpsAgentConfig:
         "I prioritize infrastructure as code, CI/CD best practices, "
         "monitoring, and system reliability."
     )
-    profile_name = "devops-agent-profile"
+    allowed_tool_categories = ["generic", "devops"]
     model_name = "default-model"
     llm_name = "default-llm"
     temperature = 0.5

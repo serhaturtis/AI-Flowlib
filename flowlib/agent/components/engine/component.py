@@ -276,7 +276,6 @@ class EngineComponent(AgentComponent):
                     user_message=state.task_description,
                     conversation_history=[msg.model_dump() for msg in conversation_history],
                     domain_state=domain_state,
-                    agent_role=session_context.agent_role if session_context else "assistant",
                 )
 
                 validation_result = validation_output.result
@@ -420,7 +419,7 @@ class EngineComponent(AgentComponent):
                         working_directory=step_context.session.working_directory,
                         agent_id=step_context.session.agent_name,
                         agent_persona=step_context.session.agent_persona,
-                        agent_role=step_context.session.agent_role,
+                        allowed_tool_categories=step_context.session.allowed_tool_categories,
                         session_id=step_context.session.session_id,
                         execution_id=f"exec_{state.task_id}_{state.cycles}_{step.step_id}",
                         original_user_message=step_context.session.current_message,  # FIX: Populate from session context

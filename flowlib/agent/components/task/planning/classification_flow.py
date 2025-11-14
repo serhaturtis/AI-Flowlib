@@ -189,7 +189,6 @@ class ConversationPlanningFlow:
         # Prepare prompt variables
         prompt_vars = {
             "user_message": input_data.user_message,
-            "agent_role": input_data.agent_role,
             "conversation_history": history_text,
             "domain_state": domain_state_text,
         }
@@ -468,7 +467,7 @@ class ClassificationBasedPlanningFlow:
             conversation_flow = flow_registry.get_flow("conversation-planning")
             assert conversation_flow is not None, "conversation-planning flow not found"
             specialized_plan = await conversation_flow.run_pipeline(input_data)
-            structured_plan = self._convert_conversation_plan(specialized_plan)
+            structured_plan = await self._convert_conversation_plan(specialized_plan, input_data)
 
         elif classification.task_type == "single_tool":
             single_tool_flow = flow_registry.get_flow("single-tool-planning")
@@ -491,14 +490,58 @@ class ClassificationBasedPlanningFlow:
             llm_calls_made=2,  # Classification + specialized planning
         )
 
-    def _convert_conversation_plan(self, conv_plan: ConversationPlan) -> StructuredPlan:
-        """Convert ConversationPlan to StructuredPlan."""
+    async def _convert_conversation_plan(
+        self, conv_plan: ConversationPlan, input_data: PlanningInput
+    ) -> StructuredPlan:
+        """Convert ConversationPlan to StructuredPlan by generating actual response.
+
+        Uses ConversationFlow to generate the actual message text, then creates
+        a step with the conversation tool to deliver it. This follows the same
+        pattern as clarification flows.
+
+        Args:
+            conv_plan: Conversation plan with guidance
+            input_data: Planning input with user message and context
+
+        Returns:
+            StructuredPlan with conversation step containing generated message
+        """
         plan_id = f"plan_{uuid.uuid4().hex[:8]}"
+
+        # Use ConversationFlow to generate the actual response message
+        conversation_gen_flow = flow_registry.get_flow("conversation-generation")
+        assert conversation_gen_flow is not None, "conversation-generation flow not found"
+
+        # Import ConversationInput model
+        from flowlib.agent.components.task.execution.tool_implementations.conversation.flow import (
+            ConversationInput,
+        )
+
+        # Generate the actual conversation response
+        conversation_result = await conversation_gen_flow.run_pipeline(
+            ConversationInput(
+                task_content=input_data.user_message,
+                working_directory=input_data.working_directory,
+                conversation_history=input_data.conversation_history,
+            )
+        )
+
+        # Create step with conversation tool + generated message
+        # (following clarification_flow.py pattern)
+        conversation_step = PlanStep(
+            step_id=f"{plan_id}_step_0",
+            tool_name="conversation",
+            step_description=conv_plan.response_guidance,  # Guidance becomes description
+            parameters={"message": conversation_result.response},  # Generated response
+            depends_on_step=None,
+            executed=False,
+            result=None,
+        )
 
         return StructuredPlan(
             message_type="conversation",
             reasoning=conv_plan.reasoning,
-            steps=[],  # No tool steps for conversation
+            steps=[conversation_step],  # Now has a step!
             expected_outcome=conv_plan.expected_outcome,
             plan_id=plan_id,
             created_at=time.time(),

@@ -18,8 +18,6 @@ class ContextClassificationPrompt:
 
 User Request: {{user_message}}
 
-Agent Role: {{agent_role}}
-
 Conversation History:
 {{conversation_history}}
 
@@ -84,8 +82,6 @@ class ContextProceedGenerationPrompt:
 
 User Request: {{user_message}}
 
-Agent Role: {{agent_role}}
-
 Conversation History:
 {{conversation_history}}
 
@@ -116,8 +112,6 @@ class ContextClarifyGenerationPrompt:
         default="""Generate clarification questions for missing information.
 
 User Request: {{user_message}}
-
-Agent Role: {{agent_role}}
 
 Conversation History:
 {{conversation_history}}
@@ -155,8 +149,6 @@ class ContextValidationPrompt:
         default="""Assess whether there is sufficient information to proceed with this request.
 
 User Request: {{user_message}}
-
-Agent Role: {{agent_role}}
 
 Conversation History:
 {{conversation_history}}

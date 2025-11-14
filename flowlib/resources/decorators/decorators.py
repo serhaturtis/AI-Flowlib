@@ -641,6 +641,114 @@ def embedding_config(
     return decorator
 
 
+def multimodal_llm_provider_config(name: str, **metadata: Any) -> Callable[[type], type]:
+    """Register a class as a multimodal LLM provider configuration resource.
+
+    This decorator is for multimodal LLM PROVIDER infrastructure configs (e.g., llamacpp_multimodal provider).
+    For multimodal MODEL configs, use @multimodal_llm_config instead.
+
+    Args:
+        name: Unique name for the multimodal LLM provider config (e.g., 'default-multimodal-llm')
+        **metadata: Additional metadata about the config
+    """
+
+    def decorator(cls: type) -> type:
+        registry = _get_resource_registry()
+        if registry is None:
+            raise RuntimeError("Resource registry not initialized")
+
+        # Extract provider_type and settings from class attributes
+        provider_type = getattr(cls, "provider_type", "")
+        settings = getattr(cls, "settings", {})
+
+        cls.__resource_name__ = name  # type: ignore[attr-defined]
+        cls.__resource_type__ = ResourceType.MULTIMODAL_LLM_CONFIG  # type: ignore[attr-defined]
+        cls.__resource_metadata__ = {
+            "name": name,
+            "type": ResourceType.MULTIMODAL_LLM_CONFIG,
+            **metadata,
+        }  # type: ignore[attr-defined]
+
+        # Always wrap in MultimodalLLMConfigResource
+        from flowlib.resources.models.config_resource import MultimodalLLMConfigResource
+
+        instance = MultimodalLLMConfigResource(
+            name=name,
+            type=ResourceType.MULTIMODAL_LLM_CONFIG,
+            provider_type=provider_type,
+            settings=settings,
+        )
+
+        registry.register(
+            name=name, obj=instance, resource_type=ResourceType.MULTIMODAL_LLM_CONFIG, **metadata
+        )
+        _block_direct_instantiation(cls, name, "multimodal LLM provider config")
+        return cls
+
+    return decorator
+
+
+def multimodal_llm_config(
+    name: str,
+    provider_type: str | None = None,
+    provider: str | None = None,
+    config: dict[str, Any] | None = None,
+    **metadata: Any,
+) -> Callable[[type], type]:
+    """Register a class as a multimodal LLM model configuration resource.
+
+    This decorator creates a model configuration that can use multimodal LLM providers.
+    Similar to @model_config but specifically for multimodal vision-language models.
+
+    Args:
+        name: Unique name for the multimodal LLM model config
+        provider_type: Provider implementation to use (e.g., "llamacpp_multimodal")
+        provider: DEPRECATED - use provider_type instead
+        config: Model configuration (path, clip_model_path, n_ctx, etc.)
+        **metadata: Additional metadata
+    """
+
+    def decorator(cls: type) -> type:
+        registry = _get_resource_registry()
+        if registry is None:
+            raise RuntimeError("Resource registry not initialized")
+
+        # Handle deprecated 'provider' parameter
+        actual_provider_type = provider_type or provider
+        if not actual_provider_type:
+            raise ValueError("Either provider_type or provider must be specified")
+
+        cls.__resource_name__ = name  # type: ignore[attr-defined]
+        cls.__resource_type__ = ResourceType.MULTIMODAL_LLM_CONFIG  # type: ignore[attr-defined]
+        cls.__resource_metadata__ = {
+            "name": name,
+            "type": ResourceType.MULTIMODAL_LLM_CONFIG,
+            "provider_type": actual_provider_type,
+            **metadata,
+        }  # type: ignore[attr-defined]
+
+        # Always wrap in ModelResource with multimodal provider type
+        from flowlib.resources.models.model_resource import ModelResource
+
+        instance = ModelResource(
+            name=name,
+            type=ResourceType.MULTIMODAL_LLM_CONFIG,
+            provider_type=actual_provider_type,
+            config=config or {},
+        )
+
+        registry.register(
+            name=name, obj=instance, resource_type=ResourceType.MULTIMODAL_LLM_CONFIG, **metadata
+        )
+
+        # Prevent direct instantiation
+        _block_direct_instantiation(cls, name, "multimodal LLM model config")
+
+        return cls
+
+    return decorator
+
+
 def graph_db_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as a graph database configuration resource."""
 
@@ -715,137 +823,6 @@ def message_queue_config(name: str, **metadata: Any) -> Callable[[type], type]:
     return decorator
 
 
-def agent_profile_config(name: str, **metadata: Any) -> Callable[[type], type]:
-    """Register a class as an agent profile configuration resource."""
-
-    def decorator(cls: type) -> type:
-        registry = _get_resource_registry()
-        if registry is None:
-            raise RuntimeError("Resource registry not initialized")
-
-        # Extract agent profile attributes from class attributes
-        agent_role = getattr(cls, "agent_role", "")
-        description = getattr(cls, "description", "")
-
-        cls.__resource_name__ = name  # type: ignore[attr-defined]
-        cls.__resource_type__ = ResourceType.AGENT_PROFILE_CONFIG  # type: ignore[attr-defined]
-        cls.__resource_metadata__ = {
-            "name": name,
-            "type": ResourceType.AGENT_PROFILE_CONFIG,
-            **metadata,
-        }  # type: ignore[attr-defined]
-
-        # Always wrap in AgentProfileConfigResource
-        from flowlib.resources.models.config_resource import AgentProfileConfigResource
-
-        instance = AgentProfileConfigResource(
-            name=name,
-            type=ResourceType.AGENT_PROFILE_CONFIG,
-            agent_role=agent_role,
-            description=description,
-        )
-
-        registry.register(
-            name=name, obj=instance, resource_type=ResourceType.AGENT_PROFILE_CONFIG, **metadata
-        )
-        _block_direct_instantiation(cls, name, "agent profile config")
-        return cls
-
-    return decorator
-
-
-def role_config(name: str, **metadata: Any) -> Callable[[type], type]:
-    """Register a class as a role configuration resource.
-
-    Args:
-        name: Unique name for the role (e.g., 'composer', 'software_engineer')
-        **metadata: Additional metadata about the role
-    """
-
-    def decorator(cls: type) -> type:
-        registry = _get_resource_registry()
-        if registry is None:
-            raise RuntimeError("Resource registry not initialized")
-
-        # Extract role config attributes from class attributes
-        agent_role = getattr(cls, "agent_role", "")
-        description = getattr(cls, "description", "")
-        tool_categories = getattr(cls, "tool_categories", [])
-        max_execution_time = getattr(cls, "max_execution_time", 60)
-
-        cls.__resource_name__ = name  # type: ignore[attr-defined]
-        cls.__resource_type__ = ResourceType.ROLE_CONFIG  # type: ignore[attr-defined]
-        cls.__resource_metadata__ = {"name": name, "type": ResourceType.ROLE_CONFIG, **metadata}  # type: ignore[attr-defined]
-
-        # Always wrap in RoleConfigResource
-        from flowlib.resources.models.role_config_resource import RoleConfigResource
-
-        instance = RoleConfigResource(
-            name=name,
-            type=ResourceType.ROLE_CONFIG,
-            agent_role=agent_role,
-            description=description,
-            tool_categories=tool_categories,
-            max_execution_time=max_execution_time,
-        )
-
-        registry.register(
-            name=name, obj=instance, resource_type=ResourceType.ROLE_CONFIG, **metadata
-        )
-        _block_direct_instantiation(cls, name, "role config")
-        return cls
-
-    return decorator
-
-
-def tool_category_config(name: str, **metadata: Any) -> Callable[[type], type]:
-    """Register a class as a tool category configuration resource.
-
-    Args:
-        name: Unique name for the tool category (e.g., 'music', 'software')
-        **metadata: Additional metadata about the tool category
-    """
-
-    def decorator(cls: type) -> type:
-        registry = _get_resource_registry()
-        if registry is None:
-            raise RuntimeError("Resource registry not initialized")
-
-        # Extract tool category attributes from class attributes
-        category_name = getattr(cls, "category_name", "")
-        description = getattr(cls, "description", "")
-        risk_level = getattr(cls, "risk_level", "medium")
-        requires_confirmation = getattr(cls, "requires_confirmation", False)
-
-        cls.__resource_name__ = name  # type: ignore[attr-defined]
-        cls.__resource_type__ = ResourceType.TOOL_CATEGORY_CONFIG  # type: ignore[attr-defined]
-        cls.__resource_metadata__ = {
-            "name": name,
-            "type": ResourceType.TOOL_CATEGORY_CONFIG,
-            **metadata,
-        }  # type: ignore[attr-defined]
-
-        # Always wrap in ToolCategoryConfigResource
-        from flowlib.resources.models.role_config_resource import ToolCategoryConfigResource
-
-        instance = ToolCategoryConfigResource(
-            name=name,
-            type=ResourceType.TOOL_CATEGORY_CONFIG,
-            category_name=category_name,
-            description=description,
-            risk_level=risk_level,
-            requires_confirmation=requires_confirmation,
-        )
-
-        registry.register(
-            name=name, obj=instance, resource_type=ResourceType.TOOL_CATEGORY_CONFIG, **metadata
-        )
-        _block_direct_instantiation(cls, name, "tool category config")
-        return cls
-
-    return decorator
-
-
 def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as an agent configuration resource.
 
@@ -870,7 +847,7 @@ def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
 
         # Extract all agent config attributes from class attributes
         persona = getattr(cls, "persona", "")
-        profile_name = getattr(cls, "profile_name", "")
+        allowed_tool_categories = getattr(cls, "allowed_tool_categories", [])
         model_name = getattr(cls, "model_name", "default-model")
         llm_name = getattr(cls, "llm_name", "default-llm")
         temperature = getattr(cls, "temperature", 0.7)
@@ -889,7 +866,7 @@ def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
             name=name,
             type=ResourceType.AGENT_CONFIG,
             persona=persona,
-            profile_name=profile_name,
+            allowed_tool_categories=allowed_tool_categories,
             model_name=model_name,
             llm_name=llm_name,
             temperature=temperature,

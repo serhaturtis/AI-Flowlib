@@ -1,7 +1,6 @@
 """Flowlib resource management system public API."""
 
 from flowlib.resources.decorators.decorators import (
-    agent_profile_config,
     cache_config,
     config,
     database_config,
@@ -43,7 +42,6 @@ __all__ = [
     "embedding_config",
     "graph_db_config",
     "message_queue_config",
-    "agent_profile_config",
     "ModelResource",
     "TemplateResource",
     "TemplateVariableConfig",

@@ -155,7 +155,8 @@ class AgentLauncher:
         config = AgentConfig(
             name=config_resource.name or agent_config_name,
             persona=config_resource.persona,
-            profile_name=config_resource.profile_name,
+            allowed_tool_categories=config_resource.allowed_tool_categories,
+            working_directory=str(self.project.flowlib_path),  # Set agent's working directory to project root
             provider_name=config_resource.llm_name,
             model_name=config_resource.model_name,
             temperature=config_resource.temperature,

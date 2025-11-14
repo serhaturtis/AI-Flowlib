@@ -353,19 +353,13 @@ class ToolRegistry(BaseRegistry[AgentToolFactory]):
         """
         return self.list()
 
-    def list_tools_for_role(self, agent_role: str | None) -> builtins.list[str]:
-        """List tools available for a specific agent role.
+    def list_tools_for_categories(
+        self, allowed_categories: builtins.list[str]
+    ) -> builtins.list[str]:
+        """List tools available for the provided categories."""
+        from .tool_access_manager import tool_access_manager
 
-        Args:
-            agent_role: Agent role string to filter tools for
-
-        Returns:
-            List of tool names accessible to the agent role
-        """
-        # Import here to avoid circular dependency
-        from .tool_role_manager import tool_role_manager
-
-        return tool_role_manager.get_allowed_tools(agent_role)
+        return tool_access_manager.get_allowed_tools(allowed_categories)
 
 
 # Global registry instance (following flowlib pattern)

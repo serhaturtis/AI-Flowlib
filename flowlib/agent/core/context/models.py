@@ -101,8 +101,8 @@ class SessionContext(MutableStrictBaseModel):
     session_id: str = Field(..., description="Unique session identifier")
     user_id: str | None = Field(default=None, description="User identifier")
     agent_name: str = Field(..., description="Agent name")
-    agent_role: str = Field(
-        default="general_purpose", description="Agent role for tool access control"
+    allowed_tool_categories: list[str] = Field(
+        default_factory=list, description="Tool categories the agent may use"
     )
     agent_persona: str = Field(..., description="Agent persona")
     working_directory: str = Field(..., description="Current working directory")

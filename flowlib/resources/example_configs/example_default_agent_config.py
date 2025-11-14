@@ -16,7 +16,7 @@ class DefaultAgentConfig:
         "I write clean, well-documented code and follow best practices. "
         "I'm thorough in testing and careful about security."
     )
-    profile_name = "default-agent-profile"  # Uses software_engineer role
+    allowed_tool_categories = ["generic", "software"]
     model_name = "default-model"
     llm_name = "default-llm"
     temperature = 0.7

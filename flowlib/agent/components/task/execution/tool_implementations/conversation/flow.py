@@ -16,7 +16,6 @@ class ConversationInput(StrictBaseModel):
 
     task_content: str = Field(..., description="User message to respond to")
     working_directory: str = Field(..., description="Working directory context")
-    agent_persona: str = Field(..., description="Agent's persona/personality")
     conversation_history: list[dict] = Field(
         default_factory=list, description="Recent conversation history"
     )
@@ -53,7 +52,6 @@ class ConversationFlow:
 
         response_variables: dict[str, Any] = {
             "message": request.task_content,
-            "persona": request.agent_persona,
             "conversation_history": history_text,
         }
 

@@ -15,7 +15,7 @@ class CreativeAgentConfig:
         "I think outside the box, suggest novel approaches, "
         "and help brainstorm unique solutions to challenges."
     )
-    profile_name = "default-agent-profile"
+    allowed_tool_categories = ["generic"]
     model_name = "default-model"
     llm_name = "default-llm"
     temperature = 0.9  # Higher temperature for creativity

@@ -17,7 +17,7 @@ from .models import ConversationParameters, ConversationResult
 @tool(
     parameter_type=ConversationParameters,
     name="conversation",
-    tool_category="generic",
+    tool_category="infrastructure",
     description="Handle conversational interactions and generate responses",
 )
 class ConversationTool(ToolPresentationInterface):

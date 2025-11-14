@@ -9,7 +9,10 @@ from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr
 
+from flowlib.core.errors.errors import ErrorContext, ProviderError
+from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.base import Provider, ProviderSettings
+from flowlib.resources.registry.registry import resource_registry
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +134,50 @@ class MultimodalLLMProvider(Provider[SettingsT], Generic[SettingsT]):
         """
         self._system_prompt = prompt
         logger.info(f"System prompt set for {self.name} ({len(prompt) if prompt else 0} chars)")
+
+    async def get_model_config(self, model_name: str) -> dict[str, object]:
+        """Get configuration for a model from the resource registry.
+
+        Args:
+            model_name: Name of the model to retrieve
+
+        Returns:
+            Model configuration dictionary
+
+        Raises:
+            ProviderError: If model is not found or invalid
+        """
+        try:
+            # Use resource registry to get model configuration
+            resource = resource_registry.get(model_name)
+
+            # Log the model config for debugging
+            logger.info(f"Retrieved model resource for '{model_name}': {resource}")
+
+            # Convert ResourceBase to dict for backward compatibility with existing code
+            model_config = resource.model_dump()
+
+            return model_config
+        except Exception as e:
+            logger.error(f"Error retrieving model '{model_name}': {str(e)}")
+
+            raise ProviderError(
+                message=f"Error retrieving model configuration for '{model_name}': {str(e)}",
+                context=ErrorContext.create(
+                    flow_name="multimodal_llm_provider",
+                    error_type="ModelConfigError",
+                    error_location="get_model_config",
+                    component=self.name,
+                    operation="retrieve_model_config",
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type=self.provider_type,
+                    operation="retrieve_model_config",
+                    retry_count=0,
+                ),
+                cause=e,
+            ) from e
 
     async def generate(
         self,

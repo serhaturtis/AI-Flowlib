@@ -81,9 +81,10 @@ class ClassificationBasedPlannerComponent(AgentComponent):
                 {"role": msg.role, "content": msg.content, "timestamp": msg.timestamp}
                 for msg in context.session.conversation_history
             ]
-            # Get available tools for agent role
-            available_tools = self._get_available_tools_for_role(context.session.agent_role)
-            agent_role = context.session.agent_role or "assistant"
+            allowed_categories = context.session.allowed_tool_categories or []
+            available_tools = self._get_available_tools_for_categories(
+                allowed_categories
+            )
             working_directory = context.session.working_directory
 
             # Extract domain state from execution context
@@ -159,7 +160,7 @@ class ClassificationBasedPlannerComponent(AgentComponent):
                 user_message=effective_user_message,
                 conversation_history=conversation_history,
                 available_tools=available_tools,
-                agent_role=agent_role,
+                agent_persona=context.session.agent_persona,
                 working_directory=working_directory,
                 domain_state=domain_state,
                 shared_variables=shared_variables,
@@ -199,18 +200,10 @@ class ClassificationBasedPlannerComponent(AgentComponent):
             # Fail fast - no fallbacks allowed in flowlib
             raise ExecutionError(f"Classification-based planning failed: {str(e)}") from e
 
-    def _get_available_tools_for_role(self, agent_role: str) -> list[str]:
-        """Get tools available for the agent's role.
+    def _get_available_tools_for_categories(
+        self, allowed_categories: list[str]
+    ) -> list[str]:
+        """Get tools available for the agent based on allowed categories."""
+        from flowlib.agent.components.task.execution.tool_access_manager import tool_access_manager
 
-        Args:
-            agent_role: Agent role string
-
-        Returns:
-            List of tool names available to this role
-        """
-        # Import here to avoid circular imports
-        from flowlib.agent.components.task.execution.tool_role_manager import (
-            tool_role_manager,
-        )
-
-        return tool_role_manager.get_allowed_tools(agent_role)
+        return tool_access_manager.get_allowed_tools(allowed_categories)

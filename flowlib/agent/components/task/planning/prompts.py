@@ -168,9 +168,6 @@ Your task: Plan a conversational response that addresses the user's message appr
 User Message:
 {{user_message}}
 
-Agent Role:
-{{agent_role}}
-
 Conversation History:
 {{conversation_history}}
 

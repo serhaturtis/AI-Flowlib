@@ -22,6 +22,11 @@ except ImportError:
     pass
 
 try:
+    from .multimodal_llm import MultimodalLLMProvider
+except ImportError:
+    pass
+
+try:
     from .db import DBProvider, DBProviderSettings
 except ImportError:
     pass
@@ -45,6 +50,7 @@ __all__ = [
     "decorators",
     "factory",
     "LLMProvider",
+    "MultimodalLLMProvider",
     "DBProvider",
     "DBProviderSettings",
     "CacheProvider",

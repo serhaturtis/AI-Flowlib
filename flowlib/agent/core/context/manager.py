@@ -67,7 +67,7 @@ class AgentContextManager(AgentComponent):
         session_id: str,
         agent_name: str,
         agent_persona: str,
-        agent_role: str,
+        allowed_tool_categories: list[str],
         working_directory: str,
         user_id: str | None = None,
     ) -> None:
@@ -83,7 +83,7 @@ class AgentContextManager(AgentComponent):
             user_id=user_id,
             agent_name=agent_name,
             agent_persona=agent_persona,
-            agent_role=agent_role,
+            allowed_tool_categories=list(allowed_tool_categories),
             working_directory=working_directory,
             current_message="",
             conversation_history=[],

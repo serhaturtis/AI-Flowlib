@@ -18,8 +18,8 @@ class RequestContext(StrictBaseModel):
     session_id: str | None = Field(default=None, description="Agent session ID")
     user_id: str | None = Field(default=None, description="User identifier")
     agent_name: str | None = Field(default=None, description="Agent name")
-    agent_role: str | None = Field(
-        default=None, description="Agent's role for tool access control"
+    allowed_tool_categories: list[str] = Field(
+        default_factory=list, description="Tool categories the agent may access"
     )
     previous_messages: list[Any] = Field(
         default_factory=list, description="Previous conversation messages"

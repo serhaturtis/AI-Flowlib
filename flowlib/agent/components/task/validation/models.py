@@ -132,7 +132,6 @@ class ValidationInput(StrictBaseModel):
         default_factory=dict,
         description="Current domain-specific state (workspace, session data, etc.)",
     )
-    agent_role: str = Field(default="assistant", description="Agent's role")
 
 
 class ValidationOutput(StrictBaseModel):

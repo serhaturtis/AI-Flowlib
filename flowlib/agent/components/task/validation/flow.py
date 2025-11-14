@@ -61,7 +61,6 @@ class ContextValidationFlow:
         # Prepare common prompt variables
         prompt_vars = {
             "user_message": input_data.user_message,
-            "agent_role": input_data.agent_role,
             "conversation_history": conversation_text,
             "domain_state": domain_state_text,
         }

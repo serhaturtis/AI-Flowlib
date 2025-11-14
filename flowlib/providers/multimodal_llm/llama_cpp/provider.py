@@ -1,14 +1,33 @@
 """LlamaCpp multimodal provider implementation for vision-language models.
 
 This module implements a provider for multimodal language models using llama-cpp-python
-with support for vision models like LLaVA, Moondream, and Llama 3.2 Vision.
+with support for various vision models. Supported architectures:
+- LLaVA 1.5, 1.6 (chat_format: 'llava-1-5', 'llava-1-6')
+- Gemma 3 Vision (chat_format: 'gemma-3')
+- Moondream (chat_format: 'moondream')
+- Llama 3 Vision (chat_format: 'llama-3-vision')
+
+The provider dynamically selects the appropriate chat handler based on the
+'chat_format' parameter in the model configuration.
 """
 
+import importlib
 import json
 import logging
+import re
 from typing import Any
 
 from pydantic import Field
+
+# Lazy import llama_cpp
+try:
+    from llama_cpp import Llama, LlamaGrammar
+
+    LLAMA_CPP_AVAILABLE = True
+except ImportError:
+    Llama = None  # type: ignore
+    LlamaGrammar = None  # type: ignore
+    LLAMA_CPP_AVAILABLE = False
 
 from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
@@ -40,16 +59,20 @@ class LlamaCppMultimodalSettings(MultimodalLLMProviderSettings):
 
 
 @provider(
-    provider_type="multimodal_llm", name="llamacpp", settings_class=LlamaCppMultimodalSettings
+    provider_type="multimodal_llm", name="llamacpp_multimodal", settings_class=LlamaCppMultimodalSettings
 )
 class LlamaCppMultimodalProvider(MultimodalLLMProvider[LlamaCppMultimodalSettings]):
     """Provider for local multimodal inference using llama-cpp-python.
 
     This provider supports:
-    1. Vision-language models (LLaVA, Moondream, Llama 3.2 Vision, etc.)
+    1. Vision-language models (LLaVA 1.5/1.6, Gemma 3, Moondream, Llama 3 Vision)
     2. Text generation with image inputs
     3. Structured output generation with vision capabilities
     4. Optional GPU acceleration with Metal or CUDA
+    5. Dynamic chat handler selection based on model architecture
+
+    The appropriate chat handler is automatically selected based on the
+    'chat_format' parameter in the model configuration.
     """
 
     def __init__(
@@ -76,6 +99,53 @@ class LlamaCppMultimodalProvider(MultimodalLLMProvider[LlamaCppMultimodalSetting
         self._models = {}
         self._settings = self.settings
 
+    def _get_chat_handler(self, chat_format: str, clip_model_path: str, verbose: bool) -> Any:
+        """Get appropriate chat handler for the specified format.
+
+        Args:
+            chat_format: Chat format identifier (e.g., 'llava-1-5', 'gemma-3', 'moondream')
+            clip_model_path: Path to CLIP/vision projection model file
+            verbose: Enable verbose logging
+
+        Returns:
+            Chat handler instance (dynamically imported based on chat_format)
+
+        Raises:
+            ValueError: If chat format is unsupported or handler unavailable
+        """
+        # Map chat formats to their handler classes
+        # Format: chat_format -> (module_path, handler_class_name)
+        handler_mapping = {
+            "llava-1-5": ("llama_cpp.llama_chat_format", "Llava15ChatHandler"),
+            "llava-1-6": ("llama_cpp.llama_chat_format", "Llava16ChatHandler"),
+            "moondream": ("llama_cpp.llama_chat_format", "MoondreamChatHandler"),
+            "gemma-3": ("llama_cpp.llama_chat_format", "Gemma3ChatHandler"),
+            "llama-3-vision": ("llama_cpp.llama_chat_format", "Llama3VisionAlphaChatHandler"),
+            "qwen2.5-vl": ("llama_cpp.llama_chat_format", "Qwen25VLChatHandler"),
+        }
+
+        if chat_format not in handler_mapping:
+            raise ValueError(
+                f"Unsupported chat format: '{chat_format}'. "
+                f"Supported formats: {', '.join(handler_mapping.keys())}"
+            )
+
+        module_path, handler_class_name = handler_mapping[chat_format]
+
+        # Try to import the handler
+        try:
+            module = importlib.import_module(module_path)
+            handler_class = getattr(module, handler_class_name)
+        except (ImportError, AttributeError) as e:
+            raise ValueError(
+                f"Chat handler '{handler_class_name}' for format '{chat_format}' is not available. "
+                f"This may require a newer version of llama-cpp-python or a custom build. "
+                f"Error: {str(e)}"
+            ) from e
+
+        # Create handler instance
+        return handler_class(clip_model_path=clip_model_path, verbose=verbose)
+
     async def _initialize_model(self, model_name: str) -> None:
         """Initialize a specific multimodal model.
 
@@ -88,11 +158,26 @@ class LlamaCppMultimodalProvider(MultimodalLLMProvider[LlamaCppMultimodalSetting
         if model_name in self._models:
             return
 
-        try:
-            # Import here to avoid requiring llama-cpp-python for all users
-            from llama_cpp import Llama
-            from llama_cpp.llama_chat_format import Llava15ChatHandler
+        # Check if llama-cpp-python is available
+        if not LLAMA_CPP_AVAILABLE or Llama is None:
+            raise ProviderError(
+                message="llama-cpp-python is not installed. Install it with: pip install llama-cpp-python",
+                context=ErrorContext.create(
+                    flow_name="multimodal_model_initialization",
+                    error_type="ProviderError",
+                    error_location=f"{self.__class__.__name__}._initialize_model",
+                    component=self.name,
+                    operation="initialize_model",
+                ),
+                provider_context=ProviderErrorContext(
+                    provider_name=self.name,
+                    provider_type=self.provider_type,
+                    operation="initialize_model",
+                    retry_count=0,
+                ),
+            )
 
+        try:
             # Get model configuration from registry
             model_config_raw = await self.get_model_config(model_name)
 
@@ -133,14 +218,13 @@ class LlamaCppMultimodalProvider(MultimodalLLMProvider[LlamaCppMultimodalSetting
             logger.info(f"  Context size: {n_ctx}")
             logger.info(f"  GPU: {use_gpu} (layers: {n_gpu_layers})")
 
-            # Create chat handler with clip model
-            chat_handler = Llava15ChatHandler(clip_model_path=clip_model_path, verbose=verbose)
+            # Get appropriate chat handler for the format
+            chat_handler = self._get_chat_handler(chat_format, clip_model_path, verbose)
 
             # Initialize the model with chat handler
             llm = Llama(
                 model_path=model_path,
                 chat_handler=chat_handler,
-                chat_format=chat_format,
                 n_ctx=n_ctx,
                 n_gpu_layers=n_gpu_layers if use_gpu else 0,
                 n_threads=n_threads,
@@ -274,9 +358,17 @@ class LlamaCppMultimodalProvider(MultimodalLLMProvider[LlamaCppMultimodalSetting
             messages = self._build_messages(prompt_text, images)
 
             # Extract generation parameters
-            temperature = config.get("temperature", self.settings.temperature)
-            max_tokens = config.get("max_tokens", self.settings.max_tokens)
-            top_p = config.get("top_p", self.settings.top_p)
+            # Priority: prompt config > model config > provider settings
+            prompt_config = getattr(prompt, "config", None) if not isinstance(prompt, str) else None
+
+            if prompt_config:
+                temperature = prompt_config.get("temperature", config.get("temperature", self.settings.temperature))
+                max_tokens = prompt_config.get("max_tokens", config.get("max_tokens", self.settings.max_tokens))
+                top_p = prompt_config.get("top_p", config.get("top_p", self.settings.top_p))
+            else:
+                temperature = config.get("temperature", self.settings.temperature)
+                max_tokens = config.get("max_tokens", self.settings.max_tokens)
+                top_p = config.get("top_p", self.settings.top_p)
 
             # Generate response
             response = llm.create_chat_completion(
@@ -341,7 +433,7 @@ class LlamaCppMultimodalProvider(MultimodalLLMProvider[LlamaCppMultimodalSetting
             ProviderError: If generation or parsing fails
         """
         try:
-            # Extract prompt text and add JSON schema instructions
+            # Extract prompt text
             if isinstance(prompt, str):
                 prompt_text = prompt
             else:
@@ -351,40 +443,198 @@ class LlamaCppMultimodalProvider(MultimodalLLMProvider[LlamaCppMultimodalSetting
                         template = template.replace(f"{{{{{key}}}}}", str(value))
                 prompt_text = template
 
-            # Add JSON schema instructions
-            schema_json = model_to_simple_json_schema(output_type)
-            enhanced_prompt = f"""{prompt_text}
+            # Add system prompt if set (agent persona)
+            if self.system_prompt:
+                prompt_text = f"{self.system_prompt}\n\n{prompt_text}"
+                logger.info(f"System prompt prepended ({len(self.system_prompt)} chars)")
 
-IMPORTANT: Format your response as a JSON object matching this schema exactly:
+            # Get simplified schema for prompt and full schema for grammar
+            try:
+                # Get simplified schema to include in prompt (user-friendly format)
+                example_json = model_to_simple_json_schema(output_type)
 
-{schema_json}
+                # Get full Pydantic schema for grammar generation
+                schema = output_type.model_json_schema()
+            except AttributeError as e:
+                raise ProviderError(
+                    message=f"Output type must be a Pydantic model with model_json_schema(): {str(e)}",
+                    context=ErrorContext.create(
+                        flow_name="multimodal_structured_generation",
+                        error_type="ProviderError",
+                        error_location=f"{self.__class__.__name__}.generate_structured",
+                        component=self.name,
+                        operation="schema_extraction",
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type=self.provider_type,
+                        operation="schema_extraction",
+                        retry_count=0,
+                    ),
+                    cause=e,
+                ) from e
 
-Generate appropriate field values based on the content provided above.
+            # Extract constraint warnings from schema
+            try:
+                schema_dict = json.loads(example_json)
+                constraint_warnings = self._extract_constraint_warnings(schema_dict)
+            except Exception:
+                constraint_warnings = ""
+
+            # Append JSON instructions and schema to prompt
+            json_instructions = f"""
+
+IMPORTANT: Format your response as a JSON object matching this schema.
+Do NOT use schema metadata as values - extract actual values from the task content.
+
+Schema:
+{example_json}
+{constraint_warnings}
+Remember: Generate appropriate field values based on the context provided above.
 """
+            prompt_text = prompt_text + json_instructions
 
-            # Generate response
-            response_text = await self.generate(
-                prompt=enhanced_prompt, model_name=model_name, images=images
+            # Create grammar from full schema for enforcement
+            schema_str = json.dumps(schema)
+            try:
+                grammar = LlamaGrammar.from_json_schema(schema_str)
+            except Exception as e:
+                raise ProviderError(
+                    message=f"Failed to create grammar from schema: {str(e)}",
+                    context=ErrorContext.create(
+                        flow_name="multimodal_structured_generation",
+                        error_type="ProviderError",
+                        error_location=f"{self.__class__.__name__}.generate_structured",
+                        component=self.name,
+                        operation="grammar_creation",
+                    ),
+                    provider_context=ProviderErrorContext(
+                        provider_name=self.name,
+                        provider_type=self.provider_type,
+                        operation="grammar_creation",
+                        retry_count=0,
+                    ),
+                    cause=e,
+                ) from e
+
+            # Initialize model if needed
+            await self._initialize_model(model_name)
+
+            # Get model and config
+            model_data = self._models[model_name]
+            llm = model_data["llm"]
+            config = model_data["config"]
+
+            # Build messages with formatted prompt (includes schema instructions)
+            messages = self._build_messages(prompt_text, images)
+
+            # Log the formatted prompt
+            logger.info("=============== FORMATTED PROMPT ===============")
+            logger.info(prompt_text)
+            logger.info("================================================")
+
+            # DEBUG: Show final formatted prompt
+            print("\n📤 FINAL PROMPT SENT TO MODEL:")
+            print("=" * 80)
+            print(prompt_text)
+            print("=" * 80)
+
+            # Extract generation parameters
+            # Priority: prompt config > model config > provider settings
+            prompt_config = getattr(prompt, "config", None) if not isinstance(prompt, str) else None
+
+            if prompt_config:
+                temperature = prompt_config.get("temperature", config.get("temperature", self.settings.temperature))
+                max_tokens = prompt_config.get("max_tokens", config.get("max_tokens", self.settings.max_tokens))
+                top_p = prompt_config.get("top_p", config.get("top_p", self.settings.top_p))
+            else:
+                temperature = config.get("temperature", self.settings.temperature)
+                max_tokens = config.get("max_tokens", self.settings.max_tokens)
+                top_p = config.get("top_p", self.settings.top_p)
+
+            # Generate with grammar
+            response = llm.create_chat_completion(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens if max_tokens else -1,
+                top_p=top_p,
+                grammar=grammar,
             )
 
-            # Parse JSON response
-            # Remove markdown code blocks if present
-            response_text = response_text.strip()
-            if response_text.startswith("```json"):
-                response_text = response_text[7:]
-            elif response_text.startswith("```"):
-                response_text = response_text[3:]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
+            # Extract response text
+            if "choices" in response and len(response["choices"]) > 0:
+                choice = response["choices"][0]
+                if "message" in choice and "content" in choice["message"]:
+                    response_text = choice["message"]["content"]
+                else:
+                    raise ValueError("Invalid response format from model")
+            else:
+                raise ValueError("No choices in response from model")
+
+            # DEBUG: Show raw response from model
+            print("\n📥 RAW RESPONSE FROM MODEL:")
+            print("=" * 80)
+            print(response_text)
+            print("=" * 80)
+
+            # Parse JSON response (grammar ensures proper formatting)
             response_text = response_text.strip()
 
-            # Parse JSON
-            response_data = json.loads(response_text)
+            # Fix common JSON issues from LLM output
+            # LLMs often generate raw newlines inside string values, which is invalid JSON
+            # We need to escape them properly
+            try:
+                # Try direct parse first (fast path)
+                response_data = json.loads(response_text)
+            except json.JSONDecodeError as e:
+                # JSON parse failed - likely due to unescaped control characters
+                logger.warning(f"Initial JSON parse failed: {e}. Attempting repair...")
+
+                # Escape unescaped newlines and other control characters in string values
+                # This is a simplified repair - replace actual newlines with \n
+                response_text = response_text.replace('\r\n', '\\n')  # Windows newlines
+                response_text = response_text.replace('\n', '\\n')     # Unix newlines
+                response_text = response_text.replace('\r', '\\n')     # Mac newlines
+                response_text = response_text.replace('\t', '\\t')     # Tabs
+
+                # Try parsing again
+                try:
+                    response_data = json.loads(response_text)
+                    logger.info("JSON repair successful")
+                except json.JSONDecodeError as e2:
+                    # Still failed - log the problematic area
+                    logger.error(f"JSON repair failed: {e2}")
+                    logger.error(f"Problematic area: {response_text[max(0, e2.pos-50):e2.pos+50]}")
+                    raise
+
+            # DEBUG: Show parsed JSON data
+            print("\n📊 PARSED JSON DATA:")
+            print("=" * 80)
+            print(json.dumps(response_data, indent=2))
+            print("=" * 80)
 
             # Validate with Pydantic
-            return output_type.model_validate(response_data)
+            validated_output = output_type.model_validate(response_data)
+
+            # DEBUG: Show validated Pydantic model
+            print("\n✅ VALIDATED PYDANTIC MODEL:")
+            print("=" * 80)
+            print(validated_output.model_dump_json(indent=2))
+            print("=" * 80)
+
+            return validated_output
 
         except Exception as e:
+            # Add debug info to error message
+            debug_info = ""
+            try:
+                if 'response_text' in locals():
+                    debug_info = f"\n\nDEBUG - Raw response (first 500 chars): {response_text[:500]}"
+                if 'response_data' in locals():
+                    debug_info += f"\n\nDEBUG - Parsed JSON: {response_data}"
+            except:
+                pass
+
             error_context = ErrorContext.create(
                 flow_name="multimodal_structured_generation",
                 error_type="ProviderError",
@@ -401,11 +651,84 @@ Generate appropriate field values based on the content provided above.
             )
 
             raise ProviderError(
-                message=f"Multimodal structured generation failed: {str(e)}",
+                message=f"Multimodal structured generation failed: {str(e)}{debug_info}",
                 context=error_context,
                 provider_context=provider_context,
                 cause=e,
             ) from e
+
+    def _extract_constraint_warnings(self, schema_dict: dict[str, Any]) -> str:
+        """Extract numeric and length constraints from schema and format as explicit warnings.
+
+        This helps ensure LLMs respect constraints like le=10, ge=1, etc. by making them
+        very explicit at the end of the prompt.
+
+        Args:
+            schema_dict: Simplified schema dictionary (from model_to_simple_json_schema)
+
+        Returns:
+            Formatted constraint warnings string, or empty string if no constraints found
+        """
+        warnings = []
+
+        # Check main schema properties
+        if "properties" in schema_dict:
+            for field_name, field_type in schema_dict["properties"].items():
+                # field_type may be like "integer (≥1, ≤10)" - extract constraints
+                if isinstance(field_type, str) and "(" in field_type and ")" in field_type:
+                    # Extract the constraint part
+                    type_part, constraint_part = field_type.split("(", 1)
+                    constraint_part = constraint_part.rstrip(")")
+                    type_name = type_part.strip()
+
+                    # Format warning based on type
+                    if type_name in ["integer", "number"]:
+                        warnings.append(
+                            f"- {field_name}: Must be {type_name} with constraints: {constraint_part}"
+                        )
+                    elif type_name == "string":
+                        warnings.append(
+                            f"- {field_name}: Must be {type_name} with constraints: {constraint_part}"
+                        )
+                    elif type_name.startswith("array"):
+                        warnings.append(
+                            f"- {field_name}: Must be {type_name} with constraints: {constraint_part}"
+                        )
+
+        # Check nested schemas (sub-models)
+        for key, value in schema_dict.items():
+            if key not in [
+                "title",
+                "description",
+                "properties",
+                "field_descriptions",
+                "required",
+            ] and isinstance(value, dict):
+                # This is a nested schema
+                if "properties" in value:
+                    for field_name, field_type in value["properties"].items():
+                        if isinstance(field_type, str) and "(" in field_type and ")" in field_type:
+                            type_part, constraint_part = field_type.split("(", 1)
+                            constraint_part = constraint_part.rstrip(")")
+                            type_name = type_part.strip()
+
+                            nested_name = value.get("title", key)
+                            if type_name in ["integer", "number"]:
+                                warnings.append(
+                                    f"- {nested_name}.{field_name}: Must be {type_name} with constraints: {constraint_part}"
+                                )
+                            elif type_name == "string":
+                                warnings.append(
+                                    f"- {nested_name}.{field_name}: Must be {type_name} with constraints: {constraint_part}"
+                                )
+                            elif type_name.startswith("array"):
+                                warnings.append(
+                                    f"- {nested_name}.{field_name}: Must be {type_name} with constraints: {constraint_part}"
+                                )
+
+        if warnings:
+            return "\n\nCRITICAL CONSTRAINTS - MUST BE RESPECTED:\n" + "\n".join(warnings) + "\n"
+        return ""
 
     async def _initialize(self) -> None:
         """Initialize the provider (called by base class)."""
