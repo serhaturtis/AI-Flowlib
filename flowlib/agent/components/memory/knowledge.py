@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from pydantic import Field
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.models import StrictBaseModel
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.graph.base import GraphDBProvider
@@ -34,7 +35,7 @@ class KnowledgeMemoryConfig(StrictBaseModel):
     """Configuration for knowledge memory."""
 
     graph_provider_config: str = Field(
-        default="default-graph-db", description="Provider config name for graph database"
+        default=RequiredAlias.DEFAULT_GRAPH_DB.value, description="Provider config name for graph database"
     )
     default_importance: float = Field(
         default=0.7, ge=0.0, le=1.0, description="Default importance score for new entities"

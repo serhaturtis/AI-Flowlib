@@ -242,17 +242,17 @@ class AgentStateManager(AgentComponent):
             raise RuntimeError("Session not initialized")
 
         # Import here to avoid circular imports
-        from .context.models import ConversationMessage
+        from flowlib.agent.models.conversation import ConversationMessage, MessageRole
 
         # Add user message
         user_msg = ConversationMessage(
-            role="user", content=turn.user_message, timestamp=turn.timestamp
+            role=MessageRole.USER, content=turn.user_message, timestamp=turn.timestamp
         )
         model.session.conversation_history.append(user_msg)
 
         # Add agent response
         agent_msg = ConversationMessage(
-            role="assistant", content=turn.agent_response, timestamp=turn.timestamp
+            role=MessageRole.ASSISTANT, content=turn.agent_response, timestamp=turn.timestamp
         )
         model.session.conversation_history.append(agent_msg)
 

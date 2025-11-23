@@ -7,6 +7,7 @@ from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.config.required_resources import RequiredAlias
 
 from .models import (
     EvaluationInput,
@@ -37,7 +38,7 @@ class CompletionEvaluationFlow:
         start_time = time.time()
 
         # Get LLM provider
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt from registry
         prompt_instance = resource_registry.get("completion-evaluation-prompt")
@@ -57,7 +58,7 @@ class CompletionEvaluationFlow:
         llm_result = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=LLMEvaluationResult,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 

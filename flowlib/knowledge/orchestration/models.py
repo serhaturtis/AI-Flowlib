@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import Field
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.models import StrictBaseModel
 from flowlib.knowledge.models import (
     DocumentContent,
@@ -40,10 +41,10 @@ class OrchestrationRequest(StrictBaseModel):
 
     # Database configuration (config-driven)
     vector_provider_config: str | None = Field(
-        default="default-vector-db", description="Vector provider configuration name"
+        default=RequiredAlias.DEFAULT_VECTOR_DB.value, description="Vector provider configuration name"
     )
     graph_provider_config: str | None = Field(
-        default="default-graph-db", description="Graph provider configuration name"
+        default=RequiredAlias.DEFAULT_GRAPH_DB.value, description="Graph provider configuration name"
     )
     vector_config: dict[str, Any] | None = Field(
         default=None, description="Vector database additional config"

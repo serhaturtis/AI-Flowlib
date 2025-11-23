@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from pydantic import Field
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.models import StrictBaseModel
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.embedding.base import EmbeddingProvider
@@ -35,10 +36,10 @@ class VectorMemoryConfig(StrictBaseModel):
     """Configuration for vector memory."""
 
     vector_provider_config: str = Field(
-        default="default-vector-db", description="Provider config name for vector database"
+        default=RequiredAlias.DEFAULT_VECTOR_DB.value, description="Provider config name for vector database"
     )
     embedding_provider_config: str = Field(
-        default="default-embedding", description="Provider config name for embedding generation"
+        default=RequiredAlias.DEFAULT_EMBEDDING.value, description="Provider config name for embedding generation"
     )
     collection_name: str = Field(
         default="agent_memory", description="Vector database collection name"

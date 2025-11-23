@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.core.models import MutableStrictBaseModel
 from flowlib.resources.models.base import StrictBaseModel
 
@@ -81,7 +82,7 @@ class PlanningInput(StrictBaseModel):
     """Input for structured planning."""
 
     user_message: str = Field(..., description="The user's message to plan for")
-    conversation_history: list[dict] = Field(
+    conversation_history: list[ConversationMessage] = Field(
         default_factory=list, description="Recent conversation context"
     )
     available_tools: list[str] = Field(..., description="List of available tool names")

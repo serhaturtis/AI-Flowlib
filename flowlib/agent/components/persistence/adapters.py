@@ -10,6 +10,7 @@ from pydantic import Field
 
 from flowlib.agent.models.state import AgentState, AgentStateModel
 from flowlib.core.models import StrictBaseModel
+from flowlib.config.required_resources import RequiredAlias
 
 # Import provider types
 # Removed ProviderType import - using config-driven provider access
@@ -86,7 +87,7 @@ class RedisStatePersister(BaseStatePersister[RedisStatePersisterSettings]):
         # Removed redundant check for self.initialized, Provider base handles this
         try:
             logger.debug(f"Initializing RedisStatePersister '{self.name}'...")
-            provider = await provider_registry.get_by_config("default-cache")
+            provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_CACHE.value)
             if not isinstance(provider, CacheProvider):
                 raise TypeError(
                     f"Provider '{self.settings.redis_provider_name}' is not a valid CacheProvider instance."
@@ -225,7 +226,7 @@ class MongoStatePersister(BaseStatePersister[MongoStatePersisterSettings]):
         # Removed redundant check for self.initialized
         try:
             logger.debug(f"Initializing MongoStatePersister '{self.name}'...")
-            provider = await provider_registry.get_by_config("default-database")
+            provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_DATABASE.value)
             if not isinstance(provider, DBProvider):
                 raise TypeError(
                     f"Provider '{self.settings.mongo_provider_name}' is not a valid DBProvider instance."
@@ -349,7 +350,7 @@ class PostgresStatePersister(BaseStatePersister[PostgresStatePersisterSettings])
         # Removed redundant check for self.initialized
         try:
             logger.debug(f"Initializing PostgresStatePersister '{self.name}'...")
-            provider = await provider_registry.get_by_config("default-database")
+            provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_DATABASE.value)
             if not isinstance(provider, DBProvider):
                 raise TypeError(
                     f"Provider '{self.settings.postgres_provider_name}' is not a valid DBProvider instance."

@@ -302,7 +302,6 @@ class ProviderError(BaseError):
         super().__init__(message, context, cause)
 
 
-# Placeholder for removed duplicate ErrorManager class
 
 ErrorHandlerFunc = Callable[[BaseError, dict[str, Any]], None | dict[str, Any]]
 AsyncErrorHandlerFunc = Callable[

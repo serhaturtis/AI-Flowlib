@@ -12,8 +12,59 @@ from flowlib.core.models import StrictBaseModel
 from flowlib.core.project import Project
 from flowlib.resources.models.agent_config_resource import AgentConfigResource
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.config.required_resources import RequiredAlias
 
 logger = logging.getLogger(__name__)
+
+
+def build_agent_config(project: Project, agent_config_name: str) -> AgentConfig:
+    """Convert a registered agent config resource into a runtime AgentConfig."""
+
+    from flowlib.config.alias_manager import alias_manager
+    from flowlib.agent.components.memory.component import AgentMemoryConfig
+    from flowlib.agent.components.memory.knowledge import KnowledgeMemoryConfig
+    from flowlib.agent.components.memory.vector import VectorMemoryConfig
+    from flowlib.agent.components.memory.working import WorkingMemoryConfig
+
+    try:
+        actual_config_name = alias_manager.get_alias_target(agent_config_name)
+        if actual_config_name:
+            agent_config_resource = resource_registry.get(actual_config_name)
+            logger.info(f"Loaded agent config '{agent_config_name}' -> '{actual_config_name}'")
+        else:
+            agent_config_resource = resource_registry.get(agent_config_name)
+            logger.info(f"Loaded agent config '{agent_config_name}' directly")
+    except Exception as e:
+        raise ValueError(f"Could not load agent configuration '{agent_config_name}': {e}") from e
+
+    config_resource = cast(AgentConfigResource, agent_config_resource)
+
+    memory_config = AgentMemoryConfig(
+        working_memory=WorkingMemoryConfig(default_ttl_seconds=3600),
+        vector_memory=VectorMemoryConfig(
+            vector_provider_config=RequiredAlias.DEFAULT_VECTOR_DB.value,
+            embedding_provider_config=RequiredAlias.DEFAULT_EMBEDDING.value,
+        ),
+        knowledge_memory=KnowledgeMemoryConfig(graph_provider_config=RequiredAlias.DEFAULT_GRAPH_DB.value),
+        fusion_llm_config=config_resource.llm_name,
+        store_execution_history=True,
+    )
+
+    return AgentConfig(
+        name=config_resource.name or agent_config_name,
+        persona=config_resource.persona,
+        allowed_tool_categories=config_resource.allowed_tool_categories,
+        working_directory=str(project.flowlib_path),
+        provider_name=config_resource.llm_name,
+        model_name=config_resource.model_name,
+        temperature=config_resource.temperature,
+        max_iterations=config_resource.max_iterations,
+        enable_learning=config_resource.enable_learning,
+        memory=memory_config,
+        state_config=StatePersistenceConfig(
+            persistence_type="file", base_path="./agent_states", auto_save=True, auto_load=False
+        ),
+    )
 
 
 class LauncherConfig(StrictBaseModel):
@@ -87,6 +138,9 @@ class AgentLauncher:
         if not self._initialized:
             await self.initialize()
 
+        # Validate required aliases before launching
+        self.project._validate_required_aliases()
+
         logger.info(f"Launching agent '{agent_config_name}' in mode '{mode.value}'")
 
         # Load agent configuration
@@ -103,72 +157,8 @@ class AgentLauncher:
             await agent.shutdown()
 
     async def _create_agent(self, agent_config_name: str) -> BaseAgent:
-        """Create and initialize agent from config name.
-
-        Args:
-            agent_config_name: Agent config name in resource registry
-
-        Returns:
-            Initialized BaseAgent instance
-
-        Raises:
-            ValueError: If agent config not found
-        """
-        # Try to resolve through role assignment first
-        from flowlib.config.role_manager import role_manager
-
-        try:
-            actual_config_name = role_manager.get_role_assignment(agent_config_name)
-            if actual_config_name:
-                agent_config_resource = resource_registry.get(actual_config_name)
-                logger.info(f"Loaded agent config '{agent_config_name}' -> '{actual_config_name}'")
-            else:
-                agent_config_resource = resource_registry.get(agent_config_name)
-                logger.info(f"Loaded agent config '{agent_config_name}' directly")
-        except Exception as e:
-            raise ValueError(f"Could not load agent configuration '{agent_config_name}': {e}") from e
-
-        # Cast and extract configuration
-        config_resource = cast(AgentConfigResource, agent_config_resource)
-
-        # Build memory config
-        from flowlib.agent.components.memory.component import AgentMemoryConfig
-        from flowlib.agent.components.memory.knowledge import (
-            KnowledgeMemoryConfig,
-        )
-        from flowlib.agent.components.memory.vector import VectorMemoryConfig
-        from flowlib.agent.components.memory.working import WorkingMemoryConfig
-
-        # Memory is always required
-        memory_config = AgentMemoryConfig(
-            working_memory=WorkingMemoryConfig(default_ttl_seconds=3600),
-            vector_memory=VectorMemoryConfig(
-                vector_provider_config="default-vector-db",
-                embedding_provider_config="default-embedding",
-            ),
-            knowledge_memory=KnowledgeMemoryConfig(graph_provider_config="default-graph-db"),
-            fusion_llm_config=config_resource.llm_name,
-            store_execution_history=True,
-        )
-
-        # Build AgentConfig
-        config = AgentConfig(
-            name=config_resource.name or agent_config_name,
-            persona=config_resource.persona,
-            allowed_tool_categories=config_resource.allowed_tool_categories,
-            working_directory=str(self.project.flowlib_path),  # Set agent's working directory to project root
-            provider_name=config_resource.llm_name,
-            model_name=config_resource.model_name,
-            temperature=config_resource.temperature,
-            max_iterations=config_resource.max_iterations,
-            enable_learning=config_resource.enable_learning,
-            memory=memory_config,
-            state_config=StatePersistenceConfig(
-                persistence_type="file", base_path="./agent_states", auto_save=True, auto_load=False
-            ),
-        )
-
-        # Create and initialize agent
+        """Create and initialize agent from config name."""
+        config = build_agent_config(self.project, agent_config_name)
         agent = BaseAgent(config)
         await agent.initialize()
 

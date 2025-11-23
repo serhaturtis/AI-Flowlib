@@ -3,10 +3,12 @@
 import time
 from typing import cast
 
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.config.required_resources import RequiredAlias
 
 from .models import (
     ClarificationResponseParsingInput,
@@ -16,7 +18,6 @@ from .models import (
     LLMClarifyGeneration,
     LLMContextClassification,
     LLMProceedGeneration,
-    LLMValidationResult,
     ValidationInput,
     ValidationOutput,
     ValidationResult,
@@ -50,7 +51,7 @@ class ContextValidationFlow:
         start_time = time.time()
 
         # Get LLM provider
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Format conversation history
         conversation_text = self._format_conversation(input_data.conversation_history)
@@ -74,7 +75,7 @@ class ContextValidationFlow:
         classification_result = await llm.generate_structured(
             prompt=cast(PromptTemplate, classification_prompt),
             output_type=LLMContextClassification,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
@@ -95,7 +96,7 @@ class ContextValidationFlow:
             proceed_result = await llm.generate_structured(
                 prompt=cast(PromptTemplate, proceed_prompt),
                 output_type=LLMProceedGeneration,
-                model_name="default-model",
+                model_name=RequiredAlias.DEFAULT_MODEL.value,
                 prompt_variables=cast(dict[str, object], prompt_vars),
             )
 
@@ -120,7 +121,7 @@ class ContextValidationFlow:
             clarify_result = await llm.generate_structured(
                 prompt=cast(PromptTemplate, clarify_prompt),
                 output_type=LLMClarifyGeneration,
-                model_name="default-model",
+                model_name=RequiredAlias.DEFAULT_MODEL.value,
                 prompt_variables=cast(dict[str, object], prompt_vars),
             )
 
@@ -144,15 +145,15 @@ class ContextValidationFlow:
             result=validation_result, success=True, processing_time_ms=processing_time
         )
 
-    def _format_conversation(self, history: list[dict]) -> str:
+    def _format_conversation(self, history: list[ConversationMessage]) -> str:
         """Format conversation history for prompt."""
         if not history:
             return "No previous conversation"
 
         formatted = []
         for msg in history[-5:]:  # Last 5 messages for context
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content
             formatted.append(f"{role}: {content}")
 
         return "\n".join(formatted)
@@ -199,7 +200,7 @@ class ClarificationResponseParsingFlow:
         start_time = time.time()
 
         # Get LLM provider
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt from registry
         prompt_instance = resource_registry.get("clarification-response-parsing-prompt")
@@ -220,7 +221,7 @@ class ClarificationResponseParsingFlow:
         llm_result = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=LLMClarificationResponseParsing,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 

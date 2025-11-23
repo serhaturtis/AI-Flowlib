@@ -17,6 +17,14 @@ sys.path.insert(0, project_root)
 
 from flowlib.agent.execution.strategy import ExecutionMode  # noqa: E402
 from flowlib.agent.launcher import AgentLauncher  # noqa: E402
+from flowlib.config.required_alias_validator import RequiredAliasValidator  # noqa: E402
+from flowlib.core.project.project import Project  # noqa: E402
+from flowlib.core.project.scaffold import (  # noqa: E402
+    AgentScaffold,
+    ProjectScaffold,
+    ToolScaffold,
+)
+from flowlib.core.project.validator import ProjectValidator  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +99,41 @@ Execution Modes:
     run_parser.add_argument("--queue", type=str, help="[remote] Task queue name")
     run_parser.add_argument("--config", type=str, help="Path to mode-specific config file (YAML)")
 
+    # scaffold command
+    scaffold_parser = subparsers.add_parser("scaffold", help="Generate project/tool/agent scaffolding")
+    scaffold_sub = scaffold_parser.add_subparsers(dest="scaffold_target", required=True)
+
+    scaffold_project = scaffold_sub.add_parser("project", help="Create a new project skeleton")
+    scaffold_project.add_argument("--name", required=True, help="Project name (used for directory)")
+    scaffold_project.add_argument("--root", type=str, default="projects", help="Projects root directory")
+    scaffold_project.add_argument("--description", type=str, default="Project scaffold.", help="Project README description")
+    scaffold_project.add_argument("--agent", action="append", dest="agents", help="Agent names to create (repeatable)")
+    scaffold_project.add_argument("--tool-category", action="append", dest="tool_categories", help="Tool categories to pre-create")
+    scaffold_project.add_argument(
+        "--with-example-tools",
+        action="store_true",
+        help="Generate example tools for each specified category",
+    )
+
+    scaffold_agent = scaffold_sub.add_parser("agent", help="Create an agent config stub")
+    scaffold_agent.add_argument("--project", required=True, help="Path to project directory")
+    scaffold_agent.add_argument("--name", required=True, help="Agent name (used as config id)")
+    scaffold_agent.add_argument("--persona", default="I am a helpful Flowlib agent.", help="Persona string")
+    scaffold_agent.add_argument("--category", action="append", dest="categories", help="Allowed tool categories (repeatable)")
+    scaffold_agent.add_argument("--description", default="Generated agent config.", help="Class docstring/description")
+
+    scaffold_tool = scaffold_sub.add_parser("tool", help="Create a tool skeleton")
+    scaffold_tool.add_argument("--project", required=True, help="Path to project directory")
+    scaffold_tool.add_argument("--category", required=True, help="Tool category (e.g., generic, software)")
+    scaffold_tool.add_argument("--name", required=True, help="Tool name identifier")
+    scaffold_tool.add_argument("--description", default="Generated tool scaffold.", help="Tool description")
+    scaffold_tool.add_argument("--with-prompts", action="store_true", help="Include prompts.py stub")
+    scaffold_tool.add_argument("--with-flow", action="store_true", help="Include flow.py stub")
+
+    # validate command
+    validate_parser = subparsers.add_parser("validate", help="Validate project structure")
+    validate_parser.add_argument("--project", type=str, help="Project path (default: ~/.flowlib/)")
+
     args = parser.parse_args()
 
     # Configure logging
@@ -103,6 +146,12 @@ Execution Modes:
 
     if args.command == "run":
         return await run_agent(args)
+    if args.command == "scaffold":
+        run_scaffold(args)
+        return 0
+    if args.command == "validate":
+        run_validation(args)
+        return 0
 
     return 0
 
@@ -166,6 +215,96 @@ async def build_execution_config(mode: ExecutionMode, args: argparse.Namespace) 
             config["task_queue_name"] = args.queue
 
     return config
+
+
+def run_scaffold(args: argparse.Namespace) -> None:
+    """Handle scaffold CLI commands."""
+
+    if args.scaffold_target == "project":
+        scaffold = ProjectScaffold(root_path=Path(args.root))
+        project_path = scaffold.create_project(
+            name=args.name,
+            description=args.description,
+            agent_names=args.agents,
+            tool_categories=args.tool_categories,
+            create_example_tools=args.with_example_tools,
+        )
+        logger.info(f"Created project scaffold at {project_path}")
+        return
+
+    if args.scaffold_target == "agent":
+        project_path = Path(args.project).resolve()
+        scaffold = AgentScaffold(project_path)
+        file_path = scaffold.create_agent(
+            name=args.name,
+            persona=args.persona,
+            allowed_categories=args.categories,
+            description=args.description,
+        )
+        logger.info(f"Created agent scaffold at {file_path}")
+        return
+
+    if args.scaffold_target == "tool":
+        project_path = Path(args.project).resolve()
+        scaffold = ToolScaffold(project_path)
+        tool_path = scaffold.create_tool(
+            name=args.name,
+            category=args.category,
+            description=args.description,
+            include_prompts=args.with_prompts,
+            include_flow=args.with_flow,
+        )
+        logger.info(f"Created tool scaffold at {tool_path}")
+        return
+
+    raise ValueError(f"Unknown scaffold target: {args.scaffold_target}")
+
+
+def run_validation(args: argparse.Namespace) -> None:
+    """Validate that a project adheres to Flowlib structure requirements."""
+
+    project_path_str = args.project if args.project else None
+    project_path = Path(project_path_str).resolve() if project_path_str else Path.home() / ".flowlib"
+
+    # Validate project structure
+    validator = ProjectValidator()
+    structure_result = validator.validate(project_path)
+
+    structure_valid = structure_result.is_valid
+    if not structure_valid:
+        logger.error("Project structure validation failed:")
+        for issue in structure_result.issues:
+            logger.error(" - %s: %s", issue.path, issue.message)
+
+    # Validate required aliases
+    try:
+        # Load project to trigger alias loading
+        project = Project(project_path=project_path_str)
+        project.load_configurations()
+
+        # Validate required aliases
+        alias_result = RequiredAliasValidator.validate_project()
+
+        if alias_result.valid and not alias_result.warnings:
+            logger.info("✓ Required alias validation passed")
+        elif alias_result.valid and alias_result.warnings:
+            logger.warning("Required alias validation passed with warnings:")
+            logger.warning(alias_result.get_error_message())
+        else:
+            logger.error("✗ Required alias validation failed:")
+            logger.error(alias_result.get_error_message())
+            structure_valid = False
+
+    except Exception as e:
+        logger.error(f"Failed to validate required aliases: {e}")
+        structure_valid = False
+
+    # Final result
+    if structure_valid:
+        logger.info("✓ Project validation completed successfully")
+        return
+
+    raise SystemExit(1)
 
 
 def parse_trigger_arg(trigger: str) -> list:

@@ -5,6 +5,7 @@ Place your custom agent configs in ~/.flowlib/configs/
 """
 
 from flowlib.resources.decorators.decorators import agent_config
+from flowlib.config.required_resources import RequiredAlias
 
 
 # Example: Custom agent for code review
@@ -18,8 +19,8 @@ class CodeReviewAgentConfig:
         "and provide constructive feedback with specific improvement suggestions."
     )
     allowed_tool_categories = ["generic", "software"]
-    model_name = "default-model"
-    llm_name = "default-llm"
+    model_name = RequiredAlias.DEFAULT_MODEL.value
+    llm_name = RequiredAlias.DEFAULT_LLM.value
     temperature = 0.4  # Lower temperature for consistent analysis
     max_iterations = 15
     enable_learning = True
@@ -40,7 +41,7 @@ class MyGPT4AgentConfig:
 
 # To use your custom agent:
 # 1. Save this file in ~/.flowlib/configs/my_custom_agents.py
-# 2. Add role assignment in ~/.flowlib/roles/assignments.py:
-#    role_manager.assign_role("my-agent", "code-review-agent")
+# 2. Add alias binding in ~/.flowlib/configs/aliases.py:
+#    alias_manager.assign_alias("my-agent", "code-review-agent")
 # 3. Run the REPL:
 #    ./flowlib/apps/run_repl.py --agent-config my-agent

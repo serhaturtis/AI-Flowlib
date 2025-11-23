@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.core.models import MutableStrictBaseModel, StrictBaseModel
 
 # Import from parent task models
@@ -268,7 +269,7 @@ class ToolExecutionContext(StrictBaseModel):
     original_user_message: str | None = Field(
         default=None, description="Original user message that started this task"
     )
-    conversation_history: list[dict] = Field(
+    conversation_history: list[ConversationMessage] = Field(
         default_factory=list, description="Recent conversation history for context"
     )
 

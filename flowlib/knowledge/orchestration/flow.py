@@ -1,11 +1,13 @@
 """Knowledge orchestration flow."""
 
 import asyncio
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.flows.registry.registry import flow_registry
 from flowlib.providers.core.registry import provider_registry
@@ -168,7 +170,7 @@ class KnowledgeOrchestrationFlow:
         from flowlib.knowledge.models import KnowledgeExtractionRequest
 
         # Get embedding provider to retrieve model configuration
-        embedding_provider_temp = await provider_registry.get_by_config("default-embedding")
+        embedding_provider_temp = await provider_registry.get_by_config(RequiredAlias.DEFAULT_EMBEDDING.value)
         await embedding_provider_temp.initialize()
         embedding_provider_cast = cast(EmbeddingProvider, embedding_provider_temp)
 
@@ -195,12 +197,12 @@ class KnowledgeOrchestrationFlow:
             detect_topics=request.detect_topics,
             # Use defaults for fields not in OrchestrationRequest
             extraction_domain="general",
-            llm_model_name="default-llm",
+            llm_model_name=RequiredAlias.DEFAULT_LLM.value,
             embedding_model=embedding_model,
             vector_dimensions=vector_dimensions,
-            vector_provider_config=request.vector_provider_config or "default-vector-db",
-            graph_provider_config=request.graph_provider_config or "default-graph-db",
-            embedding_provider_config="default-embedding",
+            vector_provider_config=request.vector_provider_config or RequiredAlias.DEFAULT_VECTOR_DB.value,
+            graph_provider_config=request.graph_provider_config or RequiredAlias.DEFAULT_GRAPH_DB.value,
+            embedding_provider_config=RequiredAlias.DEFAULT_EMBEDDING.value,
             enable_graph_analysis=True,
             min_entity_frequency=2,
             min_relationship_confidence=0.7,
@@ -247,7 +249,7 @@ class KnowledgeOrchestrationFlow:
             return None
 
         # Get embedding provider to retrieve model configuration
-        embedding_provider_temp = await provider_registry.get_by_config("default-embedding")
+        embedding_provider_temp = await provider_registry.get_by_config(RequiredAlias.DEFAULT_EMBEDDING.value)
         await embedding_provider_temp.initialize()
         embedding_provider_cast = cast(EmbeddingProvider, embedding_provider_temp)
 
@@ -264,8 +266,8 @@ class KnowledgeOrchestrationFlow:
             collection_name=request.collection_name,
             embedding_model=embedding_model,
             vector_dimensions=vector_dimensions,
-            vector_provider_config=request.vector_provider_config or "default-vector-db",
-            embedding_provider_config="default-embedding",
+            vector_provider_config=request.vector_provider_config or RequiredAlias.DEFAULT_VECTOR_DB.value,
+            embedding_provider_config=RequiredAlias.DEFAULT_EMBEDDING.value,
         )
 
         return await vector_flow.run_pipeline(vector_input)
@@ -290,7 +292,7 @@ class KnowledgeOrchestrationFlow:
             entities=entities,
             relationships=relationships,
             graph_name=request.graph_name,
-            graph_provider_config=request.graph_provider_config or "default-graph-db",
+            graph_provider_config=request.graph_provider_config or RequiredAlias.DEFAULT_GRAPH_DB.value,
             query_entity_id="",
             query_entity_type="",
             query_source_id="",
@@ -308,8 +310,6 @@ class KnowledgeOrchestrationFlow:
         relationships: list[Relationship],
     ) -> list[str]:
         """Export results to files."""
-
-        import json
 
         output_path = Path(request.output_directory)
         output_path.mkdir(parents=True, exist_ok=True)

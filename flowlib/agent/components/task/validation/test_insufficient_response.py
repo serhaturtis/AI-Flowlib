@@ -11,18 +11,20 @@ import logging
 import flowlib.agent.components.task.validation.prompts  # noqa
 
 # Import to trigger LLM config registration
-import flowlib.resources.example_configs.example_default_llm  # noqa
+import flowlib.resources.example_configs.providers.example_default_llm  # noqa
 
 # Import to trigger model config registration
-import flowlib.resources.example_configs.example_model_config  # noqa
+import flowlib.resources.example_configs.resources.example_model_config  # noqa
 
-# Import to trigger role assignment
-import flowlib.resources.example_configs.example_role_assignments  # noqa
+# Import to trigger alias assignments
+import flowlib.resources.example_configs.example_aliases  # noqa
 from flowlib.agent.components.task.validation.component import ContextValidatorComponent
 from flowlib.agent.core.context.manager import AgentContextManager
 from flowlib.agent.core.context.models import ContextManagerConfig
+from flowlib.agent.models.conversation import ConversationMessage, MessageRole
 from flowlib.providers.core.registry import provider_registry
 from flowlib.resources.decorators.decorators import model_config
+from flowlib.config.required_resources import RequiredAlias
 
 # Set up logging to see what's happening
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +34,7 @@ logger = logging.getLogger(__name__)
 # Create a minimal default-model config for testing
 # This is typically done by user config, but we'll do it here for the test
 @model_config(
-    "default-model",
+    RequiredAlias.DEFAULT_MODEL.value,
     provider_type="llamacpp",
     config={
         "path": "/path/to/your/model.gguf",  # Adjust this path to your model location
@@ -116,11 +118,11 @@ async def test_insufficient_response_handling():
         result2 = await validator.validate_context(
             user_message="I don't know, maybe something?",
             conversation_history=[
-                {"role": "user", "content": "Fix the bug"},
-                {
-                    "role": "assistant",
-                    "content": f"I need clarification: {result1.result.clarification_questions[0]}",
-                },
+                ConversationMessage(role=MessageRole.USER, content="Fix the bug"),
+                ConversationMessage(
+                    role=MessageRole.ASSISTANT,
+                    content=f"I need clarification: {result1.result.clarification_questions[0]}",
+                ),
             ],
             domain_state={},
         )
@@ -154,16 +156,16 @@ async def test_insufficient_response_handling():
         result3 = await validator.validate_context(
             user_message="You decide what needs to be fixed",
             conversation_history=[
-                {"role": "user", "content": "Fix the bug"},
-                {
-                    "role": "assistant",
-                    "content": f"I need clarification: {result1.result.clarification_questions[0]}",
-                },
-                {"role": "user", "content": "I don't know, maybe something?"},
-                {
-                    "role": "assistant",
-                    "content": f"Follow-up: {result2.result.clarification_questions[0]}",
-                },
+                ConversationMessage(role=MessageRole.USER, content="Fix the bug"),
+                ConversationMessage(
+                    role=MessageRole.ASSISTANT,
+                    content=f"I need clarification: {result1.result.clarification_questions[0]}",
+                ),
+                ConversationMessage(role=MessageRole.USER, content="I don't know, maybe something?"),
+                ConversationMessage(
+                    role=MessageRole.ASSISTANT,
+                    content=f"Follow-up: {result2.result.clarification_questions[0]}",
+                ),
             ],
             domain_state={},
         )
@@ -272,10 +274,10 @@ async def test_specific_answer_after_insufficient():
         result3 = await validator.validate_context(
             user_message="The database configuration in /etc/app/db.yaml, set the timeout to 30 seconds",
             conversation_history=[
-                {"role": "user", "content": "Update the configuration"},
-                {"role": "assistant", "content": "What configuration?"},
-                {"role": "user", "content": "Not sure"},
-                {"role": "assistant", "content": "Follow-up question"},
+                ConversationMessage(role=MessageRole.USER, content="Update the configuration"),
+                ConversationMessage(role=MessageRole.ASSISTANT, content="What configuration?"),
+                ConversationMessage(role=MessageRole.USER, content="Not sure"),
+                ConversationMessage(role=MessageRole.ASSISTANT, content="Follow-up question"),
             ],
             domain_state={},
         )

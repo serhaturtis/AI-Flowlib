@@ -14,6 +14,7 @@ from flowlib.providers.graph.base import GraphDBProvider
 from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.providers.vector.base import VectorDBProvider
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.config.required_resources import RequiredAlias
 
 from .models import (
     KnowledgeComponentConfig,
@@ -263,7 +264,7 @@ class KnowledgeComponent(AgentComponent):
             prompt=cast(PromptTemplate, extraction_prompt),
             prompt_variables=prompt_vars,
             output_type=KnowledgeSet,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
         )
 
         # Result is guaranteed to be KnowledgeSet from structured generation

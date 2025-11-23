@@ -4,6 +4,7 @@ An agent specialized in infrastructure and deployment tasks.
 """
 
 from flowlib.resources.decorators.decorators import agent_config
+from flowlib.config.required_resources import RequiredAlias
 
 
 @agent_config("devops-agent-config")
@@ -16,8 +17,8 @@ class DevOpsAgentConfig:
         "monitoring, and system reliability."
     )
     allowed_tool_categories = ["generic", "devops"]
-    model_name = "default-model"
-    llm_name = "default-llm"
+    model_name = RequiredAlias.DEFAULT_MODEL.value
+    llm_name = RequiredAlias.DEFAULT_LLM.value
     temperature = 0.5
     max_iterations = 12
     enable_learning = True

@@ -68,8 +68,7 @@ def resource(
 
 def model_config(
     name: str,
-    provider_type: str | None = None,
-    provider: str | None = None,
+    provider_type: str,
     config: dict[str, Any] | None = None,
     **metadata: Any,
 ) -> Callable[[type], type]:
@@ -79,7 +78,6 @@ def model_config(
     Args:
         name: Unique name for the model config
         provider_type: Provider implementation to use (e.g., "llamacpp", "google_ai", "openai")
-        provider: DEPRECATED - use provider_type instead
         config: Additional model configuration
         **metadata: Additional metadata
     """
@@ -88,18 +86,6 @@ def model_config(
         registry = _get_resource_registry()
         if registry is None:
             raise RuntimeError("Resource registry not initialized")
-
-        # Determine provider type - fail-fast validation, no fallbacks
-        if provider and provider_type:
-            raise ValueError(
-                "Cannot specify both 'provider' and 'provider_type'. Use 'provider_type'."
-            )
-
-        final_provider_type = provider_type or provider
-        if not final_provider_type:
-            raise ValueError(
-                f"model_config '{name}' requires explicit provider_type parameter (e.g., 'llamacpp', 'openai')"
-            )
 
         # Explicit config required - no fallbacks
         if config is None:
@@ -111,13 +97,13 @@ def model_config(
         cls.__resource_metadata__ = {
             "name": name,
             "type": ResourceType.MODEL_CONFIG,
-            "provider_type": final_provider_type,
+            "provider_type": provider_type,
             "config": config,
             **metadata,
         }  # type: ignore[attr-defined]
 
         # Store provider_type and config as class attributes for single source of truth
-        cls.__provider_type__ = final_provider_type  # type: ignore[attr-defined]
+        cls.__provider_type__ = provider_type  # type: ignore[attr-defined]
         cls.__config__ = config  # type: ignore[attr-defined]
 
         # Add properties to expose config data from class attributes
@@ -137,7 +123,7 @@ def model_config(
 
         instance = ModelResource(
             name=name,
-            provider_type=final_provider_type,
+            provider_type=provider_type,
             config=config,
             type="model_config",
             model_path=config.get("model_path"),
@@ -322,7 +308,7 @@ def llm_config(name: str, **metadata: Any) -> Callable[[type], type]:
     """Register a class as an LLM configuration resource.
 
     Args:
-        name: Unique name for the LLM config (e.g., 'default-llm', 'fast-chat')
+        name: Unique name for the LLM config (e.g., RequiredAlias.DEFAULT_LLM.value, 'fast-chat')
         **metadata: Additional metadata about the config
     """
 
@@ -506,7 +492,7 @@ def embedding_provider_config(name: str, **metadata: Any) -> Callable[[type], ty
     For embedding MODEL configs, use @embedding_config instead.
 
     Args:
-        name: Unique name for the embedding provider config (e.g., 'default-embedding', 'fast-embedding')
+        name: Unique name for the embedding provider config (e.g., RequiredAlias.DEFAULT_EMBEDDING.value, 'fast-embedding')
         **metadata: Additional metadata about the config
     """
 
@@ -548,8 +534,7 @@ def embedding_provider_config(name: str, **metadata: Any) -> Callable[[type], ty
 
 def embedding_config(
     name: str,
-    provider_type: str | None = None,
-    provider: str | None = None,
+    provider_type: str,
     config: dict[str, Any] | None = None,
     **metadata: Any,
 ) -> Callable[[type], type]:
@@ -559,7 +544,6 @@ def embedding_config(
     Args:
         name: Unique name for the embedding config
         provider_type: Provider implementation to use (e.g., "llamacpp_embedding", "openai_embedding", "huggingface")
-        provider: DEPRECATED - use provider_type instead
         config: Additional embedding configuration
         **metadata: Additional metadata
     """
@@ -568,18 +552,6 @@ def embedding_config(
         registry = _get_resource_registry()
         if registry is None:
             raise RuntimeError("Resource registry not initialized")
-
-        # Determine provider type - fail-fast validation, no fallbacks
-        if provider and provider_type:
-            raise ValueError(
-                "Cannot specify both 'provider' and 'provider_type'. Use 'provider_type'."
-            )
-
-        final_provider_type = provider_type or provider
-        if not final_provider_type:
-            raise ValueError(
-                f"embedding_config '{name}' requires explicit provider_type parameter (e.g., 'llamacpp_embedding', 'openai_embedding')"
-            )
 
         # Explicit config required - no fallbacks
         if config is None:
@@ -591,13 +563,13 @@ def embedding_config(
         cls.__resource_metadata__ = {
             "name": name,
             "type": ResourceType.EMBEDDING_CONFIG,
-            "provider_type": final_provider_type,
+            "provider_type": provider_type,
             "config": config,
             **metadata,
         }  # type: ignore[attr-defined]
 
         # Store provider_type and config as class attributes for single source of truth
-        cls.__provider_type__ = final_provider_type  # type: ignore[attr-defined]
+        cls.__provider_type__ = provider_type  # type: ignore[attr-defined]
         cls.__config__ = config  # type: ignore[attr-defined]
 
         # Add properties to expose config data from class attributes
@@ -620,7 +592,7 @@ def embedding_config(
 
             instance = EmbeddingResource(
                 name=name,
-                provider_type=final_provider_type,
+                provider_type=provider_type,
                 config=config,
                 type="embedding_config",
                 model_path=config.get("model_path") or config.get("path"),
@@ -703,7 +675,6 @@ def multimodal_llm_config(
     Args:
         name: Unique name for the multimodal LLM model config
         provider_type: Provider implementation to use (e.g., "llamacpp_multimodal")
-        provider: DEPRECATED - use provider_type instead
         config: Model configuration (path, clip_model_path, n_ctx, etc.)
         **metadata: Additional metadata
     """
@@ -713,17 +684,12 @@ def multimodal_llm_config(
         if registry is None:
             raise RuntimeError("Resource registry not initialized")
 
-        # Handle deprecated 'provider' parameter
-        actual_provider_type = provider_type or provider
-        if not actual_provider_type:
-            raise ValueError("Either provider_type or provider must be specified")
-
         cls.__resource_name__ = name  # type: ignore[attr-defined]
         cls.__resource_type__ = ResourceType.MULTIMODAL_LLM_CONFIG  # type: ignore[attr-defined]
         cls.__resource_metadata__ = {
             "name": name,
             "type": ResourceType.MULTIMODAL_LLM_CONFIG,
-            "provider_type": actual_provider_type,
+            "provider_type": provider_type,
             **metadata,
         }  # type: ignore[attr-defined]
 
@@ -733,7 +699,7 @@ def multimodal_llm_config(
         instance = ModelResource(
             name=name,
             type=ResourceType.MULTIMODAL_LLM_CONFIG,
-            provider_type=actual_provider_type,
+            provider_type=provider_type,
             config=config or {},
         )
 
@@ -845,11 +811,14 @@ def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
         if registry is None:
             raise RuntimeError("Resource registry not initialized")
 
+        # Import RequiredAlias here to avoid circular import
+        from flowlib.config.required_resources import RequiredAlias
+
         # Extract all agent config attributes from class attributes
         persona = getattr(cls, "persona", "")
         allowed_tool_categories = getattr(cls, "allowed_tool_categories", [])
-        model_name = getattr(cls, "model_name", "default-model")
-        llm_name = getattr(cls, "llm_name", "default-llm")
+        model_name = getattr(cls, "model_name", RequiredAlias.DEFAULT_MODEL.value)
+        llm_name = getattr(cls, "llm_name", RequiredAlias.DEFAULT_LLM.value)
         temperature = getattr(cls, "temperature", 0.7)
         max_iterations = getattr(cls, "max_iterations", 10)
         enable_learning = getattr(cls, "enable_learning", True)

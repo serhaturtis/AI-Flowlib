@@ -11,11 +11,13 @@ import time
 import uuid
 from typing import cast
 
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.flows.registry import flow_registry
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.config.required_resources import RequiredAlias
 
 from .classification_models import (
     ConversationPlan,
@@ -49,7 +51,7 @@ class TaskClassificationFlow:
         start_time = time.time()
 
         # Get LLM provider using config-driven approach
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt from registry
         prompt_instance = resource_registry.get("task-classification-prompt")
@@ -80,7 +82,7 @@ class TaskClassificationFlow:
         classification = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=TaskClassification,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
@@ -109,15 +111,15 @@ class TaskClassificationFlow:
 
         return "\n".join(formatted_tools)
 
-    def _format_conversation_history(self, history: list[dict]) -> str:
+    def _format_conversation_history(self, history: list[ConversationMessage]) -> str:
         """Format conversation history for the prompt."""
         if not history:
             return "No previous conversation"
 
         formatted_messages = []
         for msg in history[-5:]:  # Last 5 messages for context
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content
             formatted_messages.append(f"{role}: {content}")
 
         return "\n".join(formatted_messages)
@@ -171,7 +173,7 @@ class ConversationPlanningFlow:
             ConversationPlan with response guidance
         """
         # Get LLM provider
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt from registry
         prompt_instance = resource_registry.get("conversation-planning-prompt")
@@ -197,22 +199,22 @@ class ConversationPlanningFlow:
         plan = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=ConversationPlan,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
         logger.info("Generated conversation plan")
         return plan
 
-    def _format_conversation_history(self, history: list[dict]) -> str:
+    def _format_conversation_history(self, history: list[ConversationMessage]) -> str:
         """Format conversation history."""
         if not history:
             return "No previous conversation"
 
         formatted_messages = []
         for msg in history[-5:]:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content
             formatted_messages.append(f"{role}: {content}")
 
         return "\n".join(formatted_messages)
@@ -250,7 +252,7 @@ class SingleToolPlanningFlow:
             SingleToolPlan with single step
         """
         # Get LLM provider
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt from registry
         prompt_instance = resource_registry.get("single-tool-planning-prompt")
@@ -281,7 +283,7 @@ class SingleToolPlanningFlow:
         plan = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=SingleToolPlan,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
@@ -306,15 +308,15 @@ class SingleToolPlanningFlow:
 
         return "\n".join(formatted_tools)
 
-    def _format_conversation_history(self, history: list[dict]) -> str:
+    def _format_conversation_history(self, history: list[ConversationMessage]) -> str:
         """Format conversation history."""
         if not history:
             return "No previous conversation"
 
         formatted_messages = []
         for msg in history[-5:]:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content
             formatted_messages.append(f"{role}: {content}")
 
         return "\n".join(formatted_messages)
@@ -352,7 +354,7 @@ class MultiStepPlanningFlow:
             MultiStepPlan with multiple steps
         """
         # Get LLM provider
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt from registry
         prompt_instance = resource_registry.get("multi-step-planning-prompt")
@@ -383,7 +385,7 @@ class MultiStepPlanningFlow:
         plan = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=MultiStepPlan,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
@@ -408,15 +410,15 @@ class MultiStepPlanningFlow:
 
         return "\n".join(formatted_tools)
 
-    def _format_conversation_history(self, history: list[dict]) -> str:
+    def _format_conversation_history(self, history: list[ConversationMessage]) -> str:
         """Format conversation history."""
         if not history:
             return "No previous conversation"
 
         formatted_messages = []
         for msg in history[-5:]:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content
             formatted_messages.append(f"{role}: {content}")
 
         return "\n".join(formatted_messages)
@@ -650,7 +652,7 @@ class ClassificationBasedPlanningFlow:
 
         try:
             # Get LLM provider
-            llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+            llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
             # Get extraction prompt
             extraction_prompt = resource_registry.get("parameter-extraction-prompt")
@@ -682,7 +684,7 @@ class ClassificationBasedPlanningFlow:
             param_instance = await llm.generate_structured(
                 prompt=cast(PromptTemplate, extraction_prompt),
                 output_type=metadata.parameter_type,
-                model_name="default-model",
+                model_name=RequiredAlias.DEFAULT_MODEL.value,
                 prompt_variables=prompt_vars,
             )
 
@@ -700,15 +702,15 @@ class ClassificationBasedPlanningFlow:
             logger.warning(f"Failed to generate parameters for {tool_name}: {e}, using suggestion")
             return suggested_params
 
-    def _format_conversation_history(self, history: list[dict]) -> str:
+    def _format_conversation_history(self, history: list[ConversationMessage]) -> str:
         """Format conversation history for the prompt."""
         if not history:
             return "No previous conversation"
 
         formatted_messages = []
         for msg in history[-5:]:  # Last 5 messages for context
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content
             formatted_messages.append(f"{role}: {content}")
 
         return "\n".join(formatted_messages)

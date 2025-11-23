@@ -13,11 +13,13 @@ from pydantic import Field
 
 from flowlib.agent.core.activity_stream import ActivityStream
 from flowlib.core.models import StrictBaseModel
+from flowlib.config.required_resources import RequiredAlias
 
 # Import provider/registry for config-driven access
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.knowledge.plugin_manager import KnowledgePluginManager
-from flowlib.providers.llm.base import LLMProvider
+from flowlib.providers.llm.base import LLMProvider, PromptTemplate
+from flowlib.resources.registry.registry import resource_registry
 
 from ...core.base import AgentComponent
 from ...core.errors import MemoryError
@@ -29,6 +31,7 @@ from .models import (
     MemorySearchResult,
     MemoryStoreRequest,
 )
+from .prompts import FusedMemoryResult
 
 # Import modernized memory types
 from .vector import VectorMemory, VectorMemoryConfig
@@ -52,7 +55,7 @@ class AgentMemoryConfig(StrictBaseModel):
         description="Configuration for knowledge memory component",
     )
     fusion_llm_config: str = Field(
-        default="default-llm", description="Provider config name for LLM fusion"
+        default=RequiredAlias.DEFAULT_LLM.value, description="Provider config name for LLM fusion"
     )
     store_execution_history: bool = Field(
         default=True, description="Whether to store execution history in memory"
@@ -181,7 +184,11 @@ class MemoryComponent(AgentComponent):
     ) -> str:
         """Create a memory context across all components."""
         if not self._initialized:
-            raise MemoryError("AgentMemory not initialized")
+            raise MemoryError(
+                "AgentMemory not initialized",
+                operation="create_context",
+                context_name=context_name,
+            )
 
         logger.debug(f"Creating context: {context_name}")
 
@@ -216,7 +223,12 @@ class MemoryComponent(AgentComponent):
     async def store(self, request: MemoryStoreRequest) -> str:
         """Store data across all appropriate memory components."""
         if not self._initialized:
-            raise MemoryError("AgentMemory not initialized")
+            raise MemoryError(
+                "AgentMemory not initialized",
+                operation="store",
+                key=request.key,
+                context=request.context,
+            )
 
         try:
             # Determine storage strategy based on content type
@@ -280,9 +292,13 @@ class MemoryComponent(AgentComponent):
             # Fail only if ALL components failed
             if errors and len(successes) == 0:
                 logger.error(f"Complete storage failure for key '{request.key}': {errors}")
-                raise MemoryError(f"Failed to store item in all memories: {errors[0]}") from errors[
-                    0
-                ]
+                raise MemoryError(
+                    f"Failed to store item in all memories: {errors[0]}",
+                    operation="store",
+                    key=request.key,
+                    context=request.context,
+                    cause=errors[0],
+                ) from errors[0]
 
             # Stream storage activity
             if self._activity_stream:
@@ -325,7 +341,12 @@ class MemoryComponent(AgentComponent):
     async def retrieve(self, request: MemoryRetrieveRequest) -> MemoryItem | None:
         """Retrieve by key, checking Working Memory first, then Knowledge Memory."""
         if not self._initialized:
-            raise MemoryError("AgentMemory not initialized")
+            raise MemoryError(
+                "AgentMemory not initialized",
+                operation="retrieve",
+                key=request.key,
+                context=request.context,
+            )
 
         # 1. Check Working Memory first (fastest access)
         logger.debug(f"Attempting to retrieve key '{request.key}' from working memory")
@@ -377,7 +398,12 @@ class MemoryComponent(AgentComponent):
     async def search(self, request: MemorySearchRequest) -> list[MemorySearchResult]:
         """Perform fused search across all memory components."""
         if not self._initialized:
-            raise MemoryError("AgentMemory not initialized")
+            raise MemoryError(
+                "AgentMemory not initialized",
+                operation="search",
+                query=request.query,
+                context=request.context,
+            )
 
         if not request.query.strip():
             logger.warning("Empty query provided")
@@ -410,7 +436,11 @@ class MemoryComponent(AgentComponent):
                 # Fail fast - no exception handling
                 if not isinstance(result, list):
                     raise MemoryError(
-                        f"Invalid search result type: expected list, got {type(result)}"
+                        f"Invalid search result type: expected list, got {type(result)}",
+                        operation="search",
+                        query=request.query,
+                        context=request.context,
+                        result_type=str(type(result)),
                     )
                 combined_results.extend(result)
 
@@ -447,24 +477,276 @@ class MemoryComponent(AgentComponent):
     async def retrieve_relevant(
         self, query: str, context: str | None = None, limit: int = 10
     ) -> list[str]:
-        """Retrieve relevant memories using fused search across all components."""
+        """Retrieve relevant memories using LLM fusion across all memory components.
+        
+        This method performs intelligent fusion of results from:
+        - Working memory (short-term, context-specific)
+        - Vector memory (semantic search)
+        - Knowledge memory (graph-based relationships)
+        - Knowledge plugins (domain-specific databases)
+        
+        The fusion uses the MemoryFusionPrompt to synthesize results intelligently.
+        
+        Args:
+            query: Search query string
+            context: Optional context/namespace to search in
+            limit: Maximum number of relevant items to return
+            
+        Returns:
+            List of synthesized relevant memory items (from FusedMemoryResult)
+            
+        Raises:
+            MemoryError: If memory system not initialized or fusion fails
+            RuntimeError: If fusion LLM or prompt not available
+        """
         if not self._initialized:
-            raise MemoryError("AgentMemory not initialized")
+            raise MemoryError(
+                "AgentMemory not initialized",
+                operation="retrieve_relevant",
+                query=query,
+                context=context,
+            )
 
-        search_request = MemorySearchRequest(
-            query=query,
-            context=context,
-            limit=limit,
-            threshold=None,
-            sort_by=None,
-            search_type="hybrid",
-            metadata_filter=None,
-        )
+        if not query.strip():
+            logger.warning("Empty query provided to retrieve_relevant")
+            return []
 
-        search_results = await self.search(search_request)
+        if (
+            self._working_memory is None
+            or self._vector_memory is None
+            or self._knowledge_memory is None
+        ):
+            raise RuntimeError("Memory components not initialized")
 
-        # Convert to string list format
-        return [f"{result.item.key}: {result.item.value}" for result in search_results]
+        if self._fusion_llm is None:
+            raise RuntimeError(
+                f"Fusion LLM not initialized: {self._config.fusion_llm_config}"
+            )
+
+        logger.debug(f"Performing fused memory retrieval for query: '{query}'")
+
+        try:
+            # Create search request for all memory components
+            search_request = MemorySearchRequest(
+                query=query,
+                context=context,
+                limit=limit,
+                threshold=None,
+                sort_by=None,
+                search_type="hybrid",
+                metadata_filter=None,
+            )
+
+            # Execute searches across all memory components concurrently
+            search_tasks = [
+                self._working_memory.search(search_request),
+                self._vector_memory.search(search_request),
+                self._knowledge_memory.search(search_request),
+            ]
+
+            # Fail fast - gather results without exception capture
+            search_results = await asyncio.gather(*search_tasks)
+
+            # Unpack results - fail fast if types are invalid
+            working_results = search_results[0]
+            vector_results = search_results[1]
+            knowledge_results = search_results[2]
+
+            if not isinstance(working_results, list):
+                raise MemoryError(
+                    f"Invalid working memory result type: expected list, got {type(working_results)}",
+                    operation="retrieve_relevant",
+                    query=query,
+                )
+
+            if not isinstance(vector_results, list):
+                raise MemoryError(
+                    f"Invalid vector memory result type: expected list, got {type(vector_results)}",
+                    operation="retrieve_relevant",
+                    query=query,
+                )
+
+            if not isinstance(knowledge_results, list):
+                raise MemoryError(
+                    f"Invalid knowledge memory result type: expected list, got {type(knowledge_results)}",
+                    operation="retrieve_relevant",
+                    query=query,
+                )
+
+            # Format results from each memory type
+            working_results_text = self._format_working_memory_results(working_results)
+            vector_results_text = self._format_vector_memory_results(vector_results)
+            knowledge_results_text = self._format_knowledge_memory_results(knowledge_results)
+
+            # Query knowledge plugins if available
+            plugin_results_text = await self._query_knowledge_plugins(query, context)
+
+            # Get fusion prompt from resource registry
+            try:
+                fusion_prompt_resource = resource_registry.get("memory_fusion")
+                if not isinstance(fusion_prompt_resource, PromptTemplate):
+                    raise TypeError(
+                        f"memory_fusion prompt must be PromptTemplate, got {type(fusion_prompt_resource)}"
+                    )
+            except KeyError as e:
+                raise RuntimeError(
+                    "memory_fusion prompt not found in resource registry"
+                ) from e
+
+            # Perform LLM fusion
+            fused_result = await self._fusion_llm.generate_structured(
+                prompt=fusion_prompt_resource,
+                output_type=FusedMemoryResult,
+                model_name=RequiredAlias.DEFAULT_MODEL.value,
+                prompt_variables={
+                    "query": query,
+                    "working_results": working_results_text,
+                    "vector_results": vector_results_text,
+                    "knowledge_results": knowledge_results_text,
+                    "plugin_results": plugin_results_text,
+                },
+            )
+
+            # Return synthesized relevant items
+            logger.debug(
+                f"Fusion completed: {len(fused_result.relevant_items)} items, summary: {fused_result.summary[:100]}"
+            )
+
+            if self._activity_stream:
+                self._activity_stream.memory_retrieval(
+                    query,
+                    context=context,
+                    search_type="fused_llm",
+                    results=fused_result.relevant_items[:5],  # Top 5 items
+                )
+
+            return fused_result.relevant_items
+
+        except Exception as e:
+            if self._activity_stream:
+                self._activity_stream.error(f"Memory fusion failed: {str(e)}")
+            raise MemoryError(
+                f"Memory fusion retrieval failed: {e}",
+                operation="retrieve_relevant",
+                query=query,
+                context=context,
+                cause=e,
+            ) from e
+
+    def _format_working_memory_results(self, results: list[MemorySearchResult]) -> str:
+        """Format working memory search results for fusion prompt.
+        
+        Args:
+            results: List of memory search results from working memory
+            
+        Returns:
+            Formatted string representation of working memory results
+        """
+        if not results:
+            return "No relevant working memory found."
+
+        formatted_items = []
+        for result in results:
+            item = result.item
+            value_str = str(item.value) if hasattr(item, "value") else str(item)
+            # Truncate long values for prompt efficiency
+            if len(value_str) > 200:
+                value_str = value_str[:200] + "..."
+            formatted_items.append(f"- {item.key}: {value_str} (score: {result.score:.2f})")
+
+        return "\n".join(formatted_items)
+
+    def _format_vector_memory_results(self, results: list[MemorySearchResult]) -> str:
+        """Format vector memory search results for fusion prompt.
+        
+        Args:
+            results: List of memory search results from vector memory
+            
+        Returns:
+            Formatted string representation of vector memory results
+        """
+        if not results:
+            return "No relevant semantic search results found."
+
+        formatted_items = []
+        for result in results:
+            item = result.item
+            value_str = str(item.value) if hasattr(item, "value") else str(item)
+            # Truncate long values for prompt efficiency
+            if len(value_str) > 200:
+                value_str = value_str[:200] + "..."
+            formatted_items.append(
+                f"- {item.key}: {value_str} (similarity: {result.score:.2f})"
+            )
+
+        return "\n".join(formatted_items)
+
+    def _format_knowledge_memory_results(self, results: list[MemorySearchResult]) -> str:
+        """Format knowledge memory search results for fusion prompt.
+        
+        Args:
+            results: List of memory search results from knowledge memory
+            
+        Returns:
+            Formatted string representation of knowledge memory results
+        """
+        if not results:
+            return "No relevant knowledge graph results found."
+
+        formatted_items = []
+        for result in results:
+            item = result.item
+            value_str = str(item.value) if hasattr(item, "value") else str(item)
+            # Truncate long values for prompt efficiency
+            if len(value_str) > 200:
+                value_str = value_str[:200] + "..."
+            formatted_items.append(
+                f"- {item.key}: {value_str} (relevance: {result.score:.2f})"
+            )
+
+        return "\n".join(formatted_items)
+
+    async def _query_knowledge_plugins(self, query: str, context: str | None) -> str:
+        """Query knowledge plugins and format results for fusion prompt.
+        
+        Args:
+            query: Search query string
+            context: Optional context/domain to search in
+            
+        Returns:
+            Formatted string representation of plugin results
+        """
+        if not self._knowledge_plugins:
+            return "No knowledge plugins available."
+
+        if not self._knowledge_plugins._initialized:
+            await self._knowledge_plugins.initialize()
+
+        # Use context as domain if available, otherwise try common domains
+        domain = context or "general"
+
+        try:
+            plugin_results = await self._knowledge_plugins.query_domain(
+                domain=domain, query=query, limit=10
+            )
+
+            if not plugin_results:
+                return f"No relevant knowledge plugin results found for domain '{domain}'."
+
+            formatted_items = []
+            for knowledge in plugin_results:
+                content_str = str(knowledge.content)
+                # Truncate long content for prompt efficiency
+                if len(content_str) > 200:
+                    content_str = content_str[:200] + "..."
+                confidence = knowledge.confidence if hasattr(knowledge, "confidence") else 1.0
+                formatted_items.append(f"- {content_str} (confidence: {confidence:.2f})")
+
+            return "\n".join(formatted_items)
+
+        except Exception as e:
+            logger.warning(f"Knowledge plugin query failed: {e}")
+            return f"Knowledge plugin query failed: {str(e)}"
 
     async def wipe_context(self, context: str) -> None:
         """Wipe a specific context across all memory components."""

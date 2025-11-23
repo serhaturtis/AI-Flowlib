@@ -50,15 +50,7 @@ class MutableStrictBaseModel(BaseModel):
     )
 
 
-# For backwards compatibility during migration
-# TODO: Remove these aliases after full migration
-StrictModel = StrictBaseModel
-MutableStrictModel = MutableStrictBaseModel
-
-
 __all__ = [
     "StrictBaseModel",
     "MutableStrictBaseModel",
-    "StrictModel",
-    "MutableStrictModel",
 ]

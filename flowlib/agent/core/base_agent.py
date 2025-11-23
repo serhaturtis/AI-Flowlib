@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from typing import Any, cast
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.agent.components.engine import EngineComponent
 from flowlib.agent.components.knowledge import KnowledgeComponent
 from flowlib.agent.components.memory.manager import AgentMemoryManager
@@ -223,7 +224,7 @@ class BaseAgent:
                 from flowlib.providers.core.registry import provider_registry
                 from flowlib.providers.llm.base import LLMProvider
 
-                llm_provider = await provider_registry.get_by_config("default-llm")
+                llm_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value)
                 if isinstance(llm_provider, LLMProvider):
                     llm_provider.set_system_prompt(self._config_manager.config.persona)
                     logger.info("Agent persona set as system_prompt on LLM provider")
@@ -599,7 +600,7 @@ class BaseAgent:
         flows_info = FlowRegistryStats(
             total_flows=len(self.flows),
             active_flows=len(self.flows),  # Assume all flows are active
-            infrastructure_flows=0,  # TODO: categorize flows properly
+            infrastructure_flows=0,  # Note: Flow categorization requires metadata not currently available
             agent_flows=len(self.flows),
         )
 

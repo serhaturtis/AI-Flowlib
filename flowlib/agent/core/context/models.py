@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from flowlib.agent.components.task.core.todo import TodoItem
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.core.models import MutableStrictBaseModel, StrictBaseModel
 
 
@@ -37,14 +38,6 @@ class ContextManagerConfig(StrictBaseModel):
     pattern_learning_threshold: int = Field(
         default=3, gt=0, description="Minimum success count to consider pattern learned"
     )
-
-
-class ConversationMessage(StrictBaseModel):
-    """Individual conversation message."""
-
-    role: Literal["user", "assistant"] = Field(..., description="Message role")
-    content: str = Field(..., description="Message content")
-    timestamp: datetime = Field(default_factory=datetime.now, description="Message timestamp")
 
 
 class UserProfile(StrictBaseModel):

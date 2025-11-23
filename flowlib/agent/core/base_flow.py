@@ -112,19 +112,19 @@ class BaseAgentFlow(Generic[InputT, OutputT], ABC):
         """Convenience method to get LLM provider from registry."""
         from flowlib.providers.core.registry import provider_registry
 
-        return await provider_registry.get_by_config("default-llm")
+        return await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value)
 
     async def get_graph(self) -> Any:
         """Convenience method to get graph provider from registry."""
         from flowlib.providers.core.registry import provider_registry
 
-        return await provider_registry.get_by_config("default-graph-db")
+        return await provider_registry.get_by_config(RequiredAlias.DEFAULT_GRAPH_DB.value)
 
     async def get_vector(self) -> Any:
         """Convenience method to get vector provider from registry."""
         from flowlib.providers.core.registry import provider_registry
 
-        return await provider_registry.get_by_config("default-vector-db")
+        return await provider_registry.get_by_config(RequiredAlias.DEFAULT_VECTOR_DB.value)
 
     def get_confidence_threshold(self) -> float:
         """Get confidence threshold from context."""

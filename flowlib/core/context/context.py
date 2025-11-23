@@ -127,31 +127,8 @@ class Context(Generic[T]):
 
     # OPTION 1: Keep set/update but add validation (more complex)
     # OPTION 2: Remove/Deprecate set/update to enforce immutability via model re-creation (stricter)
-    # Let's go with OPTION 2 for stricter adherence to the user's request for rigidity.
-
-    # @deprecated("Directly setting arbitrary keys bypasses model validation. Modify the underlying model and re-create Context if needed.")
-    def set(self, key: str, value: Any) -> "Context[T]":
-        """(DEPRECATED) Set a value in the internal context dictionary. Bypasses model validation."""
-        # raise NotImplementedError("Directly setting keys is disallowed. Mutate the model and re-create context.")
-        # OR keep it but log warning / add validation if possible?
-        # For now, retain original behavior but emphasize it's low-level.
-        self._data[key] = value
-        # We cannot easily re-validate the whole model here without reconstructing it.
-        return self
-
-    # @deprecated("Directly updating with a dictionary bypasses model validation. Modify the underlying model and re-create Context if needed.")
-    def update(self, data: dict[str, Any]) -> "Context[T]":
-        """(DEPRECATED) Update internal context data with dictionary. Bypasses model validation."""
-        # raise NotImplementedError("Directly updating with dict is disallowed. Mutate the model and re-create context.")
-        # OR keep it but log warning / add validation if possible?
-        # For now, retain original behavior but emphasize it's low-level.
-        self._data.update(data)
-        # We cannot easily re-validate the whole model here without reconstructing it.
-        return self
-
-    # _validate is less useful now if set/update are discouraged/removed.
-    # It was primarily for validating incoming dicts on init/update. Pydantic handles init validation.
-    # def _validate(self, data: Dict[str, Any]) -> None: ...
+    # set() and update() methods removed - they bypassed model validation.
+    # To modify context data, mutate the underlying model and re-create the Context.
 
     # Snapshots/Rollback operate on the internal dictionary representation.
     def create_snapshot(self) -> int:

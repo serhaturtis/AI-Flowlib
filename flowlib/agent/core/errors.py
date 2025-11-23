@@ -63,7 +63,7 @@ class AgentError(BaseError):
         self.additional_context: dict[str, Any] = dict(context)
 
     def __str__(self) -> str:
-        """String representation - just the message for backward compatibility."""
+        """String representation - just the message."""
         if self.cause:
             return f"{self.message} (caused by: {self.cause})"
         return self.message
@@ -133,10 +133,6 @@ class NotInitializedError(AgentError):
             )
         parent_operation = operation
         super().__init__(message, None, component_name, parent_operation, **parent_context)
-
-        # Add operation back to context for backward compatibility
-        if operation:
-            self.additional_context["operation"] = operation
 
 
 class ComponentError(AgentError):

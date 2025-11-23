@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import Field
 
 from flowlib.core.models import MutableStrictBaseModel, StrictBaseModel
+from flowlib.config.required_resources import RequiredAlias
 
 
 class KnowledgeType(str, Enum):
@@ -156,12 +157,12 @@ class KnowledgeComponentConfig(StrictBaseModel):
 
     enable_storage: bool = Field(default=True, description="Enable storage operations")
     enable_retrieval: bool = Field(default=True, description="Enable retrieval operations")
-    llm_config: str = Field(default="default-llm", description="LLM configuration name")
+    llm_config: str = Field(default=RequiredAlias.DEFAULT_LLM.value, description="LLM configuration name")
     vector_db_config: str = Field(
-        default="default-vector-db", description="Vector DB configuration name"
+        default=RequiredAlias.DEFAULT_VECTOR_DB.value, description="Vector DB configuration name"
     )
     graph_db_config: str = Field(
-        default="default-graph-db", description="Graph DB configuration name"
+        default=RequiredAlias.DEFAULT_GRAPH_DB.value, description="Graph DB configuration name"
     )
     learning_batch_size: int = Field(default=100, ge=1, description="Learning batch size")
     max_storage_items: int = Field(default=10000, ge=1, description="Maximum items to store")

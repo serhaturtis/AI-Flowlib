@@ -9,10 +9,12 @@ import time
 import uuid
 from typing import cast
 
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.config.required_resources import RequiredAlias
 
 from .models import (
     LLMStructuredPlan,
@@ -46,7 +48,7 @@ class ExecutionPlanningFlow:
         start_time = time.time()
 
         # Get LLM provider using config-driven approach
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt from registry
         prompt_instance = resource_registry.get("structured-planning-prompt")
@@ -88,7 +90,7 @@ class ExecutionPlanningFlow:
         llm_result = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_instance),
             output_type=LLMStructuredPlan,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=cast(dict[str, object], prompt_vars),
         )
 
@@ -137,7 +139,7 @@ class ExecutionPlanningFlow:
                     param_instance = await llm.generate_structured(
                         prompt=cast(PromptTemplate, extraction_prompt),
                         output_type=metadata.parameter_type,
-                        model_name="default-model",
+                        model_name=RequiredAlias.DEFAULT_MODEL.value,
                         prompt_variables=prompt_vars,
                     )
 
@@ -211,15 +213,15 @@ class ExecutionPlanningFlow:
 
         return "\n".join(formatted_tools)
 
-    def _format_conversation_history(self, history: list[dict]) -> str:
+    def _format_conversation_history(self, history: list[ConversationMessage]) -> str:
         """Format conversation history for the prompt."""
         if not history:
             return "No previous conversation"
 
         formatted_messages = []
         for msg in history[-5:]:  # Last 5 messages for context
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content
             formatted_messages.append(f"{role}: {content}")
 
         return "\n".join(formatted_messages)

@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from pydantic import Field
 
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.core.models import StrictBaseModel
 from flowlib.flows.base import ContextBuildingFlow, ContextBuildingInput
 from flowlib.flows.decorators.decorators import flow, pipeline
@@ -11,6 +12,7 @@ from flowlib.flows.registry.registry import flow_registry
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.llm.base import LLMProvider, PromptTemplate
 from flowlib.resources.registry.registry import resource_registry
+from flowlib.config.required_resources import RequiredAlias
 
 from .models import BashParameters
 
@@ -20,8 +22,7 @@ class BashParameterGenerationInput(StrictBaseModel):
 
     task_content: str = Field(..., description="Task description to extract parameters from")
     working_directory: str = Field(default=".", description="Working directory context")
-    # FIX: Add conversation context for parameter extraction
-    conversation_history: list[dict[str, Any]] = Field(
+    conversation_history: list[ConversationMessage] = Field(
         default_factory=list,
         description="Recent conversation history for context-aware parameter generation",
     )
@@ -50,7 +51,7 @@ class BashParameterGenerationFlow:
         """Generate bash parameters from task content."""
 
         # Get LLM provider
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Get prompt template
         prompt_template = resource_registry.get("bash_tool_parameter_generation")
@@ -73,7 +74,7 @@ class BashParameterGenerationFlow:
         parameters = await llm.generate_structured(
             prompt=cast(PromptTemplate, prompt_template),
             output_type=BashParameters,
-            model_name="default-model",
+            model_name=RequiredAlias.DEFAULT_MODEL.value,
             prompt_variables=prompt_variables,
         )
 

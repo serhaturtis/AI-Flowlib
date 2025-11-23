@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.models import StrictBaseModel
 from flowlib.knowledge.models import (
     DocumentContent,
@@ -18,8 +19,8 @@ class SearchQuery(StrictBaseModel):
     query_text: str
     collection_name: str
     top_k: int = 10
-    vector_provider_config: str | None = "default-vector-db"
-    embedding_provider_config: str | None = "default-embedding"
+    vector_provider_config: str | None = RequiredAlias.DEFAULT_VECTOR_DB.value
+    embedding_provider_config: str | None = RequiredAlias.DEFAULT_EMBEDDING.value
     vector_dimensions: int | None = None
     filter_metadata: dict[str, Any] | None = None
 

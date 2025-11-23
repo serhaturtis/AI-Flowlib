@@ -5,6 +5,8 @@ config-driven provider architecture. ProviderType enum has been removed
 as all provider access is now config-driven.
 """
 
+from flowlib.config.required_resources import RequiredAlias
+
 # Provider categories (used internally by the registry)
 PROVIDER_CATEGORIES = {
     "llm",
@@ -25,13 +27,13 @@ PROVIDER_CATEGORIES = {
 
 # Default provider configuration names
 DEFAULT_CONFIGS = {
-    "default-llm": "llm",
+    RequiredAlias.DEFAULT_LLM.value: "llm",
     "default-multimodal-llm": "multimodal_llm",
-    "default-vector-db": "vector_db",
-    "default-graph-db": "graph_db",
-    "default-cache": "cache",
-    "default-embedding": "embedding",
-    "default-database": "database",
+    RequiredAlias.DEFAULT_VECTOR_DB.value: "vector_db",
+    RequiredAlias.DEFAULT_GRAPH_DB.value: "graph_db",
+    RequiredAlias.DEFAULT_CACHE.value: "cache",
+    RequiredAlias.DEFAULT_EMBEDDING.value: "embedding",
+    RequiredAlias.DEFAULT_DATABASE.value: "database",
 }
 
 # Provider type mapping - only providers that actually exist in the codebase

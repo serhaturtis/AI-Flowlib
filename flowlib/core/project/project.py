@@ -10,6 +10,9 @@ import shutil
 import sys
 from pathlib import Path
 
+from flowlib.config.required_alias_validator import RequiredAliasValidator
+from flowlib.core.project.validator import ProjectValidator
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +48,8 @@ class Project:
         self.tools_path = self.flowlib_path / "tools"
         self.agents_path = self.flowlib_path / "agents"
         self.flows_path = self.flowlib_path / "flows"
-        self.roles_path = self.flowlib_path / "roles"
+        self.providers_path = self.configs_path / "providers"
+        self.resources_path = self.configs_path / "resources"
         self.knowledge_plugins_path = self.flowlib_path / "knowledge_plugins"
         self.logs_path = self.flowlib_path / "logs"
         self.temp_path = self.flowlib_path / "temp"
@@ -54,6 +58,7 @@ class Project:
         # Track loaded modules to prevent duplicates
         self._loaded_modules: set[str] = set()
         self._initialized = False
+        self._validator = ProjectValidator()
 
     def initialize(self) -> None:
         """Initialize project structure and copy templates if needed.
@@ -83,18 +88,24 @@ class Project:
         """Load all project configurations into registries.
 
         This method loads configurations in the following order:
-        1. Provider configs from configs/
-        2. Agent configs from agents/ or configs/
-        3. Custom tools from tools/
-        4. Custom flows from flows/
-        5. Role configs (if any legacy files remain)
-        6. Role assignments from roles/assignments.py
+        1. Provider configs from configs/providers/
+        2. Alias bindings from configs/aliases.py
+        3. Agent configs from agents/
+        4. Custom tools from tools/
+        5. Custom flows from flows/
         """
         if not self._initialized:
             self.initialize()
 
         try:
             logger.info(f"Loading configurations from project at {self.flowlib_path}")
+
+            validation_result = self._validator.validate(self.flowlib_path)
+            if not validation_result.is_valid:
+                issues = "\n".join(
+                    f"- {issue.path}: {issue.message}" for issue in validation_result.issues
+                )
+                raise RuntimeError(f"Project validation failed:\n{issues}")
 
             # Add project paths to Python path temporarily
             paths_added = []
@@ -106,6 +117,8 @@ class Project:
 
             for path in [
                 self.configs_path,
+                self.providers_path,
+                self.resources_path,
                 self.tools_path,
                 self.agents_path,
                 self.flows_path,
@@ -117,8 +130,14 @@ class Project:
                         paths_added.append(path_str)
 
             try:
-                # Load configurations from configs/ (providers, models, etc.)
+                # Load provider configurations from configs/providers/
                 self._load_configs()
+
+                # Load alias bindings (requires provider configs)
+                self._load_aliases()
+
+                # Note: Alias validation is deferred until agent launch time
+                # This allows users to build projects incrementally
 
                 # Load agent configurations
                 self._load_agents()
@@ -128,12 +147,6 @@ class Project:
 
                 # Load custom flows
                 self._load_flows()
-
-                # Load role configurations (before assignments)
-                self._load_roles()
-
-                # Load role assignments (must be last)
-                self._load_role_assignments()
 
                 logger.info(f"Project loading complete: loaded {len(self._loaded_modules)} modules")
 
@@ -152,10 +165,11 @@ class Project:
         directories = [
             self.flowlib_path,
             self.configs_path,
+            self.providers_path,
+            self.resources_path,
             self.tools_path,
             self.agents_path,
             self.flows_path,
-            self.roles_path,
             self.knowledge_plugins_path,
             self.logs_path,
             self.temp_path,
@@ -166,10 +180,18 @@ class Project:
             directory.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Ensured directory exists: {directory}")
 
-        # Create __init__.py in configs directory only (needed for imports)
+        # Create __init__.py files for configs and providers directories
         configs_init = self.configs_path / "__init__.py"
         if not configs_init.exists():
             configs_init.write_text('"""Project configurations."""\n')
+
+        providers_init = self.providers_path / "__init__.py"
+        if not providers_init.exists():
+            providers_init.write_text('"""Project provider configurations."""\n')
+
+        resources_init = self.resources_path / "__init__.py"
+        if not resources_init.exists():
+            resources_init.write_text('"""Project resource configurations."""\n')
 
     def _is_new_project(self) -> bool:
         """Check if this is a new project that needs initialization.
@@ -186,11 +208,12 @@ class Project:
 
         # Check if any of the target files from EXAMPLE_TO_TARGET exist
         for _example_file, target_file in example_configs.EXAMPLE_TO_TARGET.items():
-            # Handle special case for role assignments
-            if target_file.startswith("../roles/"):
-                target_path = self.roles_path / target_file.replace("../roles/", "")
-            elif target_file.startswith("../agents/"):
+            if target_file.startswith("../agents/"):
                 target_path = self.agents_path / target_file.replace("../agents/", "")
+            elif target_file.startswith("providers/"):
+                target_path = self.providers_path / target_file.replace("providers/", "")
+            elif target_file.startswith("resources/"):
+                target_path = self.resources_path / target_file.replace("resources/", "")
             else:
                 target_path = self.configs_path / target_file
 
@@ -221,10 +244,12 @@ class Project:
                 source_path = example_dir / example_file
 
                 # Handle special cases for different target directories
-                if target_file.startswith("../roles/"):
-                    target_path = self.roles_path / target_file.replace("../roles/", "")
-                elif target_file.startswith("../agents/"):
+                if target_file.startswith("../agents/"):
                     target_path = self.agents_path / target_file.replace("../agents/", "")
+                elif target_file.startswith("providers/"):
+                    target_path = self.providers_path / target_file.replace("providers/", "")
+                elif target_file.startswith("resources/"):
+                    target_path = self.resources_path / target_file.replace("resources/", "")
                 else:
                     target_path = self.configs_path / target_file
 
@@ -260,17 +285,31 @@ class Project:
             raise RuntimeError(f"Failed to copy example configs: {e}") from e
 
     def _load_configs(self) -> None:
-        """Load provider and model configurations from configs/."""
-        config_files = self._find_python_files(self.configs_path)
+        """Load provider and resource configurations."""
+        self._load_provider_configs()
+        self._load_resource_configs()
 
-        if not config_files:
-            logger.debug("No configuration files found in configs/")
+    def _load_provider_configs(self) -> None:
+        provider_files = self._find_python_files(self.providers_path)
+
+        if not provider_files:
+            logger.debug("No configuration files found in configs/providers/")
+        else:
+            logger.info(f"Found {len(provider_files)} configuration files in configs/providers/")
+            for config_file in provider_files:
+                self._import_module(config_file, "provider_config")
+
+    def _load_resource_configs(self) -> None:
+        resource_files = self._find_python_files(self.resources_path)
+
+        if not resource_files:
+            logger.debug("No configuration files found in configs/resources/")
             return
 
-        logger.info(f"Found {len(config_files)} configuration files in configs/")
+        logger.info(f"Found {len(resource_files)} configuration files in configs/resources/")
 
-        for config_file in config_files:
-            self._import_module(config_file, "config")
+        for resource_file in resource_files:
+            self._import_module(resource_file, "resource_config")
 
     def _load_agents(self) -> None:
         """Load agent configurations from agents/."""
@@ -321,36 +360,52 @@ class Project:
         for flow_file in flow_files:
             self._import_module(flow_file, "flow")
 
-    def _load_roles(self) -> None:
-        """Load role configurations from roles/."""
-        if not self.roles_path.exists():
-            logger.debug("No roles directory found")
-            return
+    def _load_aliases(self) -> None:
+        """Load alias bindings from configs/aliases.py."""
+        aliases_file = self.configs_path / "aliases.py"
 
-        role_files = self._find_python_files(self.roles_path)
+        if not aliases_file.exists():
+            raise RuntimeError(
+                f"Missing required alias bindings file at '{aliases_file}'. "
+                "Create configs/aliases.py to define canonical configuration aliases."
+            )
 
-        # Filter out assignments.py since that's handled separately
-        role_files = [f for f in role_files if f.name != "assignments.py"]
+        self._import_module(aliases_file, "aliases")
+        logger.info("Loaded configuration aliases")
 
-        if not role_files:
-            logger.debug("No role configuration files found")
-            return
+    def _validate_required_aliases(self) -> None:
+        """Validate required aliases after loading (Phase 2: strict mode).
 
-        logger.info(f"Found {len(role_files)} role configuration files")
+        Phase 2 implementation: Raises ConfigurationError if required aliases are missing.
+        Logs warnings for type mismatches and other issues.
+        """
+        validation_result = self.validate_required_aliases()
 
-        for role_file in role_files:
-            self._import_module(role_file, "role")
+        # Log warnings (non-fatal issues)
+        if validation_result.warnings:
+            for warning in validation_result.warnings:
+                logger.warning(f"Required alias validation warning: {warning}")
 
-    def _load_role_assignments(self) -> None:
-        """Load role assignments from roles/assignments.py."""
-        assignments_file = self.roles_path / "assignments.py"
+        # Raise error for missing required aliases (fatal issues)
+        if not validation_result.valid:
+            error_message = (
+                f"Project '{self.flowlib_path}' has missing required aliases:\n"
+                f"{validation_result.get_error_message()}\n\n"
+                "Please configure the missing aliases in your configs/aliases.py file."
+            )
+            raise RuntimeError(error_message)
 
-        if not assignments_file.exists():
-            logger.debug("No role assignments file found")
-            return
+        logger.info("Required alias validation passed")
 
-        self._import_module(assignments_file, "assignments")
-        logger.info("Loaded role assignments")
+    def validate_required_aliases(self):
+        """Validate all required aliases are configured.
+
+        Returns:
+            ValidationResult with validation details.
+        """
+        from flowlib.config.required_alias_validator import ValidationResult
+
+        return RequiredAliasValidator.validate_project()
 
     def _find_python_files(self, directory: Path) -> list[Path]:
         """Find all Python files in a directory (excluding __init__.py).

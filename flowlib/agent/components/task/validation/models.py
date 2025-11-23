@@ -5,8 +5,8 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from flowlib.core.models import MutableStrictBaseModel
-from flowlib.resources.models.base import StrictBaseModel
+from flowlib.agent.models.conversation import ConversationMessage
+from flowlib.core.models import MutableStrictBaseModel, StrictBaseModel
 
 # LLM-facing models - Two-step approach
 
@@ -62,41 +62,6 @@ class LLMClarifyGeneration(StrictBaseModel):
     )
 
 
-# Legacy model for backward compatibility (if needed elsewhere)
-
-
-class LLMValidationResult(StrictBaseModel):
-    """Validation result for context sufficiency assessment."""
-
-    has_sufficient_context: bool = Field(
-        ...,
-        description="Whether there is enough information to proceed with planning and execution",
-    )
-
-    confidence: str = Field(..., description="Confidence in assessment: low, medium, high")
-
-    reasoning: str = Field(
-        ..., description="Detailed analysis of what information is available vs what is needed"
-    )
-
-    next_action: Literal["proceed", "clarify"] = Field(
-        ...,
-        description=(
-            "proceed: sufficient context, create task execution plan | "
-            "clarify: missing critical information, create clarification plan"
-        ),
-    )
-
-    missing_information: list[str] = Field(
-        default_factory=list, description="Specific information gaps that prevent proceeding"
-    )
-
-    clarification_questions: list[str] = Field(
-        default_factory=list,
-        description="Specific questions to ask user to gather missing information",
-    )
-
-
 # Full models
 
 
@@ -125,7 +90,7 @@ class ValidationInput(StrictBaseModel):
     """Input for context validation."""
 
     user_message: str = Field(..., description="The user's current message")
-    conversation_history: list[dict] = Field(
+    conversation_history: list[ConversationMessage] = Field(
         default_factory=list, description="Recent conversation for context"
     )
     domain_state: dict[str, Any] = Field(

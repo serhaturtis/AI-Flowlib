@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import cast
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.knowledge.models import (
     DocumentContent,
@@ -37,14 +38,14 @@ class VectorStorageFlow:
         # Get real vector provider using config-driven access
 
         logger.info("Getting vector provider from registry: default-vector-db")
-        vector_provider = await provider_registry.get_by_config("default-vector-db")
+        vector_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_VECTOR_DB.value)
 
         # Initialize the provider
         await vector_provider.initialize()
 
         # Get real embedding provider using config-driven access
         logger.info("Getting embedding provider from registry: default-embedding")
-        embedding_provider = await provider_registry.get_by_config("default-embedding")
+        embedding_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_EMBEDDING.value)
 
         # Initialize the embedding provider
         await embedding_provider.initialize()
@@ -142,11 +143,11 @@ class VectorStorageFlow:
 
         # Use the same real providers as regular processing
         logger.debug("Streaming vector provider initialized (connection #1)")
-        vector_provider = await provider_registry.get_by_config("default-vector-db")
+        vector_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_VECTOR_DB.value)
         await vector_provider.initialize()
 
         logger.debug("Getting streaming embedding provider from registry: default-embedding")
-        embedding_provider = await provider_registry.get_by_config("default-embedding")
+        embedding_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_EMBEDDING.value)
         await embedding_provider.initialize()
 
         # Cast to specific types for type safety
@@ -245,7 +246,7 @@ class VectorStorageFlow:
         # Get embedding provider first to retrieve model info
         logger.info("Getting embedding provider from registry: default-embedding")
         embedding_provider_temp = await provider_registry.get_by_config(
-            query.embedding_provider_config or "default-embedding"
+            query.embedding_provider_config or RequiredAlias.DEFAULT_EMBEDDING.value
         )
         await embedding_provider_temp.initialize()
         embedding_provider_cast = cast(EmbeddingProvider, embedding_provider_temp)
@@ -257,8 +258,8 @@ class VectorStorageFlow:
         # Create minimal config for providers
         config = VectorStoreInput(
             collection_name=query.collection_name,
-            vector_provider_config=query.vector_provider_config or "default-vector-db",
-            embedding_provider_config=query.embedding_provider_config or "default-embedding",
+            vector_provider_config=query.vector_provider_config or RequiredAlias.DEFAULT_VECTOR_DB.value,
+            embedding_provider_config=query.embedding_provider_config or RequiredAlias.DEFAULT_EMBEDDING.value,
             embedding_model=embedding_model,
             vector_dimensions=vector_dimensions,
             documents=[],

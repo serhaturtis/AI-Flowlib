@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import yaml  # type: ignore[import-untyped]
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.flows.registry.registry import flow_registry
 from flowlib.providers.core.registry import provider_registry
@@ -181,7 +182,7 @@ class PluginGenerationFlow:
             neo4j_temp_dir.mkdir(exist_ok=True)
 
         # Get embedding provider to retrieve model configuration
-        embedding_provider_temp = await provider_registry.get_by_config("default-embedding")
+        embedding_provider_temp = await provider_registry.get_by_config(RequiredAlias.DEFAULT_EMBEDDING.value)
         await embedding_provider_temp.initialize()
         embedding_provider_cast = cast(EmbeddingProvider, embedding_provider_temp)
 
@@ -208,12 +209,12 @@ class PluginGenerationFlow:
             llm_model_name="music-album-model",
             embedding_model=embedding_model,
             vector_dimensions=vector_dimensions,
-            vector_provider_config="default-vector-db",
-            embedding_provider_config="default-embedding",
+            vector_provider_config=RequiredAlias.DEFAULT_VECTOR_DB.value,
+            embedding_provider_config=RequiredAlias.DEFAULT_EMBEDDING.value,
             enable_graph_analysis=True,
             min_entity_frequency=2,
             min_relationship_confidence=0.7,
-            graph_provider_config="default-graph-db",
+            graph_provider_config=RequiredAlias.DEFAULT_GRAPH_DB.value,
             use_vector_db=request.use_vector_db,
             use_graph_db=request.use_graph_db,
             max_files=request.max_files,
@@ -632,7 +633,6 @@ if __name__ == "__main__":
         use_graph_db: bool,
     ) -> None:
         """Copy database files from extraction to create embedded databases in plugin."""
-        import shutil
 
         if use_vector_db:
             # Copy ChromaDB data if it exists

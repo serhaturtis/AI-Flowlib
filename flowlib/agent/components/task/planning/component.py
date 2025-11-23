@@ -67,10 +67,7 @@ class StructuredPlannerComponent(AgentComponent):
         try:
             # Extract information from unified context
             user_message = context.session.current_message
-            conversation_history = [
-                {"role": msg.role, "content": msg.content, "timestamp": msg.timestamp}
-                for msg in context.session.conversation_history
-            ]
+            conversation_history = context.session.conversation_history or []
             # Get available tools for agent's allowed categories
             allowed_categories = context.session.allowed_tool_categories or []
             available_tools = self._get_available_tools_for_categories(

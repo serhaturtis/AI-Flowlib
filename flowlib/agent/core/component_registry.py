@@ -57,5 +57,5 @@ class ComponentRegistry:
         return {name: type(comp).__name__ for name, comp in self._components.items()}
 
 
-# Global component registry instance for backward compatibility
+# Global component registry instance
 component_registry = ComponentRegistry("default")

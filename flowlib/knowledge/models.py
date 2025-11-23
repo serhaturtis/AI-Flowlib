@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import Field
 
 from flowlib.core.models import StrictBaseModel
+from flowlib.config.required_resources import RequiredAlias
 
 
 class DocumentType(str, Enum):
@@ -364,10 +365,10 @@ class VectorStoreInput(StrictBaseModel):
         None, description="Vector embedding dimensions (retrieved from provider config if not specified)"
     )
     vector_provider_config: str = Field(
-        "default-vector-db", description="Vector provider configuration name"
+        RequiredAlias.DEFAULT_VECTOR_DB.value, description="Vector provider configuration name"
     )
     embedding_provider_config: str | None = Field(
-        "default-embedding", description="Embedding provider configuration name"
+        RequiredAlias.DEFAULT_EMBEDDING.value, description="Embedding provider configuration name"
     )
 
 
@@ -408,7 +409,7 @@ class GraphStoreInput(StrictBaseModel):
     # Graph storage configuration (config-driven)
     graph_name: str = Field("knowledge_graph", description="Name for the graph database")
     graph_provider_config: str = Field(
-        "default-graph-db", description="Graph provider configuration name"
+        RequiredAlias.DEFAULT_GRAPH_DB.value, description="Graph provider configuration name"
     )
 
     # Query fields for graph operations
@@ -648,10 +649,10 @@ class KnowledgeExtractionRequest(StrictBaseModel):
         None, description="Vector embedding dimensions (retrieved from provider config if not specified)"
     )
     vector_provider_config: str = Field(
-        "default-vector-db", description="Vector provider configuration name"
+        RequiredAlias.DEFAULT_VECTOR_DB.value, description="Vector provider configuration name"
     )
     embedding_provider_config: str | None = Field(
-        "default-embedding", description="Embedding provider configuration name"
+        RequiredAlias.DEFAULT_EMBEDDING.value, description="Embedding provider configuration name"
     )
 
     # Graph DB options (config-driven)
@@ -661,7 +662,7 @@ class KnowledgeExtractionRequest(StrictBaseModel):
         0.7, description="Minimum confidence for relationships"
     )
     graph_provider_config: str = Field(
-        "default-graph-db", description="Graph provider configuration name"
+        RequiredAlias.DEFAULT_GRAPH_DB.value, description="Graph provider configuration name"
     )
 
     # Database configuration

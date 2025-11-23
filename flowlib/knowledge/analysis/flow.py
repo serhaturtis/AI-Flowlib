@@ -1,9 +1,11 @@
 """Entity and relationship analysis flow."""
 
+import asyncio
 import hashlib
 import logging
 from typing import Any, cast
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.flows.decorators.decorators import flow, pipeline
 from flowlib.knowledge.analysis.models import (
     LLMConceptExtractionResult,
@@ -156,8 +158,6 @@ class EntityAnalysisFlow:
             results.extend(batch_results)
 
             # Small delay between batches to prevent LLM overload
-            import asyncio
-
             await asyncio.sleep(0.1)
 
         logger.info(f"Completed batch processing: {len(results)} document results")
@@ -346,7 +346,7 @@ class EntityAnalysisFlow:
         self, document: DocumentContent, config: EntityExtractionInput
     ) -> dict[str, Any]:
         """Extract entities and relationships from document using LLM."""
-        llm = cast(LLMProvider, await provider_registry.get_by_config("default-llm"))
+        llm = cast(LLMProvider, await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value))
 
         # Process all chunks - no artificial limits
         chunks = document.chunks
@@ -359,7 +359,7 @@ class EntityAnalysisFlow:
             entity_result = await llm.generate_structured(
                 prompt=cast(PromptTemplate, entity_prompt),
                 output_type=LLMEntityExtractionResult,
-                model_name="default-model",
+                model_name=RequiredAlias.DEFAULT_MODEL.value,
                 prompt_variables={
                     "domain": config.extraction_domain,
                     "context": f"Document: {document.metadata.file_name}",
@@ -393,7 +393,7 @@ class EntityAnalysisFlow:
                 rel_result = await llm.generate_structured(
                     prompt=cast(PromptTemplate, rel_prompt),
                     output_type=LLMRelationshipExtractionResult,
-                    model_name="default-model",
+                    model_name=RequiredAlias.DEFAULT_MODEL.value,
                     prompt_variables={
                         "domain": config.extraction_domain,
                         "entity_list": ", ".join(entity_names),

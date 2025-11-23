@@ -6,9 +6,11 @@ All provider access is done through get_by_config() with centralized configurati
 
 import asyncio
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.errors.errors import ErrorContext, ExecutionError
 from flowlib.core.registry.registry import BaseRegistry
 from flowlib.resources.models.config_resource import ProviderConfigResource
@@ -32,12 +34,18 @@ class ProviderRegistry(BaseRegistry[Provider]):
 
     def __init__(self) -> None:
         """Initialize clean provider registry."""
+        # Thread safety lock for all dictionary operations
+        self._lock = threading.RLock()
+
         # Core storage for providers: (provider_type, name) -> provider
         self._providers: dict[tuple[str, str], Provider] = {}
 
         # Factory storage for dynamic provider creation
         self._factories: dict[tuple[str, str], Callable[[dict[str, Any] | None], Provider]] = {}
         self._factory_metadata: dict[tuple[str, str], dict[str, str]] = {}
+
+        # Settings class storage for schema generation
+        self._settings_classes: dict[tuple[str, str], type] = {}
 
         # Async initialization tracking
         self._initialized_providers: dict[tuple[str, str], Provider] = {}
@@ -73,7 +81,9 @@ class ProviderRegistry(BaseRegistry[Provider]):
             raise ValueError("Provider must have a 'provider_type' attribute") from None
 
         key = (provider.provider_type, provider.name)
-        self._providers[key] = provider
+
+        with self._lock:
+            self._providers[key] = provider
 
         logger.info(f"Registered provider: {provider.name} (type: {provider.provider_type})")
 
@@ -98,6 +108,7 @@ class ProviderRegistry(BaseRegistry[Provider]):
         provider_type: str,
         name: str,
         factory: Callable[[dict[str, Any] | None], Provider],
+        settings_class: type | None = None,
         **metadata: str,
     ) -> None:
         """Register a factory for creating providers.
@@ -106,13 +117,34 @@ class ProviderRegistry(BaseRegistry[Provider]):
             provider_type: Type of provider (e.g., llm, database)
             name: Unique name for this provider
             factory: Factory function that creates the provider
+            settings_class: Pydantic model class for provider settings (for schema generation)
             **metadata: Additional metadata about the provider
         """
         key = (provider_type, name)
-        self._factories[key] = factory
-        self._factory_metadata[key] = {"provider_type": provider_type, **metadata}
+
+        with self._lock:
+            self._factories[key] = factory
+            self._factory_metadata[key] = {"provider_type": provider_type, **metadata}
+
+            # Store settings class for schema generation
+            if settings_class is not None:
+                self._settings_classes[key] = settings_class
 
         logger.info(f"Registered provider factory: {name} (type: {provider_type})")
+
+    def get_settings_class(self, provider_type: str, name: str) -> type | None:
+        """Get the settings class for a registered provider.
+
+        Args:
+            provider_type: Type of provider (e.g., llm, database)
+            name: Unique name for this provider
+
+        Returns:
+            The Pydantic settings class if registered, None otherwise
+        """
+        key = (provider_type, name)
+        with self._lock:
+            return self._settings_classes.get(key)
 
     async def get_by_config(self, config_name: str) -> Provider:
         """Get a provider instance using a configuration resource.
@@ -130,8 +162,8 @@ class ProviderRegistry(BaseRegistry[Provider]):
             ExecutionError: If provider initialization fails
 
         Example:
-            llm = await provider_registry.get_by_config("default-llm")
-            vector_db = await provider_registry.get_by_config("default-vector-db")
+            llm = await provider_registry.get_by_config(RequiredAlias.DEFAULT_LLM.value)
+            vector_db = await provider_registry.get_by_config(RequiredAlias.DEFAULT_VECTOR_DB.value)
         """
         try:
             # Get the configuration resource
@@ -198,31 +230,44 @@ class ProviderRegistry(BaseRegistry[Provider]):
         """
         key = (provider_category, provider_type)
 
-        # Check if already initialized
-        if key in self._initialized_providers:
-            return self._initialized_providers[key]
-
-        # Get or create lock for thread-safe initialization
-        if key not in self._initialization_locks:
-            self._initialization_locks[key] = asyncio.Lock()
-
-        async with self._initialization_locks[key]:
-            # Double-checked locking
+        # Check if already initialized (thread-safe read)
+        with self._lock:
             if key in self._initialized_providers:
                 return self._initialized_providers[key]
 
-            try:
-                # Try direct provider first
-                if key in self._providers:
+            # Get or create lock for async initialization
+            if key not in self._initialization_locks:
+                self._initialization_locks[key] = asyncio.Lock()
+
+            async_lock = self._initialization_locks[key]
+
+        # Use async lock for initialization (outside threading lock to avoid deadlock)
+        async with async_lock:
+            # Double-checked locking (thread-safe read)
+            with self._lock:
+                if key in self._initialized_providers:
+                    return self._initialized_providers[key]
+
+                # Check if provider or factory exists
+                has_provider = key in self._providers
+                has_factory = key in self._factories
+
+                if has_provider:
                     provider = self._providers[key]
+                elif has_factory:
+                    factory = self._factories[key]
+                else:
+                    raise KeyError(
+                        f"Provider '{provider_type}' of category '{provider_category}' not found. "
+                        f"Available providers: {self.list_providers()}"
+                    )
+
+            # Initialize outside lock to allow concurrent initializations
+            try:
+                if has_provider:
                     if hasattr(provider, "initialized") and not provider.initialized:
                         await provider.initialize()
-                    self._initialized_providers[key] = provider
-                    return provider
-
-                # Try factory if direct provider not found
-                elif key in self._factories:
-                    factory = self._factories[key]
+                elif has_factory:
                     # Create provider from factory
                     provider = factory(settings)
 
@@ -230,14 +275,12 @@ class ProviderRegistry(BaseRegistry[Provider]):
                         await provider.initialize()
 
                     self.register_provider(provider)
-                    self._initialized_providers[key] = provider
-                    return provider
 
-                else:
-                    raise KeyError(
-                        f"Provider '{provider_type}' of category '{provider_category}' not found. "
-                        f"Available providers: {self.list_providers()}"
-                    )
+                # Store initialized provider (thread-safe write)
+                with self._lock:
+                    self._initialized_providers[key] = provider
+
+                return provider
 
             except Exception as e:
                 raise ExecutionError(
@@ -339,10 +382,11 @@ class ProviderRegistry(BaseRegistry[Provider]):
     def list_providers(self) -> list[str]:
         """List all registered providers."""
         providers = []
-        for provider_type, name in self._providers.keys():
-            providers.append(f"{provider_type}:{name}")
-        for provider_type, name in self._factories.keys():
-            providers.append(f"{provider_type}:{name} (factory)")
+        with self._lock:
+            for provider_type, name in self._providers.keys():
+                providers.append(f"{provider_type}:{name}")
+            for provider_type, name in self._factories.keys():
+                providers.append(f"{provider_type}:{name} (factory)")
         return providers
 
     def contains(self, name: str) -> bool:
@@ -394,8 +438,11 @@ class ProviderRegistry(BaseRegistry[Provider]):
         This method removes all registered providers, factories, and initialized providers.
         It also performs proper shutdown of any active provider instances.
         """
-        # Shutdown all initialized providers first
-        if self._initialized_providers:
+        # Shutdown all initialized providers first (read providers list with lock)
+        with self._lock:
+            initialized_copy = dict(self._initialized_providers)
+
+        if initialized_copy:
             try:
                 import asyncio
 
@@ -408,12 +455,13 @@ class ProviderRegistry(BaseRegistry[Provider]):
             except Exception as e:
                 logger.warning(f"Error during provider shutdown in clear(): {e}")
 
-        # Clear all storage
-        self._providers.clear()
-        self._factories.clear()
-        self._factory_metadata.clear()
-        self._initialized_providers.clear()
-        self._initialization_locks.clear()
+        # Clear all storage (thread-safe)
+        with self._lock:
+            self._providers.clear()
+            self._factories.clear()
+            self._factory_metadata.clear()
+            self._initialized_providers.clear()
+            self._initialization_locks.clear()
 
         logger.debug("Cleared all providers from registry")
 
@@ -428,56 +476,59 @@ class ProviderRegistry(BaseRegistry[Provider]):
         """
         removed = False
 
-        # Find providers matching the config name
-        keys_to_remove = []
-        for key in self._providers.keys():
-            provider_category, provider_type = key
-            # Check if this provider matches the config name
-            try:
-                config = resource_registry.get(name)
-                from flowlib.resources.models.config_resource import (
-                    ProviderConfigResource,
-                )
+        # Find providers matching the config name (thread-safe read)
+        with self._lock:
+            keys_to_remove = []
+            for key in self._providers.keys():
+                provider_category, provider_type = key
+                # Check if this provider matches the config name
+                try:
+                    config = resource_registry.get(name)
+                    from flowlib.resources.models.config_resource import (
+                        ProviderConfigResource,
+                    )
 
-                if isinstance(config, ProviderConfigResource):
-                    config_provider_type = config.get_provider_type()
-                    if config_provider_type == provider_type:
-                        keys_to_remove.append(key)
-            except KeyError:
-                continue
+                    if isinstance(config, ProviderConfigResource):
+                        config_provider_type = config.get_provider_type()
+                        if config_provider_type == provider_type:
+                            keys_to_remove.append(key)
+                except KeyError:
+                    continue
 
-        # Remove found providers
-        for key in keys_to_remove:
-            # Shutdown if initialized
-            if key in self._initialized_providers:
-                provider = self._initialized_providers[key]
-                if hasattr(provider, "shutdown"):
-                    try:
-                        import asyncio
+            # Get providers that need shutdown (outside lock)
+            providers_to_shutdown = []
+            for key in keys_to_remove:
+                if key in self._initialized_providers:
+                    providers_to_shutdown.append((key, self._initialized_providers[key]))
 
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            asyncio.create_task(provider.shutdown())
-                        else:
-                            loop.run_until_complete(provider.shutdown())
-                    except Exception as e:
-                        logger.warning(f"Error shutting down provider {key} during removal: {e}")
+        # Shutdown providers outside lock (may take time)
+        for key, provider in providers_to_shutdown:
+            if hasattr(provider, "shutdown"):
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(provider.shutdown())
+                    else:
+                        loop.run_until_complete(provider.shutdown())
+                except Exception as e:
+                    logger.warning(f"Error shutting down provider {key} during removal: {e}")
 
-                del self._initialized_providers[key]
+        # Remove found providers (thread-safe write)
+        with self._lock:
+            for key in keys_to_remove:
+                if key in self._initialized_providers:
+                    del self._initialized_providers[key]
 
-            # Remove from main storage
-            if key in self._providers:
-                del self._providers[key]
-                removed = True
+                if key in self._providers:
+                    del self._providers[key]
+                    removed = True
 
-            # Remove from factories
-            if key in self._factories:
-                del self._factories[key]
-                self._factory_metadata.pop(key, None)
-                removed = True
+                if key in self._factories:
+                    del self._factories[key]
+                    self._factory_metadata.pop(key, None)
+                    removed = True
 
-            # Clean up initialization locks
-            self._initialization_locks.pop(key, None)
+                self._initialization_locks.pop(key, None)
 
         if removed:
             logger.debug(f"Removed provider configuration '{name}' from registry")
@@ -514,16 +565,26 @@ class ProviderRegistry(BaseRegistry[Provider]):
 
     async def initialize_all(self) -> None:
         """Initialize all registered providers."""
-        for key in list(self._providers.keys()) + list(self._factories.keys()):
-            if key not in self._initialized_providers:
-                try:
-                    await self._get_or_create_provider(key[0], key[1])
-                except Exception as e:
-                    logger.warning(f"Failed to initialize provider {key}: {e}")
+        # Get list of keys to initialize (thread-safe read)
+        with self._lock:
+            all_keys = list(self._providers.keys()) + list(self._factories.keys())
+            keys_to_init = [key for key in all_keys if key not in self._initialized_providers]
+
+        # Initialize outside lock
+        for key in keys_to_init:
+            try:
+                await self._get_or_create_provider(key[0], key[1])
+            except Exception as e:
+                logger.warning(f"Failed to initialize provider {key}: {e}")
 
     async def shutdown_all(self) -> None:
         """Shutdown all initialized providers."""
-        for key, provider in list(self._initialized_providers.items()):
+        # Get copy of providers to shutdown (thread-safe read)
+        with self._lock:
+            providers_copy = list(self._initialized_providers.items())
+
+        # Shutdown outside lock (may take time)
+        for key, provider in providers_copy:
             if hasattr(provider, "shutdown"):
                 try:
                     await provider.shutdown()
@@ -531,8 +592,11 @@ class ProviderRegistry(BaseRegistry[Provider]):
                 except Exception as e:
                     logger.warning(f"Error shutting down provider {key}: {e}")
 
-            self._initialized_providers.pop(key, None)
-            self._initialization_locks.pop(key, None)
+        # Remove from dictionaries (thread-safe write)
+        with self._lock:
+            for key, _ in providers_copy:
+                self._initialized_providers.pop(key, None)
+                self._initialization_locks.pop(key, None)
 
 
 # Global provider registry instance

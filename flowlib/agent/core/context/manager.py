@@ -14,10 +14,11 @@ from typing import Any, Literal
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import ExecutionError
 
+from flowlib.agent.models.conversation import ConversationMessage, MessageRole
+
 from .models import (
     ComponentContext,
     ContextManagerConfig,
-    ConversationMessage,
     ExecutionContext,
     LearningContext,
     SessionContext,
@@ -105,7 +106,7 @@ class AgentContextManager(AgentComponent):
 
         # Add to conversation history
         self._session_context.conversation_history.append(
-            ConversationMessage(role="user", content=task_description)
+            ConversationMessage(role=MessageRole.USER, content=task_description)
         )
 
         # Trim conversation history if needed
@@ -200,7 +201,7 @@ class AgentContextManager(AgentComponent):
         """Add assistant response to conversation history."""
         if self._session_context:
             self._session_context.conversation_history.append(
-                ConversationMessage(role="assistant", content=response)
+                ConversationMessage(role=MessageRole.ASSISTANT, content=response)
             )
 
             # Trim conversation history if needed

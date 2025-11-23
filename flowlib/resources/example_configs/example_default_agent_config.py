@@ -5,6 +5,7 @@ Modify the configuration below for your default agent setup.
 """
 
 from flowlib.resources.decorators.decorators import agent_config
+from flowlib.config.required_resources import RequiredAlias
 
 
 @agent_config("default-agent-config")
@@ -17,8 +18,8 @@ class DefaultAgentConfig:
         "I'm thorough in testing and careful about security."
     )
     allowed_tool_categories = ["generic", "software"]
-    model_name = "default-model"
-    llm_name = "default-llm"
+    model_name = RequiredAlias.DEFAULT_MODEL.value
+    llm_name = RequiredAlias.DEFAULT_LLM.value
     temperature = 0.7
     max_iterations = 10
     enable_learning = True

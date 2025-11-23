@@ -13,6 +13,7 @@ from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.errors import NotInitializedError
 from flowlib.providers.core.registry import provider_registry
 from flowlib.providers.knowledge.plugin_manager import KnowledgePluginManager
+from flowlib.config.required_resources import RequiredAlias
 
 from .component import AgentMemoryConfig, MemoryComponent
 from .knowledge import KnowledgeMemoryConfig
@@ -67,17 +68,17 @@ class AgentMemoryManager(AgentComponent):
 
         # Create providers using config-driven approach
         # Fail fast - all providers are required
-        embedding_provider = await provider_registry.get_by_config("default-embedding")
+        embedding_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_EMBEDDING.value)
         if not embedding_provider:
-            raise MemoryError("Embedding provider 'default-embedding' is required but not found")
+            raise MemoryError("Embedding provider RequiredAlias.DEFAULT_EMBEDDING.value is required but not found")
 
-        vector_provider = await provider_registry.get_by_config("default-vector-db")
+        vector_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_VECTOR_DB.value)
         if not vector_provider:
-            raise MemoryError("Vector provider 'default-vector-db' is required but not found")
+            raise MemoryError("Vector provider RequiredAlias.DEFAULT_VECTOR_DB.value is required but not found")
 
-        graph_provider = await provider_registry.get_by_config("default-graph-db")
+        graph_provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_GRAPH_DB.value)
         if not graph_provider:
-            raise MemoryError("Graph provider 'default-graph-db' is required but not found")
+            raise MemoryError("Graph provider RequiredAlias.DEFAULT_GRAPH_DB.value is required but not found")
 
         # Create comprehensive AgentMemoryConfig
         working_mem_config = WorkingMemoryConfig(
@@ -86,10 +87,10 @@ class AgentMemoryManager(AgentComponent):
 
         # All providers are required - no conditional creation
         vector_mem_config = VectorMemoryConfig(
-            vector_provider_config="default-vector-db",
-            embedding_provider_config="default-embedding",
+            vector_provider_config=RequiredAlias.DEFAULT_VECTOR_DB.value,
+            embedding_provider_config=RequiredAlias.DEFAULT_EMBEDDING.value,
         )
-        knowledge_mem_config = KnowledgeMemoryConfig(graph_provider_config="default-graph-db")
+        knowledge_mem_config = KnowledgeMemoryConfig(graph_provider_config=RequiredAlias.DEFAULT_GRAPH_DB.value)
 
         agent_memory_config = AgentMemoryConfig(
             working_memory=working_mem_config,

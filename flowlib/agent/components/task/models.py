@@ -1,12 +1,13 @@
 """Task models - re-exports from core and execution modules.
 
-This module maintains backward compatibility by re-exporting models
-from their proper locations.
+This module provides a unified import point for task-related models.
+It re-exports models from their source modules for convenience.
 
-NEW CODE SHOULD IMPORT DIRECTLY FROM:
-- task.core.todo for TodoItem, TodoStatus, TodoPriority, TodoList
-- task.core.context for RequestContext
-- task.execution.models for TodoExecutionContext, TodoExecutionResult
+Models are available via:
+- task.models (this module) - recommended for most use cases
+- task.core.todo - direct import for TodoItem, TodoStatus, TodoPriority, TodoList
+- task.core.context - direct import for RequestContext
+- task.execution.models - direct import for TodoExecutionContext, TodoExecutionResult
 """
 
 from __future__ import annotations

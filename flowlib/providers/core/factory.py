@@ -96,8 +96,9 @@ def create_provider(
     Raises:
         ProviderError: If the specified provider_type or implementation is not supported
     """
-    # NOTE: This factory function is primarily for testing and legacy support.
-    # Modern code should use config-driven provider access:
+    # NOTE: This factory function is used for creating providers from configuration
+    # during initialization (e.g., from YAML config files via initialize_providers_from_config).
+    # For runtime provider access, use config-driven provider access:
     # provider = await provider_registry.get_by_config("config-name")
 
     # No registry existence checks - factory creates new instances per CLAUDE.md principles

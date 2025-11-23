@@ -10,6 +10,7 @@ from typing import Protocol
 
 from pydantic import Field
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.models import StrictBaseModel
 from flowlib.providers.core.registry import provider_registry
 
@@ -50,29 +51,35 @@ class FlowContext:
     async def graph(self) -> FlowProvider:
         """Get graph database provider using config-driven resolution."""
         if self._graph_provider is None:
-            self._graph_provider = await provider_registry.get_by_config("default-graph-db")
+            self._graph_provider = await provider_registry.get_by_config(
+                RequiredAlias.DEFAULT_GRAPH_DB.value
+            )
         return self._graph_provider
 
     async def vector(self) -> FlowProvider:
         """Get vector database provider using config-driven resolution."""
         if self._vector_provider is None:
-            self._vector_provider = await provider_registry.get_by_config("default-vector-db")
+            self._vector_provider = await provider_registry.get_by_config(
+                RequiredAlias.DEFAULT_VECTOR_DB.value
+            )
         return self._vector_provider
 
     async def cache(self) -> FlowProvider:
         """Get cache provider using config-driven resolution."""
         if self._cache_provider is None:
-            self._cache_provider = await provider_registry.get_by_config("default-cache")
+            self._cache_provider = await provider_registry.get_by_config(
+                RequiredAlias.DEFAULT_CACHE.value
+            )
         return self._cache_provider
 
     def _get_llm_config_name(self) -> str:
         """Get appropriate LLM config based on model preference."""
         if self.model_preference == "fast":
-            return "fast-llm"
+            return RequiredAlias.FAST_LLM.value
         elif self.model_preference == "quality":
-            return "quality-llm"
+            return RequiredAlias.QUALITY_LLM.value
         else:  # balanced
-            return "default-llm"
+            return RequiredAlias.DEFAULT_LLM.value
 
 
 class ProcessingOptions(StrictBaseModel):

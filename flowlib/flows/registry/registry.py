@@ -362,6 +362,3 @@ class FlowRegistry(BaseRegistry[Flow]):
 
 # Global flow registry instance
 flow_registry = FlowRegistry()
-
-# Backward compatibility alias
-stage_registry = flow_registry

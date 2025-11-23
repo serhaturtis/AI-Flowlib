@@ -103,7 +103,7 @@ def provider(
             )
 
         provider_registry.register_factory(
-            name=name, factory=factory, provider_type=provider_type, **metadata
+            name=name, factory=factory, provider_type=provider_type, settings_class=settings_class, **metadata
         )
         # Add dynamic attributes to the class with proper type annotation
         cls.__provider_name__ = name  # type: ignore[attr-defined]

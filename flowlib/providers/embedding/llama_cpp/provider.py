@@ -8,6 +8,7 @@ from typing import Any, TypeVar
 
 from pydantic import Field
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
@@ -264,7 +265,7 @@ class LlamaCppEmbeddingProvider(EmbeddingProvider[LlamaCppEmbeddingProviderSetti
                 await self._initialize_model(model_name)
             else:
                 # Use default embedding model role
-                await self._initialize_model("default-embedding-model")
+                await self._initialize_model(RequiredAlias.DEFAULT_EMBEDDING_MODEL.value)
 
         async with self._lock:
             try:

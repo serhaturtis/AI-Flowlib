@@ -12,6 +12,7 @@ from typing import Any, cast
 from pydantic import Field
 from qdrant_client import QdrantClient, models
 
+from flowlib.config.required_resources import RequiredAlias
 from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
@@ -229,7 +230,7 @@ class QdrantProvider(VectorDBProvider):
             # Get and initialize the embedding provider (optional for tests)
             if cast(QdrantProviderSettings, self.settings).embedding_provider_name:
                 try:
-                    provider = await provider_registry.get_by_config("default-embedding")
+                    provider = await provider_registry.get_by_config(RequiredAlias.DEFAULT_EMBEDDING.value)
                     self._embedding_provider = cast(EmbeddingProvider[Any], provider)
                     if self._embedding_provider and not self._embedding_provider.initialized:
                         await self._embedding_provider.initialize()

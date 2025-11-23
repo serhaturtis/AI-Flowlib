@@ -5,6 +5,7 @@ from typing import Any
 
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.context.manager import AgentContextManager
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.flows.registry.registry import flow_registry
 
 from .models import (
@@ -63,7 +64,7 @@ class ContextValidatorComponent(AgentComponent):
     async def validate_context(
         self,
         user_message: str,
-        conversation_history: list[dict] | None = None,
+        conversation_history: list[ConversationMessage] | None = None,
         domain_state: dict[str, Any] | None = None,
     ) -> ValidationOutput:
         """Validate whether there is sufficient context to proceed.
@@ -137,7 +138,7 @@ class ContextValidatorComponent(AgentComponent):
     async def _handle_clarification_response(
         self,
         user_message: str,
-        conversation_history: list[dict],
+        conversation_history: list[ConversationMessage],
         domain_state: dict[str, Any],
     ) -> ValidationOutput:
         """Handle user response to clarification questions using LLM-based parsing.

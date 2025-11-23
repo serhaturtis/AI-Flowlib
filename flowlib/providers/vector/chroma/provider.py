@@ -81,11 +81,11 @@ class ChromaDBProviderSettings(VectorDBProviderSettings):
     # ChromaDB-specific connection options
     persist_directory: str | None = Field(
         default=None,
-        description="Directory to persist ChromaDB data (e.g., './chroma_data', '/data/vectors')",
+        description="Directory to persist ChromaDB data (e.g., './chroma_data', '/data/vectors'). If None, uses in-memory ephemeral mode.",
     )
-    client_type: str = Field(
-        default="persistent",
-        description="Client type: 'persistent' (local) or 'http' (server mode)",
+    client_type: str | None = Field(
+        default=None,
+        description="Client type: 'persistent' (local file), 'http' (server mode), or 'ephemeral' (in-memory). Auto-detected from other settings if None.",
     )
 
     # HTTP client settings (only used if client_type='http')
@@ -170,12 +170,27 @@ class ChromaDBProvider(VectorDBProvider[ChromaDBProviderSettings]):
 
             # Removed embedding provider retrieval logic
 
-            # Create client based on settings
-            if self.settings.client_type == "persistent":
+            # Auto-detect client type if not specified
+            client_type = self.settings.client_type
+            if client_type is None:
+                # Auto-detect based on settings
+                if self.settings.persist_directory:
+                    client_type = "persistent"
+                elif self.settings.http_host and self.settings.http_host != "localhost":
+                    client_type = "http"
+                else:
+                    client_type = "ephemeral"
+                logger.info("Auto-detected ChromaDB client_type: %s", client_type)
+
+            # Create client based on detected/configured type
+            if client_type == "persistent":
+                if not self.settings.persist_directory:
+                    raise ValueError(
+                        "persist_directory is required when client_type='persistent'. "
+                        "For ephemeral in-memory mode, set client_type='ephemeral' or omit persist_directory."
+                    )
                 # Ensure persistence directory exists
-                persist_dir = self.settings.persist_directory or "./chroma_data"
-                # Expand ~ to user's home directory
-                persist_dir = os.path.expanduser(persist_dir)
+                persist_dir = os.path.expanduser(self.settings.persist_directory)
                 os.makedirs(persist_dir, exist_ok=True)
 
                 self._client = chromadb.PersistentClient(
@@ -184,21 +199,27 @@ class ChromaDBProvider(VectorDBProvider[ChromaDBProviderSettings]):
                         anonymized_telemetry=self.settings.anonymized_telemetry
                     ),
                 )
-            elif self.settings.client_type == "http":
+                logger.info("ChromaDB initialized in persistent mode: %s", persist_dir)
+
+            elif client_type == "http":
                 if self.settings.http_host is None:
-                    raise ValueError("http_host is required when client_type is 'http'")
+                    raise ValueError("http_host is required when client_type='http'")
                 if self.settings.http_port is None:
-                    raise ValueError("http_port is required when client_type is 'http'")
+                    raise ValueError("http_port is required when client_type='http'")
                 self._client = chromadb.HttpClient(
                     host=self.settings.http_host,
                     port=self.settings.http_port,
                     headers=self.settings.http_headers,
                 )
-            else:
-                # In-memory client as fallback
+                logger.info("ChromaDB initialized in HTTP mode: %s:%s",
+                           self.settings.http_host, self.settings.http_port)
+
+            else:  # ephemeral or any other value
+                # In-memory ephemeral client (no persistence)
                 self._client = chromadb.Client(
                     settings=ChromaSettings(anonymized_telemetry=self.settings.anonymized_telemetry)
                 )
+                logger.info("ChromaDB initialized in ephemeral mode (in-memory, no persistence)")
 
             # Create or get default collection (without embedding function)
             await self._get_or_create_collection(self.settings.index_name)

@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.core.models import StrictBaseModel
 
 
@@ -81,8 +82,8 @@ class FlowInput(StrictBaseModel):
 
     # Agent context
     agent_persona: str | None = Field(default=None, description="Agent persona/personality")
-    conversation_history: list[dict[str, Any]] | None = Field(
-        default_factory=list, description="Conversation history (legacy format)"
+    conversation_history: list[ConversationMessage] = Field(
+        default_factory=list, description="Conversation history"
     )
 
     # Execution parameters

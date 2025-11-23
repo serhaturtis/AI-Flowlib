@@ -5,12 +5,17 @@ generation flows can use to build comprehensive context from conversation
 history, original user messages, and domain state.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
 from flowlib.core.models import StrictBaseModel
 from flowlib.flows.decorators.decorators import flow, pipeline
+
+if TYPE_CHECKING:
+    from flowlib.agent.models.conversation import ConversationMessage
 
 
 class ContextBuildingInput(StrictBaseModel):
@@ -20,7 +25,7 @@ class ContextBuildingInput(StrictBaseModel):
     working_directory: str = Field(default=".", description="Working directory context")
 
     # Conversation context for parameter extraction
-    conversation_history: list[dict[str, Any]] = Field(
+    conversation_history: list["ConversationMessage"] = Field(
         default_factory=list,
         description="Recent conversation history for context-aware parameter generation",
     )
@@ -95,7 +100,10 @@ class ContextBuildingFlow:
         if request.conversation_history:
             recent_conv = request.conversation_history[-3:]
             conv_text = "\n".join(
-                [f"{msg.get('role', 'unknown')}: {msg.get('content', '')}" for msg in recent_conv]
+                [
+                    f"{msg.role.value if hasattr(msg.role, 'value') else str(msg.role)}: {msg.content}"
+                    for msg in recent_conv
+                ]
             )
             context_parts.append(f"RECENT CONVERSATION:\n{conv_text}")
 

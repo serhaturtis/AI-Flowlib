@@ -1,0 +1,30 @@
+name: flowlib-frontend-ci
+
+on:
+  push:
+    paths:
+      - "flowlib-frontend/**"
+  pull_request:
+    paths:
+      - "flowlib-frontend/**"
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flowlib-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: flowlib-frontend/package-lock.json
+      - name: Install dependencies
+        run: npm install
+      - name: Lint
+        run: npm run lint
+      - name: Type check / build
+        run: npm run build
+

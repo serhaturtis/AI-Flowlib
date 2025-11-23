@@ -23,6 +23,7 @@ from flowlib.agent.core.activity_stream import ActivityStream
 from flowlib.agent.core.base import AgentComponent
 from flowlib.agent.core.context.manager import AgentContextManager
 from flowlib.agent.core.errors import ExecutionError
+from flowlib.agent.models.conversation import ConversationMessage
 from flowlib.agent.models.state import AgentState, ExecutionResult
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,7 @@ class EngineComponent(AgentComponent):
         logger.info("Engine shutdown")
 
     async def execute(
-        self, task_description: str, conversation_history: Any | None = None
+        self, task_description: str, conversation_history: list[ConversationMessage] | None = None
     ) -> ExecutionResult:
         """Execute a task by orchestrating Plan-Execute-Evaluate cycles."""
         self._check_initialized()
@@ -274,7 +275,7 @@ class EngineComponent(AgentComponent):
                 assert self._validator is not None  # Checked in _initialize_impl
                 validation_output = await self._validator.validate_context(
                     user_message=state.task_description,
-                    conversation_history=[msg.model_dump() for msg in conversation_history],
+                    conversation_history=conversation_history or [],
                     domain_state=domain_state,
                 )
 
@@ -396,11 +397,8 @@ class EngineComponent(AgentComponent):
                         execution_context=step.parameters,  # Store parameters in execution_context
                     )
 
-                    # Get conversation history from context manager and convert to dicts
-                    conversation_history = [
-                        msg.model_dump() if hasattr(msg, "model_dump") else dict(msg)
-                        for msg in (step_context.session.conversation_history or [])
-                    ]
+                    # Get conversation history from context manager
+                    conversation_history = step_context.session.conversation_history or []
 
                     # Create tool execution context
                     from flowlib.agent.components.task.execution.models import (

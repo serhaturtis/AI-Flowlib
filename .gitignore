@@ -198,6 +198,11 @@ cython_debug/
 # User configuration directory
 .flowlib/
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
 # Service data directories
 chroma_data/
 qdrant_data/
