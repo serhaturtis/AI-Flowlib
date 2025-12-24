@@ -45,8 +45,14 @@ from server.models.agents import (
     AgentRunStatus,
     AgentRunStatusResponse,
 )
+from server.models.events import RunEvent
 from server.persistence.db import get_session
 from server.persistence.models import RunHistory
+from server.services.run_event_manager import (
+    RunEventManager,
+    create_activity_handler,
+    get_run_event_manager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -277,54 +283,75 @@ class AgentService:
         """Execute agent run and persist all state changes to database.
 
         All status updates are written to database immediately, ensuring
-        visibility across all workers.
+        visibility across all workers. Real-time events are streamed via
+        the RunEventManager for WebSocket clients.
         """
-        # Update to running status
-        started_at = datetime.now(tz=timezone.utc)
-        with get_session() as session:
-            db_run = session.get(RunHistory, run_id)
-            if db_run:
-                db_run.status = AgentRunStatus.RUNNING
-                db_run.started_at = started_at
-                session.commit()
+        event_manager = get_run_event_manager()
 
-        project_path = self._resolve_project_path(project_id)
-
-        final_status = AgentRunStatus.COMPLETED
-        final_message = "Run completed successfully"
-
-        try:
-            launcher = AgentLauncher(project_path=str(project_path))
-            await launcher.initialize()
-            await launcher.launch(
-                agent_config_name=agent_name,
-                mode=mode,
-                execution_config=execution_config,
-            )
-        except asyncio.CancelledError:
-            final_status = AgentRunStatus.CANCELLED
-            final_message = "Run cancelled"
-            raise
-        except (FileNotFoundError, ValueError, RuntimeError) as exc:
-            # Known failure modes - log and mark as failed
-            logger.exception("Agent run %s failed with known error", run_id)
-            final_status = AgentRunStatus.FAILED
-            final_message = str(exc)
-        # Let all other unexpected exceptions propagate - fail fast!
-        finally:
-            # Update final status in database
-            finished_at = datetime.now(tz=timezone.utc)
+        # Wrap entire execution in event stream context
+        async with event_manager.create_run_stream(run_id):
+            # Update to running status
+            started_at = datetime.now(tz=timezone.utc)
             with get_session() as session:
                 db_run = session.get(RunHistory, run_id)
                 if db_run:
-                    db_run.status = final_status
-                    db_run.finished_at = finished_at
-                    db_run.message = final_message
+                    db_run.status = AgentRunStatus.RUNNING
+                    db_run.started_at = started_at
                     session.commit()
 
-            # Clean up task reference from this worker
-            async with self._lock:
-                self._active_tasks.pop(run_id, None)
+            # Publish run started event
+            logger.info("Publishing run_started event for run %s", run_id)
+            await event_manager.publish(run_id, RunEvent.run_started(run_id))
+            logger.info("Published run_started event for run %s, subscribers: %d", run_id, event_manager.get_subscriber_count(run_id))
+
+            project_path = self._resolve_project_path(project_id)
+
+            final_status = AgentRunStatus.COMPLETED
+            final_message = "Run completed successfully"
+
+            # Create activity handler that streams to event manager
+            # Pass the current event loop so the handler can safely publish from the agent's thread
+            loop = asyncio.get_running_loop()
+            activity_handler = create_activity_handler(run_id, event_manager, loop)
+
+            try:
+                launcher = AgentLauncher(project_path=str(project_path))
+                await launcher.initialize()
+                await launcher.launch(
+                    agent_config_name=agent_name,
+                    mode=mode,
+                    execution_config=execution_config,
+                    activity_handler=activity_handler,
+                )
+            except asyncio.CancelledError:
+                final_status = AgentRunStatus.CANCELLED
+                final_message = "Run cancelled"
+                await event_manager.publish(run_id, RunEvent.run_cancelled(run_id))
+                raise
+            except (FileNotFoundError, ValueError, RuntimeError) as exc:
+                # Known failure modes - log and mark as failed
+                logger.exception("Agent run %s failed with known error", run_id)
+                final_status = AgentRunStatus.FAILED
+                final_message = str(exc)
+                await event_manager.publish(run_id, RunEvent.run_failed(run_id, final_message))
+            # Let all other unexpected exceptions propagate - fail fast!
+            else:
+                # Successful completion
+                await event_manager.publish(run_id, RunEvent.run_completed(run_id, final_message))
+            finally:
+                # Update final status in database
+                finished_at = datetime.now(tz=timezone.utc)
+                with get_session() as session:
+                    db_run = session.get(RunHistory, run_id)
+                    if db_run:
+                        db_run.status = final_status
+                        db_run.finished_at = finished_at
+                        db_run.message = final_message
+                        session.commit()
+
+                # Clean up task reference from this worker
+                async with self._lock:
+                    self._active_tasks.pop(run_id, None)
 
     async def create_repl_session(self, project_id: str, agent_name: str) -> ReplSession:
         """Create interactive REPL session for an agent.
@@ -441,4 +468,24 @@ class AgentService:
         if project_path == self._root or self._root not in project_path.parents:
             raise ValueError(f"Project '{project_id}' resolved outside managed root {self._root}")
         return project_path
+
+    def get_event_manager(self) -> RunEventManager:
+        """Get the run event manager for streaming events.
+
+        Returns:
+            RunEventManager singleton instance
+        """
+        return get_run_event_manager()
+
+    def is_run_streaming(self, run_id: str) -> bool:
+        """Check if a run has an active event stream.
+
+        Args:
+            run_id: Run identifier
+
+        Returns:
+            True if the run has active event streaming (i.e., run is in progress
+            on this worker and clients can subscribe to events)
+        """
+        return get_run_event_manager().is_run_active(run_id)
 

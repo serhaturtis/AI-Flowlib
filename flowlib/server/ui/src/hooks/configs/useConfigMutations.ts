@@ -5,12 +5,18 @@ import {
   applyConfig,
   applyProviderStructured,
   applyResourceStructured,
+  applyMessageSourceStructured,
   renderProviderContent,
   renderResourceContent,
+  renderMessageSourceContent,
   ConfigDiffResponse,
   ConfigApplyResponse,
 } from '../../services/configs'
 import type { EditorTarget } from '../../components/configs/ConfigEditor/ConfigEditor'
+
+// =============================================================================
+// Type Definitions
+// =============================================================================
 
 // Type guard for Axios-like error responses
 interface AxiosErrorResponse {
@@ -34,6 +40,7 @@ function isAxiosError(error: unknown): error is AxiosErrorResponse {
   )
 }
 
+// Raw mode mutation params
 interface DiffMutationParams {
   projectId: string
   target: EditorTarget
@@ -47,18 +54,214 @@ interface ApplyMutationParams {
   baseHash: string
 }
 
-interface StructuredMutationParams {
+// =============================================================================
+// Structured Mutation Params - Discriminated Union
+// =============================================================================
+
+interface ProviderMutationParams {
+  type: 'provider'
   projectId: string
   target: EditorTarget
-  providerName: string
-  providerResourceType: string
-  providerType: string
-  providerSettingsJson: string
-  resourceName: string
+  name: string
   resourceType: string
-  resourceProviderType: string
-  resourceConfigJson: string
+  providerType: string
+  settingsJson: string
 }
+
+interface ResourceMutationParams {
+  type: 'resource'
+  projectId: string
+  target: EditorTarget
+  name: string
+  resourceType: string
+  providerType: string
+  configJson: string
+}
+
+interface MessageSourceMutationParams {
+  type: 'message_source'
+  projectId: string
+  target: EditorTarget
+  name: string
+  sourceType: string
+  enabled: boolean
+  settingsJson: string
+}
+
+/**
+ * Discriminated union for structured mutation parameters.
+ * Each config type has its own well-defined contract.
+ */
+export type StructuredMutationParams =
+  | ProviderMutationParams
+  | ResourceMutationParams
+  | MessageSourceMutationParams
+
+// =============================================================================
+// Validation
+// =============================================================================
+
+interface ValidationResult {
+  valid: boolean
+  errors: Record<string, string>
+}
+
+function validateProviderParams(params: ProviderMutationParams): ValidationResult {
+  const errors: Record<string, string> = {}
+
+  if (!params.name && !params.target.name) {
+    errors['provider.name'] = 'Name is required'
+  }
+  if (!params.resourceType) {
+    errors['provider.resource_type'] = 'Resource type is required'
+  }
+  if (!params.providerType) {
+    errors['provider.provider_type'] = 'Provider type is required'
+  }
+  try {
+    JSON.parse(params.settingsJson || '{}')
+  } catch {
+    errors['provider.settings'] = 'Settings must be valid JSON'
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors }
+}
+
+function validateResourceParams(params: ResourceMutationParams): ValidationResult {
+  const errors: Record<string, string> = {}
+
+  if (!params.name && !params.target.name) {
+    errors['resource.name'] = 'Name is required'
+  }
+  if (!params.resourceType) {
+    errors['resource.resource_type'] = 'Resource type is required'
+  }
+  if (!params.providerType) {
+    errors['resource.provider_type'] = 'Provider type is required'
+  }
+  try {
+    JSON.parse(params.configJson || '{}')
+  } catch {
+    errors['resource.config'] = 'Config must be valid JSON'
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors }
+}
+
+function validateMessageSourceParams(params: MessageSourceMutationParams): ValidationResult {
+  const errors: Record<string, string> = {}
+
+  if (!params.name && !params.target.name) {
+    errors['message_source.name'] = 'Name is required'
+  }
+  if (!params.sourceType) {
+    errors['message_source.source_type'] = 'Source type is required'
+  }
+  try {
+    JSON.parse(params.settingsJson || '{}')
+  } catch {
+    errors['message_source.settings'] = 'Settings must be valid JSON'
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors }
+}
+
+/**
+ * Validate structured mutation params based on type.
+ * Uses discriminated union for type-safe validation.
+ */
+function validateStructuredParams(params: StructuredMutationParams): ValidationResult {
+  switch (params.type) {
+    case 'provider':
+      return validateProviderParams(params)
+    case 'resource':
+      return validateResourceParams(params)
+    case 'message_source':
+      return validateMessageSourceParams(params)
+  }
+}
+
+// =============================================================================
+// Mutation Handlers
+// =============================================================================
+
+async function renderStructuredContent(params: StructuredMutationParams): Promise<string> {
+  switch (params.type) {
+    case 'provider': {
+      const settings: Record<string, unknown> = JSON.parse(params.settingsJson || '{}')
+      const resp = await renderProviderContent({
+        name: params.name || params.target.name,
+        resource_type: params.resourceType,
+        provider_type: params.providerType,
+        description: 'Preview',
+        settings,
+      })
+      return resp.content
+    }
+    case 'resource': {
+      const config: Record<string, unknown> = JSON.parse(params.configJson || '{}')
+      const resp = await renderResourceContent({
+        name: params.name || params.target.name,
+        resource_type: params.resourceType,
+        provider_type: params.providerType,
+        description: 'Preview',
+        config,
+      })
+      return resp.content
+    }
+    case 'message_source': {
+      const settings: Record<string, unknown> = JSON.parse(params.settingsJson || '{}')
+      const resp = await renderMessageSourceContent({
+        name: params.name || params.target.name,
+        source_type: params.sourceType,
+        enabled: params.enabled,
+        settings,
+      })
+      return resp.content
+    }
+  }
+}
+
+async function applyStructuredConfig(params: StructuredMutationParams): Promise<ConfigApplyResponse> {
+  switch (params.type) {
+    case 'provider': {
+      const settings: Record<string, unknown> = JSON.parse(params.settingsJson || '{}')
+      return await applyProviderStructured({
+        project_id: params.projectId,
+        name: params.name || params.target.name,
+        resource_type: params.resourceType,
+        provider_type: params.providerType,
+        description: 'Updated via UI',
+        settings,
+      })
+    }
+    case 'resource': {
+      const config: Record<string, unknown> = JSON.parse(params.configJson || '{}')
+      return await applyResourceStructured({
+        project_id: params.projectId,
+        name: params.name || params.target.name,
+        resource_type: params.resourceType,
+        provider_type: params.providerType,
+        description: 'Updated via UI',
+        config,
+      })
+    }
+    case 'message_source': {
+      const settings: Record<string, unknown> = JSON.parse(params.settingsJson || '{}')
+      return await applyMessageSourceStructured({
+        project_id: params.projectId,
+        name: params.name || params.target.name,
+        source_type: params.sourceType,
+        enabled: params.enabled,
+        settings,
+      })
+    }
+  }
+}
+
+// =============================================================================
+// Hook Interface
+// =============================================================================
 
 export interface UseConfigMutationsResult {
   // Raw mode mutations
@@ -72,17 +275,6 @@ export interface UseConfigMutationsResult {
   setStructuredDiff: (diff: ConfigDiffResponse | null) => void
   computeStructuredDiff: UseMutationResult<ConfigDiffResponse, Error, StructuredMutationParams>
   applyStructuredMutation: UseMutationResult<ConfigApplyResponse, Error, StructuredMutationParams>
-  validateStructured: (params: {
-    target: EditorTarget | null
-    providerName: string
-    providerResourceType: string
-    providerType: string
-    providerSettingsJson: string
-    resourceName: string
-    resourceType: string
-    resourceProviderType: string
-    resourceConfigJson: string
-  }) => boolean
 }
 
 /**
@@ -90,8 +282,8 @@ export interface UseConfigMutationsResult {
  *
  * Features:
  * - Raw mode diff/apply mutations
- * - Structured mode diff/apply mutations
- * - Validation logic for structured mode
+ * - Structured mode diff/apply mutations with discriminated union params
+ * - Type-safe validation logic
  * - Error handling and state management
  *
  * @param onSuccess - Callback when mutations succeed
@@ -163,70 +355,10 @@ export function useConfigMutations(
     },
   })
 
-  // Structured mode validation
-  const validateStructured = (params: {
-    target: EditorTarget | null
-    providerName: string
-    providerResourceType: string
-    providerType: string
-    providerSettingsJson: string
-    resourceName: string
-    resourceType: string
-    resourceProviderType: string
-    resourceConfigJson: string
-  }): boolean => {
-    const errors: Record<string, string> = {}
-
-    if (params.target?.type === 'provider') {
-      if (!(params.providerName || params.target.name)) errors['provider.name'] = 'Name is required'
-      if (!params.providerResourceType) errors['provider.resource_type'] = 'Resource type is required'
-      if (!params.providerType) errors['provider.provider_type'] = 'Provider type is required'
-      try {
-        JSON.parse(params.providerSettingsJson || '{}')
-      } catch {
-        errors['provider.settings'] = 'Settings must be valid JSON'
-      }
-    } else if (params.target?.type === 'resource') {
-      if (!(params.resourceName || params.target.name)) errors['resource.name'] = 'Name is required'
-      if (!params.resourceType) errors['resource.resource_type'] = 'Resource type is required'
-      if (!params.resourceProviderType) errors['resource.provider_type'] = 'Provider type is required'
-      try {
-        JSON.parse(params.resourceConfigJson || '{}')
-      } catch {
-        errors['resource.config'] = 'Config must be valid JSON'
-      }
-    }
-
-    setStructuredErrors(errors)
-    return Object.keys(errors).length === 0
-  }
-
   // Structured mode diff mutation
   const computeStructuredDiff = useMutation<ConfigDiffResponse, Error, StructuredMutationParams>({
     mutationFn: async (params) => {
-      let rendered: string
-
-      if (params.target.type === 'provider') {
-        const settings: Record<string, unknown> = JSON.parse(params.providerSettingsJson || '{}')
-        const resp = await renderProviderContent({
-          name: params.providerName || params.target.name,
-          resource_type: params.providerResourceType,
-          provider_type: params.providerType,
-          description: 'Preview',
-          settings,
-        })
-        rendered = resp.content
-      } else {
-        const cfg: Record<string, unknown> = JSON.parse(params.resourceConfigJson || '{}')
-        const resp = await renderResourceContent({
-          name: params.resourceName || params.target.name,
-          resource_type: params.resourceType,
-          provider_type: params.resourceProviderType,
-          description: 'Preview',
-          config: cfg,
-        })
-        rendered = resp.content
-      }
+      const rendered = await renderStructuredContent(params)
 
       return await diffConfig({
         project_id: params.projectId,
@@ -248,43 +380,13 @@ export function useConfigMutations(
   // Structured mode apply mutation
   const applyStructuredMutation = useMutation<ConfigApplyResponse, Error, StructuredMutationParams>({
     mutationFn: async (params) => {
-      if (
-        !validateStructured({
-          target: params.target,
-          providerName: params.providerName,
-          providerResourceType: params.providerResourceType,
-          providerType: params.providerType,
-          providerSettingsJson: params.providerSettingsJson,
-          resourceName: params.resourceName,
-          resourceType: params.resourceType,
-          resourceProviderType: params.resourceProviderType,
-          resourceConfigJson: params.resourceConfigJson,
-        })
-      ) {
+      const validation = validateStructuredParams(params)
+      if (!validation.valid) {
+        setStructuredErrors(validation.errors)
         throw new Error('Please fix validation errors.')
       }
 
-      if (params.target.type === 'provider') {
-        const settings: Record<string, unknown> = JSON.parse(params.providerSettingsJson || '{}')
-        return await applyProviderStructured({
-          project_id: params.projectId,
-          name: params.providerName || params.target.name,
-          resource_type: params.providerResourceType,
-          provider_type: params.providerType,
-          description: 'Updated via UI',
-          settings,
-        })
-      } else {
-        const cfg: Record<string, unknown> = JSON.parse(params.resourceConfigJson || '{}')
-        return await applyResourceStructured({
-          project_id: params.projectId,
-          name: params.resourceName || params.target.name,
-          resource_type: params.resourceType,
-          provider_type: params.resourceProviderType,
-          description: 'Updated via UI',
-          config: cfg,
-        })
-      }
+      return await applyStructuredConfig(params)
     },
     onSuccess: (result) => {
       onSuccess('Config applied successfully.')
@@ -307,6 +409,5 @@ export function useConfigMutations(
     setStructuredDiff,
     computeStructuredDiff,
     applyStructuredMutation,
-    validateStructured,
   }
 }

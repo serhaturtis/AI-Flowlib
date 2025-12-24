@@ -6,15 +6,22 @@ with async support via aioimaplib and aiosmtplib.
 
 import email
 import logging
+import uuid
 from datetime import datetime
-from email.message import EmailMessage as StdEmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Any
 
 from flowlib.core.errors.errors import ErrorContext, ProviderError
 from flowlib.core.errors.models import ProviderErrorContext
 from flowlib.providers.core.decorators import provider
-from flowlib.providers.email.base import EmailMessage, EmailProvider, EmailProviderSettings
+from flowlib.providers.email.base import (
+    EmailMessage,
+    EmailProvider,
+    EmailProviderSettings,
+    SendEmailResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -432,32 +439,62 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
         to: list[str],
         subject: str,
         body: str,
+        html_body: str | None = None,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
         reply_to: str | None = None,
         in_reply_to: str | None = None,
+        references: str | None = None,
         attachments: list[dict[str, Any]] | None = None,
-    ) -> bool:
-        """Send email via SMTP."""
+    ) -> SendEmailResult:
+        """Send email via SMTP.
+
+        Args:
+            to: List of recipient email addresses
+            subject: Email subject
+            body: Plain text email body
+            html_body: Optional HTML version of the body
+            cc: Optional CC recipients
+            bcc: Optional BCC recipients
+            reply_to: Optional Reply-To header
+            in_reply_to: Optional In-Reply-To header for threading
+            references: Optional References header for threading
+            attachments: Optional list of attachments (not yet implemented)
+
+        Returns:
+            SendEmailResult with success status and message details
+        """
+        from_address = self.settings.username
+        message_id = f"<{uuid.uuid4()}@{self.settings.smtp_host}>"
+
         try:
-            # Create email message
-            msg = StdEmailMessage()
-            msg["From"] = self.settings.username
+            # Build email message - use multipart if HTML is provided
+            if html_body:
+                msg = MIMEMultipart("alternative")
+                msg.attach(MIMEText(body, "plain", "utf-8"))
+                msg.attach(MIMEText(html_body, "html", "utf-8"))
+            else:
+                msg = MIMEText(body, "plain", "utf-8")
+
+            # Set headers
+            msg["Message-ID"] = message_id
+            msg["From"] = from_address
             msg["To"] = ", ".join(to)
+            msg["Subject"] = subject
+
             if cc:
                 msg["Cc"] = ", ".join(cc)
             if bcc:
                 msg["Bcc"] = ", ".join(bcc)
-            msg["Subject"] = subject
-            msg.set_content(body)
-
             if reply_to:
                 msg["Reply-To"] = reply_to
             if in_reply_to:
                 msg["In-Reply-To"] = in_reply_to
+            if references:
+                msg["References"] = references
+            elif in_reply_to:
+                # If no explicit references but in_reply_to is set, use it as references
                 msg["References"] = in_reply_to
-
-            # TODO: Handle attachments in future version
 
             # Send via SMTP
             smtp_kwargs = {
@@ -472,8 +509,12 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
             async with aiosmtplib.SMTP(**smtp_kwargs) as smtp:
                 await smtp.send_message(msg)
 
-            logger.info(f"Email sent successfully to {to}")
-            return True
+            logger.info(f"Email sent successfully to {to} with Message-ID: {message_id}")
+            return SendEmailResult(
+                success=True,
+                message_id=message_id,
+                from_address=from_address,
+            )
 
         except Exception as e:
             logger.error(f"Failed to send email: {e}")
@@ -493,7 +534,7 @@ class IMAPSMTPProvider(EmailProvider[IMAPSMTPSettings]):
                     retry_count=0,
                 ),
                 cause=e,
-) from e
+            ) from e
 
     async def mark_as_read(self, email_id: str, folder: str = "INBOX") -> bool:
         """Mark email as read by adding \\Seen flag."""

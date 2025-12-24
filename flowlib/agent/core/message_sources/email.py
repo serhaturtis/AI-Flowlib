@@ -6,22 +6,11 @@ import queue
 from datetime import datetime
 from typing import Any
 
-from pydantic import Field
-
-from flowlib.agent.core.message_source import MessageSource, MessageSourceConfig
+from flowlib.agent.core.message_source import MessageSource
 from flowlib.agent.core.models.messages import AgentMessage, AgentMessageType
+from flowlib.core.message_source_config import EmailMessageSourceConfig
 
 logger = logging.getLogger(__name__)
-
-
-class EmailMessageSourceConfig(MessageSourceConfig):
-    """Configuration for email-based message source."""
-
-    check_interval_seconds: float = Field(default=60.0, gt=0)
-    email_provider_name: str = Field(..., description="Email provider config name")
-    folder: str = Field(default="INBOX")
-    only_unread: bool = Field(default=True)
-    mark_as_read: bool = Field(default=True)
 
 
 class EmailMessageSource(MessageSource):

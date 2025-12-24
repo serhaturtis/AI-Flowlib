@@ -14,12 +14,14 @@ import { Select } from '../ui/Select'
 import { Alert, AlertDescription } from '../ui/Alert'
 import { Spinner } from '../ui/Spinner'
 import { FormField } from '../forms/FormField'
-import { ProviderConfigSummary, ResourceConfigSummary, ConfigType } from '../../services/configs'
+import { ProviderConfigSummary, ResourceConfigSummary, MessageSourceSummary, ConfigType } from '../../services/configs'
 import { useProviderFormState } from '../../hooks/configs/useProviderFormState'
 import { useResourceFormState } from '../../hooks/configs/useResourceFormState'
+import { useMessageSourceFormState } from '../../hooks/configs/useMessageSourceFormState'
 import { useCreateMutation } from '../../hooks/configs/useCreateMutation'
 import { ProviderFormFields } from './CreateConfigDialog/ProviderFormFields'
 import { ResourceFormFields } from './CreateConfigDialog/ResourceFormFields'
+import { MessageSourceFormFields } from './CreateConfigDialog/MessageSourceFormFields'
 
 export interface CreateConfigDialogProps {
   open: boolean
@@ -29,7 +31,7 @@ export interface CreateConfigDialogProps {
   onSuccess: (result: {
     type: ConfigType
     name: string
-    config: ProviderConfigSummary | ResourceConfigSummary
+    config: ProviderConfigSummary | ResourceConfigSummary | MessageSourceSummary
   }) => void
 }
 
@@ -63,6 +65,7 @@ export function CreateConfigDialog({
   // Custom hooks for state management
   const providerState = useProviderFormState(selectedProject, createType === 'provider')
   const resourceState = useResourceFormState(selectedProject, createType === 'resource')
+  const messageSourceState = useMessageSourceFormState(createType === 'message_source')
   const mutation = useCreateMutation()
 
   // Reset all form fields
@@ -72,8 +75,10 @@ export function CreateConfigDialog({
     mutation.setSuccess(null)
     if (createType === 'provider') {
       providerState.resetForm()
-    } else {
+    } else if (createType === 'resource') {
       resourceState.resetForm()
+    } else if (createType === 'message_source') {
+      messageSourceState.resetForm()
     }
   }
 
@@ -91,6 +96,9 @@ export function CreateConfigDialog({
       resourceProviderType: resourceState.providerType,
       resourceDescription: resourceState.description,
       resourceConfigJson: resourceState.configJson,
+      messageSourceType: messageSourceState.sourceType,
+      messageSourceEnabled: messageSourceState.enabled,
+      messageSourceSettingsJson: messageSourceState.settingsJson,
       onSuccess,
       onClose: () => onOpenChange(false),
       resetForm,
@@ -113,7 +121,7 @@ export function CreateConfigDialog({
             <Plus className="h-5 w-5" />
             Create Configuration
           </DialogTitle>
-          <DialogDescription>Create a new provider or resource configuration</DialogDescription>
+          <DialogDescription>Create a new provider, resource, or message source configuration</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -121,6 +129,7 @@ export function CreateConfigDialog({
             <Select value={createType} onChange={(event) => setCreateType(event.target.value as ConfigType)}>
               <option value="provider">Provider Config</option>
               <option value="resource">Model Resource Config</option>
+              <option value="message_source">Message Source</option>
             </Select>
           </FormField>
 
@@ -133,10 +142,14 @@ export function CreateConfigDialog({
             />
           </FormField>
 
-          {createType === 'provider' ? (
+          {createType === 'provider' && (
             <ProviderFormFields providerState={providerState} />
-          ) : (
+          )}
+          {createType === 'resource' && (
             <ResourceFormFields resourceState={resourceState} />
+          )}
+          {createType === 'message_source' && (
+            <MessageSourceFormFields messageSourceState={messageSourceState} />
           )}
 
           {mutation.error && (
@@ -165,9 +178,9 @@ export function CreateConfigDialog({
               mutation.isCreating ||
               !selectedProject ||
               !createName.trim() ||
-              (createType === 'provider'
-                ? !providerState.providerType.trim()
-                : !resourceState.providerType.trim())
+              (createType === 'provider' && !providerState.providerType.trim()) ||
+              (createType === 'resource' && !resourceState.providerType.trim()) ||
+              (createType === 'message_source' && (!messageSourceState.sourceType.trim() || messageSourceState.typeOptions.length === 0))
             }
           >
             {mutation.isCreating ? (

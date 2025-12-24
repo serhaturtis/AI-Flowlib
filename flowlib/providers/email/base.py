@@ -16,6 +16,19 @@ from flowlib.providers.core.base import Provider, ProviderSettings
 logger = logging.getLogger(__name__)
 
 
+class SendEmailResult(StrictBaseModel):
+    """Result of sending an email.
+
+    Provides detailed information about the email send operation,
+    including success status, generated message ID, and any errors.
+    """
+
+    success: bool = Field(..., description="Whether the email was sent successfully")
+    message_id: str = Field(..., description="Generated Message-ID header for the sent email")
+    from_address: str = Field(..., description="Sender email address used")
+    error: str | None = Field(default=None, description="Error message if send failed")
+
+
 class EmailMessage(StrictBaseModel):
     """Email message model.
 
@@ -147,26 +160,30 @@ class EmailProvider(Provider[SettingsT], Generic[SettingsT]):
         to: list[str],
         subject: str,
         body: str,
+        html_body: str | None = None,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
         reply_to: str | None = None,
         in_reply_to: str | None = None,
+        references: str | None = None,
         attachments: list[dict[str, Any]] | None = None,
-    ) -> bool:
+    ) -> SendEmailResult:
         """Send an email.
 
         Args:
             to: List of recipient email addresses
             subject: Email subject
-            body: Email body content
+            body: Plain text email body content
+            html_body: Optional HTML version of the email body
             cc: Optional CC recipients
             bcc: Optional BCC recipients
             reply_to: Optional Reply-To header
             in_reply_to: Optional In-Reply-To header (for threading)
+            references: Optional References header (for threading, space-separated message IDs)
             attachments: Optional list of attachments
 
         Returns:
-            True if email sent successfully
+            SendEmailResult with success status, message_id, from_address, and any error
 
         Raises:
             NotImplementedError: Must be implemented by subclass

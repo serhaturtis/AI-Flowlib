@@ -50,6 +50,7 @@ class Project:
         self.flows_path = self.flowlib_path / "flows"
         self.providers_path = self.configs_path / "providers"
         self.resources_path = self.configs_path / "resources"
+        self.message_sources_path = self.configs_path / "message_sources"
         self.knowledge_plugins_path = self.flowlib_path / "knowledge_plugins"
         self.logs_path = self.flowlib_path / "logs"
         self.temp_path = self.flowlib_path / "temp"
@@ -119,6 +120,7 @@ class Project:
                 self.configs_path,
                 self.providers_path,
                 self.resources_path,
+                self.message_sources_path,
                 self.tools_path,
                 self.agents_path,
                 self.flows_path,
@@ -285,9 +287,10 @@ class Project:
             raise RuntimeError(f"Failed to copy example configs: {e}") from e
 
     def _load_configs(self) -> None:
-        """Load provider and resource configurations."""
+        """Load provider, resource, and message source configurations."""
         self._load_provider_configs()
         self._load_resource_configs()
+        self._load_message_source_configs()
 
     def _load_provider_configs(self) -> None:
         provider_files = self._find_python_files(self.providers_path)
@@ -310,6 +313,21 @@ class Project:
 
         for resource_file in resource_files:
             self._import_module(resource_file, "resource_config")
+
+    def _load_message_source_configs(self) -> None:
+        """Load message source configurations from configs/message_sources/."""
+        message_source_files = self._find_python_files(self.message_sources_path)
+
+        if not message_source_files:
+            logger.debug("No configuration files found in configs/message_sources/")
+            return
+
+        logger.info(
+            f"Found {len(message_source_files)} configuration files in configs/message_sources/"
+        )
+
+        for source_file in message_source_files:
+            self._import_module(source_file, "message_source_config")
 
     def _load_agents(self) -> None:
         """Load agent configurations from agents/."""

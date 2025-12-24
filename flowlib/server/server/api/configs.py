@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 
 from flowlib.resources.models.constants import ResourceType
+from flowlib.resources.models.message_source_resource import MessageSourceType
 from server.core.config import settings
 from server.core.workspace import WorkspaceNotConfiguredError, get_workspace_path
 from server.models.configs import (
@@ -12,6 +13,11 @@ from server.models.configs import (
     AliasListResponse,
     AliasApplyRequest,
     AgentCreateRequest,
+    MessageSourceCreateRequest,
+    MessageSourceListResponse,
+    MessageSourceRenderRequest,
+    MessageSourceResponse,
+    MessageSourceUpdateRequest,
     ProviderConfigCreateRequest,
     ProviderConfigUpdateRequest,
     ProviderConfigListResponse,
@@ -405,6 +411,110 @@ async def render_resource_content(payload: ResourceConfigRenderRequest) -> Rende
             provider_type=payload.provider_type,
             description=payload.description,
             config=payload.config,
+            class_name=config_scaffold_service.camel_case(payload.name),
+        )
+        return RenderResponse(content=content)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+# Message Source endpoints
+
+@router.get("/message-sources/types", response_model=list[str])
+async def list_message_source_types() -> list[str]:
+    """List available message source types."""
+    return [source_type.value for source_type in MessageSourceType]
+
+
+@router.get("/message-sources/schema", response_model=SchemaResponse)
+async def get_message_source_schema(
+    source_type: str = Query(..., min_length=1),
+) -> SchemaResponse:
+    """Return message source schema metadata for a given source type."""
+    _, config_scaffold_service, _, _, _, _ = _get_config_services()
+    try:
+        return config_scaffold_service.get_message_source_schema(source_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/message-sources", response_model=MessageSourceListResponse)
+async def list_message_sources(
+    project_id: str = Query(..., min_length=1)
+) -> MessageSourceListResponse:
+    """List all message source configurations for a project."""
+    config_service, _, _, _, _, _ = _get_config_services()
+    try:
+        sources = await run_in_threadpool(config_service.list_message_sources, project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return MessageSourceListResponse(project_id=project_id, sources=sources, total=len(sources))
+
+
+@router.get("/message-sources/{source_name}", response_model=MessageSourceResponse)
+async def get_message_source(
+    source_name: str, project_id: str = Query(..., min_length=1)
+) -> MessageSourceResponse:
+    """Get a specific message source configuration."""
+    config_service, _, _, _, _, _ = _get_config_services()
+    try:
+        return await run_in_threadpool(config_service.get_message_source, project_id, source_name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/message-sources/create",
+    response_model=ConfigApplyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_message_source(payload: MessageSourceCreateRequest) -> ConfigApplyResponse:
+    """Create a message source configuration file."""
+    _, config_scaffold_service, _, _, _, _ = _get_config_services()
+    try:
+        return await run_in_threadpool(config_scaffold_service.create_message_source, payload)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConfigValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": str(exc), "issues": [i.model_dump() for i in exc.issues]},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/message-sources/apply", response_model=ConfigApplyResponse, status_code=status.HTTP_200_OK)
+async def apply_message_source_structured(payload: MessageSourceUpdateRequest) -> ConfigApplyResponse:
+    """Apply a message source configuration using structured fields (overwrites file content)."""
+    _, config_scaffold_service, _, _, _, _ = _get_config_services()
+    try:
+        return await run_in_threadpool(
+            config_scaffold_service.apply_message_source_structured,
+            payload.project_id,
+            payload.name,
+            payload.source_type,
+            payload.enabled,
+            payload.settings,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/message-sources/render", response_model=RenderResponse)
+async def render_message_source_content(payload: MessageSourceRenderRequest) -> RenderResponse:
+    """Render message source config content without writing file (for diff preview)."""
+    _, config_scaffold_service, _, _, _, _ = _get_config_services()
+    try:
+        content = config_scaffold_service.render_message_source_content(
+            decorator=config_scaffold_service.message_source_decorator(payload.source_type),
+            name=payload.name,
+            source_type=payload.source_type,
+            enabled=payload.enabled,
+            settings=payload.settings,
             class_name=config_scaffold_service.camel_case(payload.name),
         )
         return RenderResponse(content=content)

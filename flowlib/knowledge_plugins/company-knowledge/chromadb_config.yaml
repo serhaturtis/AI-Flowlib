@@ -1,0 +1,19 @@
+# ChromaDB configuration for company knowledge base
+connection:
+  persist_directory: "${FLOWLIB_DATA_DIR:~/.flowlib}/knowledge/company"
+  collection_name: company_knowledge
+  embedding_function: default
+
+# Collection settings
+collection:
+  distance_metric: cosine
+  hnsw_space: cosine
+  hnsw_construction_ef: 100
+  hnsw_search_ef: 50
+  hnsw_m: 16
+
+# Ingestion settings
+ingestion:
+  chunk_size: 512
+  chunk_overlap: 50
+  batch_size: 100

@@ -1,0 +1,19 @@
+name: company-knowledge
+version: "1.0.0"
+description: Company knowledge base for smart email sales agent - provides product info, pricing, policies, FAQs
+provider_class: CompanyKnowledgeProvider
+priority: 10
+auto_load: true
+domains:
+  - products
+  - pricing
+  - policies
+  - faq
+  - company
+databases:
+  chromadb:
+    enabled: true
+    config_file: chromadb_config.yaml
+  neo4j:
+    enabled: false
+    config_file: ""

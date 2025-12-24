@@ -4,6 +4,7 @@ import {
   fetchProviderConfigs,
   fetchResourceConfigs,
   fetchAliases,
+  fetchMessageSources,
 } from '../../services/configs'
 
 /**
@@ -38,10 +39,17 @@ export function useConfigQueries(selectedProject: string) {
     enabled: Boolean(selectedProject),
   })
 
+  const messageSourcesQuery = useQuery({
+    queryKey: ['configs', 'message-sources', selectedProject],
+    queryFn: () => fetchMessageSources(selectedProject),
+    enabled: Boolean(selectedProject),
+  })
+
   return {
     agentsQuery,
     providersQuery,
     resourcesQuery,
     aliasesQuery,
+    messageSourcesQuery,
   }
 }

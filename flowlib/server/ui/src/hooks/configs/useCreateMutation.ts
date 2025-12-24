@@ -3,8 +3,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   createProviderConfig,
   createResourceConfig,
+  createMessageSource,
   ProviderConfigSummary,
   ResourceConfigSummary,
+  MessageSourceSummary,
   ConfigType,
 } from '../../services/configs'
 import { POLLING_INTERVALS } from '../../constants/polling'
@@ -55,10 +57,13 @@ interface CreateParams {
   resourceProviderType: string
   resourceDescription: string
   resourceConfigJson: string
+  messageSourceType: string
+  messageSourceEnabled: boolean
+  messageSourceSettingsJson: string
   onSuccess: (result: {
     type: ConfigType
     name: string
-    config: ProviderConfigSummary | ResourceConfigSummary
+    config: ProviderConfigSummary | ResourceConfigSummary | MessageSourceSummary
   }) => void
   onClose: () => void
   resetForm: () => void
@@ -159,7 +164,7 @@ export function useCreateMutation(): UseCreateMutationResult {
           })
           timeoutRef.current = null
         }, POLLING_INTERVALS.SUCCESS_AUTO_CLOSE) as unknown as number
-      } else {
+      } else if (params.type === 'resource') {
         // Parse and validate resource config JSON
         let cfg: Record<string, unknown>
         try {
@@ -204,6 +209,53 @@ export function useCreateMutation(): UseCreateMutationResult {
               name: createdName,
               resource_type: params.resourceType,
               metadata: {},
+            },
+          })
+          timeoutRef.current = null
+        }, POLLING_INTERVALS.SUCCESS_AUTO_CLOSE) as unknown as number
+      } else if (params.type === 'message_source') {
+        // Parse and validate message source settings JSON
+        let settings: Record<string, unknown>
+        try {
+          settings = JSON.parse(params.messageSourceSettingsJson || '{}')
+        } catch {
+          setError('Message source settings must be valid JSON.')
+          return
+        }
+
+        // Create message source config
+        await createMessageSource({
+          project_id: params.projectId,
+          name: params.name.trim(),
+          source_type: params.messageSourceType,
+          enabled: params.messageSourceEnabled,
+          settings,
+        })
+
+        // Invalidate queries to refresh lists
+        await queryClient.invalidateQueries({ queryKey: ['configs', 'message-sources', params.projectId] })
+
+        setSuccess('Message source created successfully.')
+
+        // Notify parent of success
+        const createdName = params.name.trim()
+        params.resetForm()
+
+        // Brief delay to show success message before closing
+        if (timeoutRef.current !== null) {
+          window.clearTimeout(timeoutRef.current)
+        }
+        timeoutRef.current = window.setTimeout(() => {
+          params.onClose()
+          setSuccess(null)
+          params.onSuccess({
+            type: 'message_source',
+            name: createdName,
+            config: {
+              name: createdName,
+              source_type: params.messageSourceType,
+              enabled: params.messageSourceEnabled,
+              settings,
             },
           })
           timeoutRef.current = null

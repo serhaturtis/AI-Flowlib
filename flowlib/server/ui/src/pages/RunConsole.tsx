@@ -4,6 +4,7 @@ import { Terminal } from 'lucide-react'
 
 import { useProjectContext } from '../contexts/ProjectContext'
 import { listAgents } from '../services/agents'
+import { fetchMessageSources } from '../services/configs'
 
 import { Card, CardDescription, CardHeader, CardTitle } from '../components/ui/Card'
 import { Stack } from '../components/layout/Stack'
@@ -17,6 +18,7 @@ import { RunStartForm } from '../components/agents/RunStartForm'
 import { ActiveRunsList } from '../components/agents/ActiveRunsList'
 import { RunHistory } from '../components/agents/RunHistory'
 import { RunDetails } from '../components/agents/RunDetails'
+import { RunEventStream } from '../components/agents/RunEventStream'
 import { ReplSession } from '../components/agents/ReplSession'
 
 export default function RunConsole() {
@@ -42,6 +44,16 @@ export default function RunConsole() {
     },
     (runId, updates) => polling.updateRun(runId, updates),
   )
+
+  // Message sources query - only fetch when in daemon mode
+  const messageSourcesQuery = useQuery({
+    queryKey: ['message-sources', selectedProject],
+    queryFn: async () => {
+      const response = await fetchMessageSources(selectedProject)
+      return response.sources
+    },
+    enabled: Boolean(selectedProject) && form.mode === 'daemon',
+  })
 
   const polling = useRunsPolling(selectedRunId, form.agentName, form.mode)
   const repl = useReplSession()
@@ -95,12 +107,19 @@ export default function RunConsole() {
         left={
           <div className="h-full overflow-y-auto p-4 sm:p-6 border-r border-border bg-muted/20">
             <Stack spacing="lg">
-              <RunStartForm form={form} agentsQuery={agentsQuery} selectedProject={selectedProject} />
+              <RunStartForm
+                form={form}
+                agentsQuery={agentsQuery}
+                messageSourcesQuery={messageSourcesQuery}
+                selectedProject={selectedProject}
+              />
               <ActiveRunsList
                 runs={polling.runs}
                 selectedRunId={selectedRunId}
                 onSelectRun={setSelectedRunId}
                 stopMutation={form.stopMutation}
+                onRemoveRun={polling.removeRun}
+                onClearCompleted={polling.clearCompletedRuns}
               />
               <RunHistory history={polling.history} />
             </Stack>
@@ -110,6 +129,7 @@ export default function RunConsole() {
           <div className="h-full overflow-y-auto p-4 sm:p-6">
             <Stack spacing="lg">
               <RunDetails run={selectedRun} />
+              <RunEventStream runId={selectedRunId} runStatus={selectedRun?.status} />
               <ReplSession repl={repl} selectedProject={selectedProject} agentName={form.agentName} />
             </Stack>
           </div>

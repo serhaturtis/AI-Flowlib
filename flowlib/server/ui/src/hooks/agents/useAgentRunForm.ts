@@ -8,12 +8,14 @@ export interface UseAgentRunFormResult {
   agentName: string
   mode: string
   maxCycles: string
+  selectedMessageSources: string[]
   formError: string | null
 
   // Form setters
   setAgentName: (value: string) => void
   setMode: (value: string) => void
   setMaxCycles: (value: string) => void
+  setSelectedMessageSources: (value: string[]) => void
   setFormError: (error: string | null) => void
 
   // Mutations
@@ -44,6 +46,7 @@ export function useAgentRunForm(
   const [agentName, setAgentName] = useState('')
   const [mode, setMode] = useState('autonomous')
   const [maxCycles, setMaxCycles] = useState('10')
+  const [selectedMessageSources, setSelectedMessageSources] = useState<string[]>([])
   const [formError, setFormError] = useState<string | null>(null)
 
   const startMutation = useMutation({
@@ -105,6 +108,17 @@ export function useAgentRunForm(
       payload.execution_config = { max_cycles: cycles }
     }
 
+    if (mode === 'daemon') {
+      // For daemon mode, message sources can be overridden via execution_config
+      // If no sources are selected, the agent's default sources will be used
+      if (selectedMessageSources.length > 0) {
+        payload.execution_config = {
+          ...payload.execution_config,
+          message_sources: selectedMessageSources,
+        }
+      }
+    }
+
     startMutation.mutate(payload)
   }
 
@@ -112,10 +126,12 @@ export function useAgentRunForm(
     agentName,
     mode,
     maxCycles,
+    selectedMessageSources,
     formError,
     setAgentName,
     setMode,
     setMaxCycles,
+    setSelectedMessageSources,
     setFormError,
     startMutation,
     stopMutation,

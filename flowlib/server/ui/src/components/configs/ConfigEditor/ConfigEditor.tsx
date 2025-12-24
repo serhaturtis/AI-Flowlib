@@ -3,20 +3,24 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { ConfigDiffResponse } from '../../../services/configs'
 import { useProviderEditorState } from '../../../hooks/configs/useProviderEditorState'
 import { useResourceEditorState } from '../../../hooks/configs/useResourceEditorState'
+import { useMessageSourceEditorState } from '../../../hooks/configs/useMessageSourceEditorState'
 import { useConfigMutations } from '../../../hooks/configs/useConfigMutations'
 import { EditorModeSelector } from './EditorModeSelector'
 import { RawEditorForm } from './RawEditorForm'
 import { ProviderEditorForm } from './ProviderEditorForm'
 import { ResourceEditorForm } from './ResourceEditorForm'
+import { MessageSourceEditorForm } from './MessageSourceEditorForm'
 import { AgentEditorForm } from './AgentEditorForm'
 import { DiffPreview } from './DiffPreview'
 
 export interface EditorTarget {
-  type: 'provider' | 'resource' | 'agent'
+  type: 'provider' | 'resource' | 'agent' | 'message_source'
   name: string
   relativePath: string
   resourceType?: string
   providerType?: string
+  /** For message_source type, this is the source_type (timer, email, webhook, queue) */
+  sourceType?: string
   data?: unknown
 }
 
@@ -60,6 +64,7 @@ export function ConfigEditor({
   // Custom hooks for state management
   const providerState = useProviderEditorState(target, projectId)
   const resourceState = useResourceEditorState(target, projectId)
+  const messageSourceState = useMessageSourceEditorState(target, projectId)
   const mutations = useConfigMutations(
     (msg) => {
       setSuccess(msg)
@@ -88,38 +93,69 @@ export function ConfigEditor({
     mutations.applyMutation.mutate({ projectId, target, content, baseHash })
   }
 
+  // Build type-specific mutation params based on target type
+  const buildMutationParams = () => {
+    switch (target.type) {
+      case 'provider':
+        return {
+          type: 'provider' as const,
+          projectId,
+          target,
+          name: providerState.name,
+          resourceType: providerState.resourceType,
+          providerType: providerState.providerType,
+          settingsJson: providerState.settingsJson,
+        }
+      case 'resource':
+        return {
+          type: 'resource' as const,
+          projectId,
+          target,
+          name: resourceState.name,
+          resourceType: resourceState.resourceType,
+          providerType: resourceState.providerType,
+          configJson: resourceState.configJson,
+        }
+      case 'message_source':
+        return {
+          type: 'message_source' as const,
+          projectId,
+          target,
+          name: messageSourceState.name,
+          sourceType: messageSourceState.sourceType,
+          enabled: messageSourceState.enabled,
+          settingsJson: messageSourceState.settingsJson,
+        }
+      case 'agent':
+        // Agent uses a different mutation path, not handled here
+        throw new Error('Agent mutations are handled separately')
+    }
+  }
+
   // Handlers for structured mode
   const handleStructuredDiff = () => {
     mutations.setStructuredErrors({})
     mutations.setStructuredDiff(null)
-    mutations.computeStructuredDiff.mutate({
-      projectId,
-      target,
-      providerName: providerState.name,
-      providerResourceType: providerState.resourceType,
-      providerType: providerState.providerType,
-      providerSettingsJson: providerState.settingsJson,
-      resourceName: resourceState.name,
-      resourceType: resourceState.resourceType,
-      resourceProviderType: resourceState.providerType,
-      resourceConfigJson: resourceState.configJson,
-    })
+    try {
+      const params = buildMutationParams()
+      mutations.computeStructuredDiff.mutate(params)
+    } catch (error) {
+      // Agent type is not supported for structured diff from this handler
+      const message = error instanceof Error ? error.message : 'Unsupported operation'
+      setError(message)
+    }
   }
 
   const handleStructuredApply = () => {
     mutations.setStructuredErrors({})
-    mutations.applyStructuredMutation.mutate({
-      projectId,
-      target,
-      providerName: providerState.name,
-      providerResourceType: providerState.resourceType,
-      providerType: providerState.providerType,
-      providerSettingsJson: providerState.settingsJson,
-      resourceName: resourceState.name,
-      resourceType: resourceState.resourceType,
-      resourceProviderType: resourceState.providerType,
-      resourceConfigJson: resourceState.configJson,
-    })
+    try {
+      const params = buildMutationParams()
+      mutations.applyStructuredMutation.mutate(params)
+    } catch (error) {
+      // Agent type is not supported for structured apply from this handler
+      const message = error instanceof Error ? error.message : 'Unsupported operation'
+      setError(message)
+    }
   }
 
   return (
@@ -164,6 +200,23 @@ export function ConfigEditor({
           projectId={projectId}
           target={target}
           resourceState={resourceState}
+          mutations={mutations}
+          onSuccess={(msg) => {
+            setSuccess(msg)
+            setError(null)
+          }}
+          onError={(msg) => {
+            setError(msg)
+            setSuccess(null)
+          }}
+          onDiff={handleStructuredDiff}
+          onApply={handleStructuredApply}
+        />
+      ) : target.type === 'message_source' ? (
+        <MessageSourceEditorForm
+          projectId={projectId}
+          target={target}
+          messageSourceState={messageSourceState}
           mutations={mutations}
           onSuccess={(msg) => {
             setSuccess(msg)

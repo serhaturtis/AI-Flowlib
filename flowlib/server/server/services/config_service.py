@@ -12,6 +12,7 @@ from typing import Callable, TypeVar
 from flowlib.core.project.project import Project
 from flowlib.resources.models.agent_config_resource import AgentConfigResource
 from flowlib.resources.models.constants import ResourceType
+from flowlib.resources.models.message_source_resource import MessageSourceResource
 from flowlib.resources.registry.registry import resource_registry
 
 from flowlib.config.alias_manager import alias_manager
@@ -21,6 +22,8 @@ from server.models.configs import (
     AgentConfigResponse,
     AgentConfigSummary,
     AliasEntry,
+    MessageSourceResponse,
+    MessageSourceSummary,
     ProviderConfigSummary,
     ResourceConfigSummary,
 )
@@ -57,6 +60,7 @@ class ProjectCache:
     agents: list[AgentConfigSummary]
     providers: list[ProviderConfigSummary]
     resources: list[ResourceConfigSummary]
+    message_sources: list[MessageSourceSummary]
     aliases: list[AliasEntry]
     timestamp: float
     ttl: float = 60.0  # Cache TTL in seconds
@@ -183,6 +187,25 @@ class ConfigService:
                             )
                         )
 
+                # Load message sources
+                message_source_entries = resource_registry.get_by_type(ResourceType.MESSAGE_SOURCE)
+                message_source_summaries: list[MessageSourceSummary] = []
+                for name in sorted(message_source_entries.keys()):
+                    resource = message_source_entries[name]
+                    if isinstance(resource, MessageSourceResource):
+                        # Extract source-specific settings
+                        settings = resource.model_dump(
+                            exclude={"name", "type", "source_type", "enabled"}
+                        )
+                        message_source_summaries.append(
+                            MessageSourceSummary(
+                                name=name,
+                                source_type=resource.source_type.value,
+                                enabled=resource.enabled,
+                                settings=settings,
+                            )
+                        )
+
                 # Load aliases
                 aliases = alias_manager.list_all_aliases()
                 alias_entries = [
@@ -194,6 +217,7 @@ class ConfigService:
                     agents=agent_summaries,
                     providers=provider_configs,
                     resources=resource_configs,
+                    message_sources=message_source_summaries,
                     aliases=alias_entries,
                     timestamp=time.time(),
                     ttl=self._cache_ttl,
@@ -239,6 +263,24 @@ class ConfigService:
         """Return alias mappings (cached)."""
         cache = self._get_or_load_cache(project_id)
         return cache.aliases
+
+    def list_message_sources(self, project_id: str) -> list[MessageSourceSummary]:
+        """Return message source configurations (cached)."""
+        cache = self._get_or_load_cache(project_id)
+        return cache.message_sources
+
+    def get_message_source(self, project_id: str, source_name: str) -> MessageSourceResponse:
+        """Return a specific message source config (cached)."""
+        cache = self._get_or_load_cache(project_id)
+        for source in cache.message_sources:
+            if source.name == source_name:
+                return MessageSourceResponse(
+                    name=source.name,
+                    source_type=source.source_type,
+                    enabled=source.enabled,
+                    settings=source.settings,
+                )
+        raise KeyError(f"Message source '{source_name}' not found")
 
     def _with_loaded_project(self, project_id: str, handler: Callable[[], T]) -> T:
         project_path = self._resolve_project_path(project_id)

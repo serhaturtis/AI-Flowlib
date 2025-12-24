@@ -5,22 +5,11 @@ import logging
 import queue
 from datetime import datetime
 
-from pydantic import Field
-
-from flowlib.agent.core.message_source import MessageSource, MessageSourceConfig
+from flowlib.agent.core.message_source import MessageSource
 from flowlib.agent.core.models.messages import AgentMessage, AgentMessageType
+from flowlib.core.message_source_config import TimerMessageSourceConfig
 
 logger = logging.getLogger(__name__)
-
-
-class TimerMessageSourceConfig(MessageSourceConfig):
-    """Configuration for timer-based message source."""
-
-    interval_seconds: float = Field(..., gt=0, description="Interval between messages")
-    run_on_start: bool = Field(default=True, description="Send message immediately on start")
-    message_content: str = Field(
-        default="Timer triggered", description="Content for timer messages"
-    )
 
 
 class TimerMessageSource(MessageSource):

@@ -3,7 +3,7 @@ import api from './api'
 /**
  * Union type for configuration categories
  */
-export type ConfigType = 'provider' | 'resource'
+export type ConfigType = 'provider' | 'resource' | 'message_source'
 
 export type AgentConfigSummary = {
   name: string
@@ -353,5 +353,92 @@ export async function deleteConfig(payload: {
   relative_path: string
 }): Promise<void> {
   await api.post('/configs/configs/delete', payload)
+}
+
+// Message Source types and API functions
+
+export type MessageSourceSummary = {
+  name: string
+  source_type: string
+  enabled: boolean
+  settings: Record<string, unknown>
+}
+
+export type MessageSourceListResponse = {
+  project_id: string
+  sources: MessageSourceSummary[]
+  total: number
+}
+
+export type MessageSourceCreatePayload = {
+  project_id: string
+  name: string
+  source_type: string
+  enabled?: boolean
+  settings: Record<string, unknown>
+}
+
+export type MessageSourceUpdatePayload = {
+  project_id: string
+  name: string
+  source_type: string
+  enabled?: boolean
+  settings: Record<string, unknown>
+}
+
+export async function fetchMessageSources(
+  projectId: string,
+): Promise<MessageSourceListResponse> {
+  const { data } = await api.get<MessageSourceListResponse>(
+    '/configs/message-sources',
+    withProjectParam(projectId),
+  )
+  return data
+}
+
+export async function fetchMessageSource(
+  projectId: string,
+  sourceName: string,
+): Promise<MessageSourceSummary> {
+  const { data } = await api.get<MessageSourceSummary>(`/configs/message-sources/${sourceName}`, {
+    params: { project_id: projectId },
+  })
+  return data
+}
+
+export async function fetchMessageSourceTypes(): Promise<string[]> {
+  const { data } = await api.get<string[]>('/configs/message-sources/types')
+  return data
+}
+
+export async function fetchMessageSourceSchema(sourceType: string): Promise<SchemaResponse> {
+  const { data } = await api.get<SchemaResponse>('/configs/message-sources/schema', {
+    params: { source_type: sourceType },
+  })
+  return data
+}
+
+export async function createMessageSource(
+  payload: MessageSourceCreatePayload,
+): Promise<ConfigApplyResponse> {
+  const { data } = await api.post<ConfigApplyResponse>('/configs/message-sources/create', payload)
+  return data
+}
+
+export async function applyMessageSourceStructured(
+  payload: MessageSourceUpdatePayload,
+): Promise<ConfigApplyResponse> {
+  const { data } = await api.post<ConfigApplyResponse>('/configs/message-sources/apply', payload)
+  return data
+}
+
+export async function renderMessageSourceContent(payload: {
+  name: string
+  source_type: string
+  enabled?: boolean
+  settings: Record<string, unknown>
+}): Promise<RenderResponse> {
+  const { data } = await api.post<RenderResponse>('/configs/message-sources/render', payload)
+  return data
 }
 

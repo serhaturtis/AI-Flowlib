@@ -8,9 +8,12 @@ import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from flowlib.core.message_source_config import MessageSourceDefaults
 from flowlib.resources.models.constants import ResourceType
+from flowlib.resources.models.message_source_resource import MessageSourceType
 
 from server.models.configs import (
+    MessageSourceCreateRequest,
     ProviderConfigCreateRequest,
     ResourceConfigCreateRequest,
     SchemaField,
@@ -481,4 +484,275 @@ class {class_name}ModelConfig:
             ),
         ]
         return SchemaResponse(title="model_config schema", fields=fields)
+
+    # Message Source methods
+    def create_message_source(self, request: MessageSourceCreateRequest) -> ConfigApplyResponse:
+        """Create a message source configuration file."""
+        decorator = self.message_source_decorator(request.source_type)
+        class_name = self.camel_case(request.name)
+        file_name = f"{self._slugify(request.name)}.py"
+        relative_path = f"configs/message_sources/{file_name}"
+        content = self.render_message_source_content(
+            decorator=decorator,
+            name=request.name,
+            source_type=request.source_type,
+            enabled=request.enabled,
+            settings=request.settings,
+            class_name=class_name,
+        )
+
+        return self._diff_service.apply_config(
+            ConfigApplyRequest(
+                project_id=request.project_id,
+                relative_path=relative_path,
+                content=content,
+                sha256_before=self._EMPTY_SHA256,
+            )
+        )
+
+    def apply_message_source_structured(
+        self,
+        project_id: str,
+        name: str,
+        source_type: str,
+        enabled: bool,
+        settings: dict[str, object],
+    ) -> ConfigApplyResponse:
+        """Apply a message source configuration using structured fields."""
+        decorator = self.message_source_decorator(source_type)
+        class_name = self.camel_case(name)
+        file_name = f"{self._slugify(name)}.py"
+        relative_path = f"configs/message_sources/{file_name}"
+        content = self.render_message_source_content(
+            decorator=decorator,
+            name=name,
+            source_type=source_type,
+            enabled=enabled,
+            settings=settings,
+            class_name=class_name,
+        )
+        return self._diff_service.apply_config(
+            ConfigApplyRequest(
+                project_id=project_id,
+                relative_path=relative_path,
+                content=content,
+                sha256_before=self._get_current_file_hash(project_id, relative_path),
+            )
+        )
+
+    def render_message_source_content(
+        self,
+        *,
+        decorator: str,
+        name: str,
+        source_type: str,
+        enabled: bool,
+        settings: dict[str, object],
+        class_name: str,
+    ) -> str:
+        """Render message source Python file content."""
+        # Build class attributes from settings
+        attrs = [f'    enabled = {enabled}']
+        for key, value in settings.items():
+            # Use repr() for proper escaping of strings (handles quotes, newlines, etc.)
+            attrs.append(f'    {key} = {repr(value)}')
+        attrs_str = '\n'.join(attrs) if attrs else '    pass'
+
+        return textwrap.dedent(
+            f'''"""
+Auto-generated message source configuration for {name}.
+"""
+from flowlib.resources.decorators.message_source import {decorator}
+
+
+@{decorator}("{name}")
+class {class_name}Source:
+    """Message source: {source_type}."""
+{attrs_str}
+'''
+        )
+
+    def message_source_decorator(self, source_type: str) -> str:
+        """Get decorator name for a message source type."""
+        mapping: dict[str, str] = {
+            MessageSourceType.TIMER.value: "timer_source",
+            MessageSourceType.EMAIL.value: "email_source",
+            MessageSourceType.WEBHOOK.value: "webhook_source",
+            MessageSourceType.QUEUE.value: "queue_source",
+        }
+        if source_type not in mapping:
+            valid_types = [t.value for t in MessageSourceType]
+            raise ValueError(
+                f"Unsupported message source type '{source_type}'. "
+                f"Supported types: {valid_types}"
+            )
+        return mapping[source_type]
+
+    def get_message_source_schema(self, source_type: str) -> SchemaResponse:
+        """Get schema for a message source type.
+
+        Uses MessageSourceDefaults from flowlib.core.message_source_config
+        as the single source of truth for default values.
+        """
+        base_fields = [
+            SchemaField(
+                name="name",
+                type="string",
+                required=True,
+                description="Unique message source name",
+                default=None,
+                enum=None,
+                string_min_length=1,
+                pattern=r"^[a-zA-Z0-9._\-]+$",
+            ),
+            SchemaField(
+                name="enabled",
+                type="boolean",
+                required=False,
+                description="Whether source is enabled",
+                default=MessageSourceDefaults.ENABLED,
+                enum=None,
+            ),
+        ]
+
+        # Add source-type-specific fields (using centralized defaults)
+        if source_type == MessageSourceType.TIMER.value:
+            base_fields.extend([
+                SchemaField(
+                    name="interval_seconds",
+                    type="number",
+                    required=True,
+                    description="Interval between triggers in seconds",
+                    default=3600,  # Example value, not a default (field is required)
+                    enum=None,
+                    numeric_min=1,
+                ),
+                SchemaField(
+                    name="run_on_start",
+                    type="boolean",
+                    required=False,
+                    description="Send message immediately on start",
+                    default=MessageSourceDefaults.TIMER_RUN_ON_START,
+                    enum=None,
+                ),
+                SchemaField(
+                    name="message_content",
+                    type="string",
+                    required=False,
+                    description="Content for timer messages",
+                    default=MessageSourceDefaults.TIMER_MESSAGE_CONTENT,
+                    enum=None,
+                ),
+            ])
+        elif source_type == MessageSourceType.EMAIL.value:
+            base_fields.extend([
+                SchemaField(
+                    name="email_provider_name",
+                    type="string",
+                    required=True,
+                    description="Reference to email provider config",
+                    default=None,
+                    enum=None,
+                    string_min_length=1,
+                ),
+                SchemaField(
+                    name="check_interval_seconds",
+                    type="number",
+                    required=False,
+                    description="Polling interval in seconds",
+                    default=MessageSourceDefaults.EMAIL_CHECK_INTERVAL_SECONDS,
+                    enum=None,
+                    numeric_min=1,
+                ),
+                SchemaField(
+                    name="folder",
+                    type="string",
+                    required=False,
+                    description="Email folder to monitor",
+                    default=MessageSourceDefaults.EMAIL_FOLDER,
+                    enum=None,
+                ),
+                SchemaField(
+                    name="only_unread",
+                    type="boolean",
+                    required=False,
+                    description="Only process unread emails",
+                    default=MessageSourceDefaults.EMAIL_ONLY_UNREAD,
+                    enum=None,
+                ),
+                SchemaField(
+                    name="mark_as_read",
+                    type="boolean",
+                    required=False,
+                    description="Mark emails as read after processing",
+                    default=MessageSourceDefaults.EMAIL_MARK_AS_READ,
+                    enum=None,
+                ),
+            ])
+        elif source_type == MessageSourceType.WEBHOOK.value:
+            base_fields.extend([
+                SchemaField(
+                    name="path",
+                    type="string",
+                    required=True,
+                    description="Webhook path (e.g., '/webhook/slack')",
+                    default="/webhook/default",  # Example value, not a default (field is required)
+                    enum=None,
+                    string_min_length=1,
+                ),
+                SchemaField(
+                    name="methods",
+                    type="array",
+                    required=False,
+                    description="Allowed HTTP methods",
+                    default=list(MessageSourceDefaults.WEBHOOK_METHODS),
+                    enum=None,
+                    items_type="string",
+                ),
+                SchemaField(
+                    name="secret_header",
+                    type="string",
+                    required=False,
+                    description="Header name for secret validation",
+                    default=MessageSourceDefaults.WEBHOOK_SECRET_HEADER,
+                    enum=None,
+                ),
+            ])
+        elif source_type == MessageSourceType.QUEUE.value:
+            base_fields.extend([
+                SchemaField(
+                    name="queue_provider_name",
+                    type="string",
+                    required=True,
+                    description="Reference to queue provider (Redis, RabbitMQ)",
+                    default=None,
+                    enum=None,
+                    string_min_length=1,
+                ),
+                SchemaField(
+                    name="queue_name",
+                    type="string",
+                    required=True,
+                    description="Queue name to consume from",
+                    default=None,
+                    enum=None,
+                    string_min_length=1,
+                ),
+                SchemaField(
+                    name="consumer_group",
+                    type="string",
+                    required=False,
+                    description="Consumer group for load balancing",
+                    default=MessageSourceDefaults.QUEUE_CONSUMER_GROUP,
+                    enum=None,
+                ),
+            ])
+        else:
+            valid_types = [t.value for t in MessageSourceType]
+            raise ValueError(
+                f"Unsupported message source type '{source_type}'. "
+                f"Supported types: {valid_types}"
+            )
+
+        return SchemaResponse(title=f"{source_type}_source schema", fields=base_fields)
 

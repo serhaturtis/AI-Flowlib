@@ -8,17 +8,8 @@ through the MessageSource interface.
 import queue
 from abc import ABC, abstractmethod
 
-from pydantic import Field
-
 from flowlib.agent.core.models.messages import AgentMessage
-from flowlib.core.models import StrictBaseModel
-
-
-class MessageSourceConfig(StrictBaseModel):
-    """Base configuration for message sources."""
-
-    name: str = Field(..., description="Unique source name")
-    enabled: bool = Field(default=True, description="Whether source is enabled")
+from flowlib.core.message_source_config import MessageSourceConfig
 
 
 class MessageSource(ABC):

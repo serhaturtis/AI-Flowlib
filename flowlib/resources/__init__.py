@@ -14,8 +14,22 @@ from flowlib.resources.decorators.decorators import (
     storage_config,
     vector_db_config,
 )
+from flowlib.resources.decorators.message_source import (
+    email_source,
+    queue_source,
+    timer_source,
+    webhook_source,
+)
 from flowlib.resources.models.base import ResourceBase
 from flowlib.resources.models.constants import ResourceType
+from flowlib.resources.models.message_source_resource import (
+    EmailSourceResource,
+    MessageSourceResource,
+    MessageSourceType,
+    QueueSourceResource,
+    TimerSourceResource,
+    WebhookSourceResource,
+)
 from flowlib.resources.models.model_resource import ModelResource
 from flowlib.resources.models.template_resource import (
     TemplateResource,
@@ -42,6 +56,18 @@ __all__ = [
     "embedding_config",
     "graph_db_config",
     "message_queue_config",
+    # Message source decorators
+    "timer_source",
+    "email_source",
+    "webhook_source",
+    "queue_source",
+    # Message source resource types
+    "MessageSourceResource",
+    "MessageSourceType",
+    "TimerSourceResource",
+    "EmailSourceResource",
+    "WebhookSourceResource",
+    "QueueSourceResource",
     "ModelResource",
     "TemplateResource",
     "TemplateVariableConfig",

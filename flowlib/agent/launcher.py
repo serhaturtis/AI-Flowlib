@@ -5,27 +5,36 @@ from typing import Any, cast
 
 from pydantic import Field
 
+from flowlib.agent.components.memory.component import AgentMemoryConfig
+from flowlib.agent.components.memory.knowledge import KnowledgeMemoryConfig
+from flowlib.agent.components.memory.vector import VectorMemoryConfig
+from flowlib.agent.components.memory.working import WorkingMemoryConfig
 from flowlib.agent.core.base_agent import BaseAgent
 from flowlib.agent.execution.strategy import ExecutionMode, ExecutionStrategy
+from flowlib.agent.execution.strategies import (
+    AutonomousConfig,
+    AutonomousStrategy,
+    REPLConfig,
+    REPLStrategy,
+    RemoteConfig,
+    RemoteStrategy,
+)
+from flowlib.agent.execution.strategies.daemon import DaemonConfig, DaemonStrategy
 from flowlib.agent.models.config import AgentConfig, StatePersistenceConfig
+from flowlib.config.alias_manager import alias_manager
+from flowlib.config.required_resources import RequiredAlias
+from flowlib.core.message_source_config import MessageSourceConfig
 from flowlib.core.models import StrictBaseModel
 from flowlib.core.project import Project
 from flowlib.resources.models.agent_config_resource import AgentConfigResource
+from flowlib.resources.models.message_source_resource import MessageSourceResource
 from flowlib.resources.registry.registry import resource_registry
-from flowlib.config.required_resources import RequiredAlias
 
 logger = logging.getLogger(__name__)
 
 
 def build_agent_config(project: Project, agent_config_name: str) -> AgentConfig:
     """Convert a registered agent config resource into a runtime AgentConfig."""
-
-    from flowlib.config.alias_manager import alias_manager
-    from flowlib.agent.components.memory.component import AgentMemoryConfig
-    from flowlib.agent.components.memory.knowledge import KnowledgeMemoryConfig
-    from flowlib.agent.components.memory.vector import VectorMemoryConfig
-    from flowlib.agent.components.memory.working import WorkingMemoryConfig
-
     try:
         actual_config_name = alias_manager.get_alias_target(agent_config_name)
         if actual_config_name:
@@ -123,6 +132,7 @@ class AgentLauncher:
         agent_config_name: str,
         mode: ExecutionMode,
         execution_config: dict[str, Any] | None = None,
+        activity_handler: Any | None = None,
     ) -> None:
         """Launch agent in specified execution mode.
 
@@ -130,6 +140,9 @@ class AgentLauncher:
             agent_config_name: Name of agent config from resource registry
             mode: Execution mode (REPL, DAEMON, AUTONOMOUS, REMOTE)
             execution_config: Mode-specific configuration dict
+            activity_handler: Optional callback for activity stream events.
+                The handler receives formatted activity strings from the agent.
+                Use this to stream agent activity to external systems.
 
         Raises:
             ValueError: If agent config not found
@@ -143,11 +156,21 @@ class AgentLauncher:
 
         logger.info(f"Launching agent '{agent_config_name}' in mode '{mode.value}'")
 
+        # Load agent config resource for strategy creation
+        agent_config_resource = self._get_agent_config_resource(agent_config_name)
+
         # Load agent configuration
         agent = await self._create_agent(agent_config_name)
 
-        # Create execution strategy
-        strategy = self._create_strategy(mode, execution_config or {})
+        # Set activity handler if provided
+        if activity_handler is not None:
+            agent.set_activity_stream_handler(activity_handler)
+            logger.debug("Activity stream handler configured for agent '%s'", agent_config_name)
+
+        # Create execution strategy (pass agent_config_resource for daemon mode)
+        strategy = self._create_strategy(
+            mode, execution_config or {}, agent_config_resource
+        )
 
         # Execute
         try:
@@ -155,6 +178,37 @@ class AgentLauncher:
         finally:
             await strategy.cleanup()
             await agent.shutdown()
+
+    def _get_agent_config_resource(self, agent_config_name: str) -> AgentConfigResource:
+        """Get agent config resource from registry.
+
+        Args:
+            agent_config_name: Name of agent config (may be alias)
+
+        Returns:
+            AgentConfigResource instance
+
+        Raises:
+            ValueError: If config not found or not an AgentConfigResource
+        """
+        try:
+            actual_config_name = alias_manager.get_alias_target(agent_config_name)
+            if actual_config_name:
+                resource = resource_registry.get(actual_config_name)
+            else:
+                resource = resource_registry.get(agent_config_name)
+        except Exception as e:
+            raise ValueError(
+                f"Could not load agent configuration '{agent_config_name}': {e}"
+            ) from e
+
+        if not isinstance(resource, AgentConfigResource):
+            raise ValueError(
+                f"Resource '{agent_config_name}' is not an AgentConfigResource. "
+                f"Got type: {type(resource).__name__}"
+            )
+
+        return resource
 
     async def _create_agent(self, agent_config_name: str) -> BaseAgent:
         """Create and initialize agent from config name."""
@@ -165,51 +219,130 @@ class AgentLauncher:
         logger.info(f"Agent '{agent.name}' initialized successfully")
         return agent
 
+    def _resolve_message_sources(
+        self,
+        agent_config_resource: AgentConfigResource,
+        execution_config: dict[str, Any],
+    ) -> list[MessageSourceConfig]:
+        """Resolve message source names to runtime configs from registry.
+
+        Priority: execution_config overrides agent_config_resource.
+        If execution_config already contains 'message_sources' as list of
+        MessageSourceConfig objects, use those directly. Otherwise, resolve
+        names from agent_config_resource.message_sources.
+
+        Args:
+            agent_config_resource: Agent config resource with message_sources names
+            execution_config: Mode-specific configuration that may override sources
+
+        Returns:
+            List of resolved MessageSourceConfig instances
+
+        Raises:
+            ValueError: If a source name is not found or not a MESSAGE_SOURCE resource
+        """
+        # Check if execution_config provides pre-resolved configs
+        exec_sources = execution_config.get("message_sources", [])
+        if exec_sources and isinstance(exec_sources[0], MessageSourceConfig):
+            # Already resolved configs passed via execution_config
+            return exec_sources
+
+        # Get source names - execution_config overrides agent config
+        if exec_sources:
+            # Names provided in execution_config
+            source_names = exec_sources
+        else:
+            # Fall back to agent config resource
+            source_names = agent_config_resource.message_sources
+
+        # Resolve each name from registry
+        resolved_sources: list[MessageSourceConfig] = []
+        for name in source_names:
+            try:
+                resource = resource_registry.get(name)
+            except KeyError as e:
+                raise ValueError(
+                    f"Message source '{name}' not found in registry. "
+                    f"Ensure it is defined with a @timer_source, @email_source, "
+                    f"@webhook_source, or @queue_source decorator."
+                ) from e
+
+            if not isinstance(resource, MessageSourceResource):
+                actual_type = getattr(resource, "type", type(resource).__name__)
+                raise ValueError(
+                    f"Resource '{name}' is not a MESSAGE_SOURCE resource. "
+                    f"Got type: {actual_type}. "
+                    f"Use @timer_source, @email_source, etc. decorators to define message sources."
+                )
+
+            # Convert resource to runtime config
+            runtime_config = resource.to_runtime_config()
+            resolved_sources.append(runtime_config)
+            logger.debug(f"Resolved message source '{name}' -> {type(runtime_config).__name__}")
+
+        return resolved_sources
+
     def _create_strategy(
-        self, mode: ExecutionMode, execution_config: dict[str, Any]
+        self,
+        mode: ExecutionMode,
+        execution_config: dict[str, Any],
+        agent_config_resource: AgentConfigResource | None = None,
     ) -> ExecutionStrategy:
         """Create execution strategy for specified mode.
 
         Args:
             mode: Execution mode
             execution_config: Mode-specific configuration
+            agent_config_resource: Agent config resource (required for DAEMON mode)
 
         Returns:
             ExecutionStrategy instance
 
         Raises:
-            ValueError: If mode is invalid or config is invalid
+            ValueError: If mode is invalid, config is invalid, or daemon has no sources
         """
         if mode == ExecutionMode.AUTONOMOUS:
-            from flowlib.agent.execution.strategies import (
-                AutonomousConfig,
-                AutonomousStrategy,
-            )
-
             config = AutonomousConfig(**execution_config)
             return AutonomousStrategy(config)
 
         elif mode == ExecutionMode.REPL:
-            from flowlib.agent.execution.strategies import REPLConfig, REPLStrategy
-
             repl_config = REPLConfig(**execution_config)
             return REPLStrategy(repl_config)
 
         elif mode == ExecutionMode.DAEMON:
-            from flowlib.agent.execution.strategies.daemon import (
-                DaemonConfig,
-                DaemonStrategy,
+            if agent_config_resource is None:
+                raise ValueError(
+                    "DAEMON mode requires agent_config_resource to resolve message sources"
+                )
+
+            # Resolve message sources from registry
+            resolved_sources = self._resolve_message_sources(
+                agent_config_resource, execution_config
             )
 
-            daemon_config = DaemonConfig(**execution_config)
+            # Validate: daemon mode must have at least one source
+            if not resolved_sources:
+                raise ValueError(
+                    f"DAEMON mode requires at least one message source. "
+                    f"Agent '{agent_config_resource.name}' has no message_sources configured. "
+                    f"Either add message_sources to the agent config or pass them via execution_config."
+                )
+
+            # Build daemon config with resolved sources
+            daemon_config_dict = {
+                k: v for k, v in execution_config.items() if k != "message_sources"
+            }
+            daemon_config_dict["message_sources"] = resolved_sources
+            daemon_config = DaemonConfig(**daemon_config_dict)
+
+            logger.info(
+                f"Daemon mode configured with {len(resolved_sources)} message sources: "
+                f"{[s.name for s in resolved_sources]}"
+            )
+
             return DaemonStrategy(daemon_config)
 
         elif mode == ExecutionMode.REMOTE:
-            from flowlib.agent.execution.strategies import (
-                RemoteConfig,
-                RemoteStrategy,
-            )
-
             remote_config = RemoteConfig(**execution_config)
             return RemoteStrategy(remote_config)
 

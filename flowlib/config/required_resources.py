@@ -37,6 +37,11 @@ class RequiredAlias(str, Enum):
     DEFAULT_CACHE = "default-cache"
     DEFAULT_DATABASE = "default-database"
 
+    # External Service Aliases
+    DEFAULT_DB = "default-db"
+    DEFAULT_WEB_SEARCH = "default-web-search"
+    DEFAULT_EMAIL = "default-email"
+
 
 class RequiredResourceSpec(BaseModel):
     """Specification for a required resource."""
@@ -130,6 +135,30 @@ REQUIRED_RESOURCE_SPECS: dict[RequiredAlias, RequiredResourceSpec] = {
         required_always=False,
         description="Optional: Database for persistent storage",
         validation_hints="Optional for storing structured data and application state",
+    ),
+    RequiredAlias.DEFAULT_DB: RequiredResourceSpec(
+        alias=RequiredAlias.DEFAULT_DB,
+        resource_type=ResourceType.DATABASE_CONFIG,
+        required_by=["BusinessDiscoveryAgent", "EmailAgent"],
+        required_always=False,
+        description="PostgreSQL database for agent data storage",
+        validation_hints="Required for agents that store data (emails, events, etc.)",
+    ),
+    RequiredAlias.DEFAULT_WEB_SEARCH: RequiredResourceSpec(
+        alias=RequiredAlias.DEFAULT_WEB_SEARCH,
+        resource_type=ResourceType.WEB_SEARCH_CONFIG,
+        required_by=["BusinessDiscoveryAgent"],
+        required_always=False,
+        description="Web search provider for discovering information",
+        validation_hints="Required for agents that search the web (DuckDuckGo, SerpAPI, etc.)",
+    ),
+    RequiredAlias.DEFAULT_EMAIL: RequiredResourceSpec(
+        alias=RequiredAlias.DEFAULT_EMAIL,
+        resource_type=ResourceType.EMAIL_CONFIG,
+        required_by=["BusinessDiscoveryAgent", "EmailAgent"],
+        required_always=False,
+        description="Email provider for sending and receiving emails",
+        validation_hints="Required for agents that send/receive emails (IMAP/SMTP)",
     ),
 }
 

@@ -797,6 +797,7 @@ def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
     - Profile for tool access
     - Model and LLM selection
     - Temperature and other settings
+    - Message sources for daemon mode
 
     Args:
         name: Unique name for the agent config
@@ -823,6 +824,7 @@ def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
         max_iterations = getattr(cls, "max_iterations", 10)
         enable_learning = getattr(cls, "enable_learning", True)
         verbose = getattr(cls, "verbose", False)
+        message_sources = getattr(cls, "message_sources", [])
 
         cls.__resource_name__ = name  # type: ignore[attr-defined]
         cls.__resource_type__ = ResourceType.AGENT_CONFIG  # type: ignore[attr-defined]
@@ -842,6 +844,7 @@ def agent_config(name: str, **metadata: Any) -> Callable[[type], type]:
             max_iterations=max_iterations,
             enable_learning=enable_learning,
             verbose=verbose,
+            message_sources=message_sources,
         )
 
         registry.register(

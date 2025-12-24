@@ -1,0 +1,24 @@
+{
+  "task_id": "896cdb30-859a-413b-98c8-b0fa6138e419",
+  "task_description": "Interactive agent session",
+  "created_at": "2025-11-25T11:33:43.697114",
+  "updated_at": "2025-11-25T11:37:46.441637",
+  "cycle": 0,
+  "is_complete": false,
+  "completion_reason": "",
+  "progress": 0,
+  "user_messages": [],
+  "system_messages": [],
+  "execution_history": [],
+  "errors": [],
+  "current_entities": {},
+  "metadata": {
+    "agent_version": "1.0.0",
+    "environment": "production",
+    "session_id": "",
+    "debug_info": "",
+    "performance_tracking": true,
+    "created_by": "system"
+  },
+  "session": null
+}

@@ -18,6 +18,8 @@ export interface UseRunsPollingResult {
   setRuns: React.Dispatch<React.SetStateAction<Record<string, RunRecord>>>
   addRun: (run: RunRecord) => void
   updateRun: (runId: string, updates: Partial<RunRecord>) => void
+  removeRun: (runId: string) => void
+  clearCompletedRuns: () => void
   pollingError: string | null
   isPollingPaused: boolean
 }
@@ -45,6 +47,9 @@ export function useRunsPolling(
   const [history, setHistory] = useState<AgentRunStatusResponse[]>([])
   const [pollingError, setPollingError] = useState<string | null>(null)
   const [isPollingPaused, setIsPollingPaused] = useState(false)
+
+  // Track dismissed run IDs to prevent them from reappearing after polling
+  const dismissedRunIds = useRef<Set<string>>(new Set())
 
   // Use refs to avoid triggering polling restart when agentName/mode change
   const agentNameRef = useRef(agentName)
@@ -91,6 +96,10 @@ export function useRunsPolling(
         setRuns((prev) => {
           const next = { ...prev }
           existing.forEach((r) => {
+            // Skip dismissed runs
+            if (dismissedRunIds.current.has(r.run_id)) {
+              return
+            }
             next[r.run_id] = {
               run_id: r.run_id,
               status: r.status,
@@ -305,12 +314,46 @@ export function useRunsPolling(
     })
   }
 
+  /**
+   * Remove a run from the local state (does not affect server)
+   * Also adds to dismissed set to prevent it from reappearing after polling
+   */
+  const removeRun = (runId: string) => {
+    dismissedRunIds.current.add(runId)
+    setRuns((prev) => {
+      const { [runId]: _removed, ...rest } = prev
+      void _removed // Mark as intentionally unused
+      return rest
+    })
+  }
+
+  /**
+   * Clear all completed, failed, and cancelled runs from local state
+   * Also adds them to dismissed set to prevent them from reappearing after polling
+   */
+  const clearCompletedRuns = () => {
+    setRuns((prev) => {
+      const filtered: Record<string, RunRecord> = {}
+      for (const [id, run] of Object.entries(prev)) {
+        if (run.status === 'running' || run.status === 'pending') {
+          filtered[id] = run
+        } else {
+          // Add finished runs to dismissed set
+          dismissedRunIds.current.add(id)
+        }
+      }
+      return filtered
+    })
+  }
+
   return {
     runs,
     history,
     setRuns,
     addRun,
     updateRun,
+    removeRun,
+    clearCompletedRuns,
     pollingError,
     isPollingPaused,
   }
